@@ -97,6 +97,9 @@ export function validateProcurement(data){
        coverageKeys.has(c.source+'/'+c.month))throw Error('Cobertura contratual inválida');
     coverageKeys.add(c.source+'/'+c.month);
     if(c.status==='complete'&&c.skipped>0)throw Error('Cobertura completa apesar de registros rejeitados');
+    if(c.status==='complete' &&
+       c.count!==data.contracts.filter(v=>v.source===c.source&&v.publishedMonth===c.month).length)
+      throw Error('Cobertura contratual diverge dos registros');
   }
   for(const record of data.contracts){
     if(!coverageKeys.has(record.source+'/'+record.publishedMonth))
@@ -113,8 +116,10 @@ export function mergeProcurement(current,scans,now=new Date()){
        !['complete','partial','unavailable'].includes(status)||
        !Number.isSafeInteger(skipped)||skipped<0)throw Error('Lote contratual inválido');
     const before=next.coverage.find(item=>item.source===source&&item.month===month);
-    if(status==='unavailable'&&before?.status==='complete')continue;
+    if(before?.status==='complete' && status!=='complete')continue;
     if(status==='unavailable'&&before?.status==='partial')continue;
+    if(status==='partial'&&before?.status==='partial'&&
+       (before.count??0)>=records.length)continue;
     if(status!=='unavailable'){
       // Apenas um lote paginado concluído pode substituir registros já publicados.
       if(status==='complete'||!before){
