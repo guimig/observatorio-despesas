@@ -127,7 +127,9 @@ export function normalizePncp(row){
   if(!PNCP_ID.test(id??'') || ![CAMPUS_CNPJ,REITORIA_CNPJ].includes(org) || !published)
     return null;
   const unit=code(row.unidadeOrgao?.codigoUnidade,25);
-  const scope=(org===CAMPUS_CNPJ || unit===CAMPUS_UG)?'campus':'ifc';
+  // scope identifica o cadastro publicador, NÃO o campus beneficiário.
+  // Contratação centralizada pelo IFC (UASG 158125) pode atender qualquer campus.
+  const scope=org===CAMPUS_CNPJ?'campus':'ifc';
   const contract={
     id:'pncp:'+id,source:'pncp',scope,orgCnpj:org,
     publishedMonth:published.slice(0,7),number:code(row.numeroContratoEmpenho,65),
