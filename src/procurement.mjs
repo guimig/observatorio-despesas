@@ -133,8 +133,10 @@ export function normalizePncp(row){
   const contract={
     id:'pncp:'+id,source:'pncp',scope,orgCnpj:org,
     publishedMonth:published.slice(0,7),number:code(row.numeroContratoEmpenho,65),
-    pncpId:id,procurementId:PNCP_ID.test(String(row.numeroControlePNCPCompra??''))?
-      row.numeroControlePNCPCompra:null,
+    pncpId:id,procurementId:
+      /^\d{14}-1-\d{6}\/20\d{2}$/.test(String(
+        row.numeroControlePncpCompra??row.numeroControlePNCPCompra??''))?
+        (row.numeroControlePncpCompra??row.numeroControlePNCPCompra):null,
     process:processo(row.processo),unitCode:unit,
     signed:iso(row.dataAssinatura),starts:iso(row.dataVigenciaInicio),
     ends:iso(row.dataVigenciaFim),amountCents:amount(row.valorGlobal)

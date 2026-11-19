@@ -131,3 +131,16 @@ A normalização reduz os registros ao identificador PNCP, número, modalidade, 
 A exibição por padrão é **indiciária**: processo SIPAC `23349` ou contratação vinculada por ID PNCP a contrato com NE confirmada de Araquari. O atributo de unidade da licitação ou o CNPJ publicador da Reitoria **não** equivale à UG executora. Todas as publicações do IFC podem ser consultadas pelo filtro explícito; a ausência de vínculo não prova inexistência de execução pelo campus.
 
 O workflow de consulta pode completar modalidades diferentes em momentos distintos; falhas nunca removem publicações anteriores. O GitHub Pages recebe o catálogo somente quando validado pela allowlist do build.
+
+
+## Cruzamento de contratos com contratações pelo ID oficial
+
+Uma sondagem publicada no PR #18 verificou que o serviço documentado `/api/pncp/v1/orgaos/{cnpj}/contratos/contratacao/{ano}/{seq}` retornou HTTP 400 nos exemplos reais testados. Em compensação, a consulta **individual de contrato** `/api/pncp/v1/orgaos/{cnpj}/contratos/{ano}/{seq}` retornou `numeroControlePncpCompra:string`, que não constava da consulta mensal resumida. Esse identificador é a chave estável para relacionar o contrato PNCP `-2-` à contratação PNCP `-1-`.
+
+O adaptador `src/pncp-contract-link.mjs` obtém apenas a identificação de compra por número PNCP do contrato, validando o identificador da resposta antes de extrair o campo de origem. Contrato com `numeroControlePNCP` divergente não é associado. Nenhuma resposta bruta, nome de favorecido ou CPF é guardado. O estado de consulta (`procurementLinkStatus`, `procurementLinkAt`) é persistido junto com `procurementId` em `data/procurement/contracts.json`.
+
+O coletor independente `src/collect-pncp-contract-links.mjs` e o workflow `vinculos-contratacoes-pncp.yml` processam lotes pequenos, validam o arquivo antes do commit e publicam a versão atualizada pelo Pages. Campos de aquisição originária sobrevivem às atualizações periódicas do catálogo somente se número, unidade e processo do instrumento permanecerem iguais. Retificações explicitamente divergentes invalidam a referência antiga e exigem nova consulta.
+
+O navegador utiliza o ID para montar ligações **contratação → contrato** e **contrato → contratação**, inclusive quando suas competências são diferentes. A interface rotula separadamente o *elo PNCP institucional* e a *evidência da UG executora*. Não se somam valores contratuais e orçamentários nem se inferem notas de empenho a partir do nome ou valor.
+
+Para a continuidade da cadeia, uma NE da UG 158459 explicitamente confirmada é necessária antes de classificar a contratação como executada por Araquari. O processo administrativo iniciado por `23349` é indício, nunca prova suficiente.

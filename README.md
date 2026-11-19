@@ -152,3 +152,14 @@ A consulta varre os **14 códigos de modalidade** oficiais, incluindo pregão el
 - **Explorador:** por padrão destaca publicações com evidência/indício de Araquari e oferece o filtro `Todas as publicações do IFC` para consulta integral do acervo da Reitoria.
 
 A rotina `Coletar editais e contratacoes diretas PNCP - IFC` executa automaticamente duas vezes por semana e pode ser iniciada em Actions, com competência opcional `AAAA-MM`. Para simular, sem consultar APIs, use `npm run pncp-notices:plan`. A publicação é feita pelo mesmo workflow GitHub Pages por Actions, somente quando o catálogo muda.
+
+
+## Vínculo oficial PNCP: contrato → contratação de origem
+
+A API de **consulta individual de contrato** (`GET /api/pncp/v1/orgaos/{cnpj}/contratos/{ano}/{sequencial}`) expõe `numeroControlePncpCompra` (grafia verificada em resposta real). Trata-se do **identificador oficial da contratação de origem**. A consulta resumida de contratos nem sempre o entrega; o serviço que lista contratos a partir de uma contratação retornou HTTP 400 nas amostras do IFC. Por isso o Observatório adota o caminho efetivamente validado, consultando detalhes de contratos existentes.
+
+A rotina `Vincular contratos às licitações pelo ID oficial PNCP` executa pequenos lotes, prioriza possíveis contratos de Araquari e salva apenas `procurementId` no mesmo `contracts.json`, com `procurementLinkStatus` (`linked`, `not_reported`, `unavailable`) e `procurementLinkAt`. Erro remoto não remove referência já confirmada; contratos sem referência informada não são convertidos em relação inventada. É possível simular com `npm run pncp-links:plan`.
+
+A interface permite navegar de contrato a licitação de origem e da licitação a seus contratos **por ID oficial PNCP**. Esse vínculo comprova a associação da publicação do contrato à contratação; **não comprova execução pela UG 158459**. Para essa conclusão continuam valendo as regras anteriores: NE da UG 158459 registrada oficialmente e conferida, seguida de indícios processuais `23349`. A busca por licitações do IFC permanece aberta a todos os campi, evitando atribuir indevidamente a Araquari os contratos centralizados pela Reitoria.
+
+A relação pode apontar a uma contratação de outra competência ainda não coletada no catálogo de editais; nesse caso é exibido o link para o registro oficial, sem fabricar dados locais. Não existe novo arquivo redundante, token, coleta de pessoa física ou consulta ao Tesouro Gerencial.
