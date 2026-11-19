@@ -1,0 +1,60 @@
+name: Publicar Observatorio - GitHub Pages
+
+# Deploy por Actions, nao a partir dos arquivos do branch Pages.
+# workflow_call permite publicar apos coleta feita pelo GITHUB_TOKEN:
+# esse push nao dispara workflows configurados com on: push.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publicar-pages.yml'
+      - 'index.html'
+      - '.nojekyll'
+      - 'assets/**'
+      - 'data/**'
+      - 'src/**'
+      - 'package.json'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: observatorio-pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout do ultimo estado da main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar testes e integridade dos dados publicos
+        run: |
+          npm test
+          npm run check:data
+      - name: Empacotar somente interface e JSONs permitidos
+        run: npm run build:site
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Enviar artefato imutavel para Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./dist
+      - name: Publicar nova versao
+        id: deployment
+        uses: actions/deploy-pages@v4
