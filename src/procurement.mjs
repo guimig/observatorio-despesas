@@ -169,9 +169,12 @@ export function normalizeCompras(row){
     .filter(([,v])=>v!==null&&v!==undefined)));
 }
 function pages(body){
+  // PNCP publica `data`; Compras.gov.br publica `resultado`.
+  // Alguns retornos intermediários usam `dados`; aceitar apenas listas.
   if(!body || typeof body!=='object' || Array.isArray(body) ||
-    !Array.isArray(body.dados) && !Array.isArray(body.resultado))throw Error('Envelope de paginação inválido');
-  const rows=body.dados??body.resultado;
+     ![body.data,body.dados,body.resultado].some(Array.isArray))
+    throw Error('Envelope de paginação inválido');
+  const rows=[body.data,body.dados,body.resultado].find(Array.isArray);
   const total=Number(body.totalPaginas);
   if(!Number.isSafeInteger(total)||total<0||total>1000)throw Error('Contagem de páginas desconhecida');
   return {rows,total};
