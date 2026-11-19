@@ -1,0 +1,31 @@
+name: Diagnosticar pagamentos e itens CGU (somente estrutura)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnostico-relacoes-cgu.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspecionar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar codigo sem credencial
+        run: |
+          node --check src/inspect-relations-cgu.mjs
+          npm test
+      - name: Consultar somente estrutura dos dados
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/inspect-relations-cgu.mjs
