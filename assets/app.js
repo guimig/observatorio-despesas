@@ -109,10 +109,10 @@ function renderQuality() {
 function formatCnpj(value) {
   return /^\d{14}$/.test(value || '') ? value.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : value;
 }
-function beneficiaryLabel(doc) {
+function beneficiaryLabel(doc, monthData = state.data) {
   if (doc.cpfMasked) return 'Pessoa física · CPF ' + doc.cpfMasked;
   if (!doc.partyRef) return 'Não identificado';
-  const name = state.data.beneficiaries?.[doc.partyRef] || 'Pessoa jurídica';
+  const name = monthData.beneficiaries?.[doc.partyRef] || 'Pessoa jurídica';
   return name + ' · CNPJ ' + formatCnpj(doc.partyRef);
 }
 function filteredDocuments() {
@@ -165,7 +165,26 @@ function renderTable() {
     body.append(row);
   });
 }
-function showDocument(doc) {
+async function locateLinkedDocument(id) {
+  const cached = [...cache.values()];
+  for(const data of cached) {
+    const doc=data.documents.find(entry=>entry.id===id);
+    if(doc) return {doc,data};
+  }
+  for(const month of [...state.manifest.months].sort().reverse()){
+    if(cache.has(month))continue;
+    const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
+    if(!response.ok)continue;
+    const data=await response.json();
+    if(data?.schema_version!==1||data.unit!=='158459'||data.month!==month||
+      !Array.isArray(data.documents)||!Array.isArray(data.relations))continue;
+    cache.set(month,data);
+    const doc=data.documents.find(entry=>entry.id===id);
+    if(doc)return {doc,data};
+  }
+  return null;
+}
+function showDocument(doc, monthData = state.data) {
   $('dialog-title').textContent = doc.id;
   const fields = $('dialog-fields');
   fields.replaceChildren();
@@ -173,36 +192,91 @@ function showDocument(doc) {
     ['Documento SIAFI', doc.id], ['Fase', phaseNames[doc.phase] || 'Outra'],
     ['Data de emissão', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
     ['Unidade gestora', '158459 · IFC Araquari'],
-    ['Favorecido', beneficiaryLabel(doc)], ['Processo administrativo', doc.process || 'Não informado'],
+    ['Favorecido', beneficiaryLabel(doc,monthData)],
+    ['Processo administrativo', doc.process || 'Não informado'],
     ['Grupo de despesa', doc.nature?.group || 'Não informado'],
     ['Elemento', doc.nature?.element || 'Não informado'],
     ['Programa', doc.nature?.program || 'Não informado'],
     ['Ação orçamentária', doc.nature?.action || 'Não informada'],
+    ['Consulta de vínculos',doc.phase===3
+      ?(doc.paymentLinksChecked?'Concluída nesta base':'Aguardando enriquecimento')
+      :doc.phase===2?'Vínculos de liquidação conforme dados publicados':'Conforme documentos disponíveis'],
     ['Fonte', 'CGU / Portal da Transparência']
   ];
-  entries.forEach(([label, value]) => {
-    const group = element('div');
-    group.append(element('dt', '', label), element('dd', '', value));
+  for(const [label,value] of entries) {
+    const group=element('div');
+    group.append(element('dt','',label),element('dd','',value));
     fields.append(group);
-  });
-  const relations = state.data.relations.filter(relation =>
-    relation.from === doc.id || relation.to === doc.id);
-  const list = $('dialog-relations');
-  list.replaceChildren();
-  if (!relations.length) {
-    list.append(element('p', 'small-muted', 'Nenhum vínculo documentado neste mês.'));
-  } else {
-    relations.forEach(relation => {
-      const item = element('div', 'relation-item');
-      const associated = relation.from === doc.id ? relation.to : relation.from;
-      item.append(element('span', 'small-muted',
-        relation.from === doc.id ? 'Empenho relacionado' : 'Documento NS relacionado'));
-      item.append(element('span', 'doc-code', associated));
-      item.append(element('strong', '', 'Valor do vínculo: ' + fmtMoney(relation.cents)));
-      list.append(item);
-    });
   }
-  $('document-dialog').showModal();
+  const relationsMap=new Map();
+  for(const loaded of cache.values()) {
+    for(const relation of loaded.relations) {
+      if(relation.from!==doc.id && relation.to!==doc.id)continue;
+      relationsMap.set(relation.from+'/'+relation.to,relation);
+    }
+  }
+  const list=$('dialog-relations');
+  list.replaceChildren();
+  if(!relationsMap.size) {
+    list.append(element('p','small-muted',doc.phase===3 && !doc.paymentLinksChecked
+      ?'Vínculos deste pagamento ainda não consultados pelo coletor incremental.'
+      :'Nenhum vínculo identificado nos meses já carregados.'));
+  } else {
+    for(const relation of relationsMap.values()) {
+      const item=element('div','relation-item');
+      const from=relation.from===doc.id;
+      const associated=from?relation.to:relation.from;
+      const isPayment=/20\d{2}(?:OB|DF|DR|GP)\d{6}$/.test(relation.from);
+      const label=from?'Empenho impactado':
+        (isPayment?'Pagamento relacionado':'Liquidação relacionada');
+      item.append(element('span','small-muted',label));
+      const button=element('button','relation-link doc-code',associated);
+      button.type='button';
+      button.title='Consultar ficha do documento relacionado';
+      button.addEventListener('click',async()=>{
+        button.disabled=true;
+        button.textContent='Localizando documento…';
+        try{
+          const found=await locateLinkedDocument(associated);
+          if(found)showDocument(found.doc,found.data);
+          else button.textContent='Documento ainda não coletado';
+        }catch{
+          button.textContent='Consulta do acervo indisponível';
+        }finally{
+          button.disabled=false;
+        }
+      });
+      item.append(button,element('strong','', 'Valor vinculado: '+fmtMoney(relation.cents)));
+      list.append(item);
+    }
+  }
+  const itemSection=$('dialog-items-section');
+  itemSection.hidden=doc.phase!==1;
+  const details=$('dialog-items');
+  details.replaceChildren();
+  if(doc.phase===1) {
+    const items=monthData.itemsByDocument?.[doc.id];
+    if(!Array.isArray(items)) {
+      details.append(element('p','small-muted','Itens aguardando consulta incremental da CGU.'));
+    } else if(!items.length) {
+      details.append(element('p','small-muted','Consulta concluída: nenhum item disponível para esta NE.'));
+    } else {
+      for(const value of items) {
+        const block=element('div','relation-item');
+        block.append(element('strong','','Item '+value.seq+' · '+(value.description||value.subdesc||value.code||'Descrição não divulgada')));
+        if(value.subdesc||value.sub) {
+          block.append(element('span','small-muted',
+            'Subelemento: '+(value.subdesc||'Não informado')+
+            (value.sub?' ('+value.sub+')':'')));
+        }
+        block.append(element('span','small-muted','Valor atual: '+
+          (Number.isSafeInteger(value.cents)?fmtMoney(value.cents):'Indisponível')));
+        details.append(block);
+      }
+    }
+  }
+  const dialog=$('document-dialog');
+  if(!dialog.open)dialog.showModal();
 }
 function refreshFilters() {
   state.page = 0;
