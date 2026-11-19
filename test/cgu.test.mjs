@@ -139,3 +139,41 @@ test('coleta por datas explícitas rejeita datas inexistentes e duplicadas', asy
     token: 'fake', dates: ['03/10/2026', '03/10/2026'], getDocuments: async () => []
   }));
 });
+
+
+test('CGU pessoa jurídica fornece CNPJ e nome, processo e classificação sanitizados', () => {
+  const doc = normalizeDocument({
+    codigoUg: '158459', documento: '158459000012026NE000002', valor: '150,00',
+    codigoFavorecido: '12.345.678/0001-90', nomeFavorecido: 'Empresa Exemplo Ltda.',
+    numeroProcesso: '23349.000123/2026-01',
+    grupo: 'Outras Despesas Correntes', elemento: 'Serviços de Terceiros',
+    programa: 'Educação Profissional', acao: 'Ação Teste',
+    observacao: 'Não publicar uma observação integral com dados pessoais'
+  }, '18/11/2026', 1);
+  assert.deepEqual(doc.beneficiary, {
+    type: 'pj', id: '12345678000190', name: 'Empresa Exemplo Ltda.'
+  });
+  assert.equal(doc.process, '23349.000123/2026-01');
+  assert.equal(doc.nature.group, 'Outras Despesas Correntes');
+  assert.equal(doc.nature.action, 'Ação Teste');
+  assert.equal(JSON.stringify(doc).includes('Não publicar uma observação'), false);
+});
+test('CGU pessoa física jamais divulga nome nem CPF completo', () => {
+  const doc = normalizeDocument({
+    codigoUg: '158459', documento: '158459000012026OB000002', valor: '9,99',
+    codigoFavorecido: '000.123.456-78', nomeFavorecido: 'PESSOA NÃO PUBLICÁVEL',
+    numeroProcesso: 'CPF 000.123.456-78'
+  }, '18/11/2026', 3);
+  assert.deepEqual(doc.beneficiary, { type: 'pf', id: '***.123.456-**' });
+  assert.equal(doc.process, undefined);
+  assert.equal(JSON.stringify(doc).includes('000.123.456-78'), false);
+  assert.equal(JSON.stringify(doc).includes('PESSOA NÃO PUBLICÁVEL'), false);
+});
+test('favorecido de código ambíguo não gera falsa identificação', () => {
+  const doc = normalizeDocument({
+    codigoUg: '158459', documento: '158459000012026OB000003',
+    codigoFavorecido: '00012345', nomeFavorecido: 'NOME RESTRITO', valor: '1,00'
+  }, '18/11/2026', 3);
+  assert.equal(doc.beneficiary, undefined);
+  assert.equal(JSON.stringify(doc).includes('NOME RESTRITO'), false);
+});
