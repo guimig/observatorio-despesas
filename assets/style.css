@@ -44,3 +44,8 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 #notices-section .contracts-table td:nth-child(4){min-width:190px;max-width:340px}
 #notices-section .contracts-table td:nth-child(5){min-width:185px}
 #notices-coverage{font-size:.82rem;margin-bottom:17px}
+
+/* A tabela de licitações distingue contratos formais e instrumentos substitutivos. */
+#notices-section .contracts-table td:nth-child(3) span{display:block;margin-top:6px;max-width:260px}
+#contract-types-summary{margin:0 0 14px;line-height:1.55}
+#procurement-section .contracts-table td:nth-child(3){white-space:nowrap}

@@ -1,5 +1,7 @@
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import { MODALITIES } from './pncp-modalities.js';
+import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
+import { documentSpecies,financialPhaseDescription } from './document-species.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -234,7 +236,7 @@ function showContractAssociations(doc){
     slot.append(element('p','small-muted','Catálogo de contratos ainda não disponível.'));
     return;
   }
-  const matches=procurementData.contracts.map(contract=>
+  const matches=procurementData.contracts.filter(isFormalContract).map(contract=>
     ({contract,evidence:matchDocumentContract(doc,contract)}))
     .filter(item=>item.evidence)
     .sort((a,b)=>(a.evidence.level==='confirmed'?0:1)-
@@ -278,7 +280,9 @@ function showDocument(doc, monthData = state.data) {
   const fields = $('dialog-fields');
   fields.replaceChildren();
   const entries = [
-    ['Documento SIAFI', doc.id], ['Fase', phaseNames[doc.phase] || 'Outra'],
+    ['Documento SIAFI', doc.id],
+    ['Espécie do documento', documentSpecies(doc).label],
+    ['Fase de divulgação', financialPhaseDescription(doc.phase)],
     ['Data de emissão', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
     ['Unidade gestora', '158459 · IFC Araquari'],
     ['Favorecido', beneficiaryLabel(doc,monthData)],
@@ -505,6 +509,7 @@ async function init() {
 function filteredContracts(){
   if(!procurementData)return [];
   return procurementData.contracts.filter(contract=>{
+    if(!isFormalContract(contract))return false;
     if(contractsState.source!=='all'&&contract.source!==contractsState.source)return false;
     if(contractsState.scope!=='all'&&contract.scope!==contractsState.scope)return false;
     const evidence=campusEvidence(contract);
@@ -524,8 +529,9 @@ function renderContracts(){
   contractsState.page=Math.min(Math.max(contractsState.page,0),totalPages-1);
   const rows=all.slice(contractsState.page*contractsPerPage,
     (contractsState.page+1)*contractsPerPage);
+  const formal=procurementData.contracts.filter(isFormalContract).length;
   $('contract-count').textContent=fmtCount(all.length)+' de '+
-    fmtCount(procurementData.contracts.length)+' instrumentos IFC';
+    fmtCount(formal)+' contratos formais no acervo IFC';
   $('contract-pages').textContent='Página '+(contractsState.page+1)+' de '+totalPages;
   $('contract-prev').disabled=contractsState.page===0;
   $('contract-next').disabled=contractsState.page>=totalPages-1;
@@ -592,9 +598,16 @@ function renderContractCoverage(){
   });
   const incomplete=coverages.some(c=>c.status!=='complete');
   $('contract-coverage').className='notice'+(incomplete?' warning':' success');
+  const totals=summarizeInstrumentTypes(procurementData.contracts);
+  $('contract-types-summary').textContent=fmtCount(totals.formal)+' contrato(s) formal(is) · '+
+    fmtCount(totals.commitments)+' nota(s) de empenho substitutiva(s) separadas da tabela'+
+    (totals.other||totals.unclassified?
+      ' · '+fmtCount(totals.other+totals.unclassified)+' instrumento(s) não classificados como termo de contrato':'')+
+    '. Total da coleção PNCP/Compras: '+fmtCount(procurementData.contracts.length)+
+    ' instrumento(s). Sem somar valores entre cadastros.';
   $('contract-coverage').textContent=labels.join(' · ')+
-    '. Por padrão são exibidos apenas instrumentos com evidência de Araquari; '+
-    'consulte todos os contratos do IFC alterando o filtro. Processos podem conter erros manuais.';
+    '. A seção abaixo mostra apenas contratos formais. Por padrão, destaca somente '+
+    'os que possuem evidências de Araquari. Processos e publicações podem ser incompletos.';
 }
 async function initProcurement(){
   $('procurement-section').hidden=false;
@@ -638,6 +651,7 @@ async function initProcurement(){
     renderContracts();
   }catch{
     procurementData={contracts:[],coverage:[]};
+    $('contract-types-summary').textContent='Aguardando classificação das espécies contratuais.';
     $('contract-coverage').textContent=
       'Aguardando primeira sincronização PNCP/Compras.gov; nenhuma contratação foi presumida.';
     $('contract-coverage').className='notice warning';
@@ -695,27 +709,38 @@ function renderNotices() {
       link.href=url;link.rel='noopener noreferrer';link.target='_blank';
       docCell.append(link);
     }else docCell.append(element('span','doc-code',notice.number||notice.pncpId));
-    const linked=(procurementData?.contracts||[])
-      .filter(contract=>contract.procurementId===notice.pncpId);
+    const linked=groupPublishedInstruments(procurementData?.contracts||[],notice.pncpId);
     const related=element('td','');
-    if(linked.length) {
+    if(linked.formal.length) {
       const button=element('button','relation-link',
-        linked.length+' contrato(s) · vínculo PNCP');
+        linked.formal.length+' contrato(s) formal(is)');
       button.type='button';
-      button.title='Relação entre contratação e contrato pelo identificador oficial do PNCP; não comprova execução por Araquari';
+      button.title='Vínculo entre a contratação e os termos de contrato pelo ID PNCP. Não equivale à nota de empenho da UG 158459.';
       button.addEventListener('click',()=>{
         contractsState.query=notice.pncpId.toLowerCase();
         contractsState.attribution='all';
+        contractsState.source='all';
+        contractsState.scope='all';
         contractsState.page=0;
         $('contract-search').value=notice.pncpId;
+        $('contract-source').value='all';
+        $('contract-scope').value='all';
         $('contract-attribution').value='all';
         renderContracts();
         $('procurement-section').scrollIntoView({behavior:'smooth',block:'start'});
       });
       related.append(button);
-    }else {
+    }
+    if(linked.commitments.length){
       related.append(element('span','small-muted',
-        'Sem contrato vinculado no catálogo consultado'));
+        fmtCount(linked.commitments.length)+' empenho(s) substitutivo(s) no PNCP — não são contratos formais'));
+    }
+    if(linked.other.length||linked.unclassified.length){
+      related.append(element('span','small-muted',
+        fmtCount(linked.other.length+linked.unclassified.length)+' outro(s) instrumento(s) sujeito(s) à classificação'));
+    }
+    if(!linked.formal.length&&!linked.commitments.length&&!linked.other.length&&!linked.unclassified.length){
+      related.append(element('span','small-muted','Nenhum instrumento registrado na fonte consultada'));
     }
     const process=element('td','doc-code',notice.process||'—');
     const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
