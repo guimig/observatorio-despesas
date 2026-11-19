@@ -16,6 +16,8 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'app.js'), 'console.log("ok");');
     await writeFile(join(root, 'assets', 'procurement-links.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'pncp-modalities.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'instrument-types.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'document-species.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'style.css'), 'body{}');
     await writeFile(join(root, 'data', 'manifest.json'), JSON.stringify({
       schema_version: 1, unit: '158459', status: 'aguardando_primeira_coleta', months: []
@@ -58,6 +60,8 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','app.js'),'');
     await writeFile(join(root,'assets','procurement-links.js'),'');
     await writeFile(join(root,'assets','pncp-modalities.js'),'');
+    await writeFile(join(root,'assets','instrument-types.js'),'');
+    await writeFile(join(root,'assets','document-species.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
     await mkdir(join(root,'data','months'),{recursive:true});
     await writeFile(join(root,'data','manifest.json'),JSON.stringify({
@@ -83,7 +87,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','pncp-modalities.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','pncp-modalities.js','instrument-types.js','document-species.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
