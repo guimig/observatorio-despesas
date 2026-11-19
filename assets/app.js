@@ -27,6 +27,26 @@ function monthName(month) {
   const date = new Date(month + '-15T12:00:00Z');
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
+function expectedDaysInMonth(month, now = new Date()) {
+  const monthParts = month.split('-').map(Number);
+  const max = new Date(Date.UTC(monthParts[0], monthParts[1], 0)).getUTCDate();
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(now).map(part => [part.type, part.value]));
+  const todayMonth = parts.year + '-' + parts.month;
+  if (month > todayMonth) return 0;
+  if (month === todayMonth) return Math.max(0, Math.min(max, Number(parts.day) - 1));
+  return max;
+}
+function validDayCount() {
+  const byDay = new Map();
+  for (const coverage of state.data.coverage) {
+    if (!byDay.has(coverage.date)) byDay.set(coverage.date, new Map());
+    byDay.get(coverage.date).set(coverage.phase, coverage);
+  }
+  return [...byDay.values()].filter(phases =>
+    [1, 2, 3].every(phase => phases.get(phase)?.complete && phases.get(phase)?.invalid === 0)).length;
+}
 function summarize(phase) {
   const coverage = state.data.coverage.filter(entry => entry.phase === phase);
   const documents = state.data.documents.filter(doc => doc.phase === phase);
@@ -44,7 +64,8 @@ function renderStats() {
     $('amount-' + phase).textContent = fmtMoney(stat.sum);
     const prefix = stat.complete ? '' : 'Pelo menos ';
     $('count-' + phase).textContent = prefix + fmtCount(stat.count) +
-      ' documento(s)' + (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponíveis' : '');
+      ' documento(s) nas datas consultadas' +
+      (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponível(is)' : '');
   });
   const valid = stats.filter(s => Number.isSafeInteger(s.sum));
   const max = Math.max(1, ...valid.map(s => Math.abs(s.sum)));
@@ -68,15 +89,22 @@ function renderQuality() {
   const coverages = state.data.coverage;
   const partial = coverages.filter(c => !c.complete);
   const invalid = coverages.reduce((n, c) => n + c.invalid, 0);
-  $('days-covered').textContent = fmtCount(new Set(coverages.map(c => c.date)).size);
+  const expected = expectedDaysInMonth(state.month);
+  const validDays = validDayCount();
+  const missing = Math.max(0, expected - validDays);
+  $('days-covered').textContent = fmtCount(validDays) + '/' + fmtCount(expected);
   $('incomplete-count').textContent = fmtCount(partial.length);
   $('invalid-count').textContent = fmtCount(invalid);
   $('relations-count').textContent = fmtCount(state.data.relations.length);
-  const hasIssues = partial.length > 0 || invalid > 0;
-  $('coverage-chip').textContent = hasIssues ? 'Cobertura com ressalvas' : 'Consultas documentais completas';
+  const hasIssues = partial.length > 0 || invalid > 0 || missing > 0;
+  $('coverage-chip').textContent = hasIssues
+    ? 'Cobertura parcial da competência' : 'Competência integralmente consultada';
   status(hasIssues
-    ? 'Acervo publicado com ressalvas: consultas incompletas ou valores ausentes são identificados. Não interpretar a ausência como zero.'
-    : 'Consulta documental publicada e validada. Valores ainda não conciliados com sistemas contábeis.', hasIssues ? 'warning' : 'success');
+    ? 'Competência com cobertura parcial: ' + validDays + ' de ' + expected +
+      ' dias encerrados com três fases completas. ' + missing +
+      ' dia(s) ainda precisam de cobertura válida; totais exibidos se referem somente às datas já consultadas.'
+    : 'Todos os dias encerrados da competência têm consulta documental completa. Valores não conciliados com sistemas contábeis.',
+    hasIssues ? 'warning' : 'success');
 }
 function filteredDocuments() {
   return state.data.documents.filter(doc => {
