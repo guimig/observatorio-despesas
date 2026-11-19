@@ -4,7 +4,7 @@ Aplicação pública independente para consulta e rastreabilidade de documentos 
 
 ## Situação
 
-Projeto em implantação por etapas. Primeiro módulo: documentos de empenho, liquidação e pagamento do **Portal da Transparência/CGU**, com armazenamento mensal incremental, controle de cobertura, testes e interface estática. Dados do SIOP, SIDRA, PNCP, Compras.gov.br e fontes complementares serão integrados progressivamente.
+Projeto em implantação por etapas. Primeiro módulo: documentos de empenho, liquidação e pagamento do **Portal da Transparência/CGU**, com armazenamento mensal incremental, controle de cobertura, testes e interface estática. A primeira expansão inclui identificação segura de favorecidos, processos e classificação da despesa. Dados do SIOP, SIDRA, PNCP, Compras.gov.br e fontes complementares serão integrados progressivamente.
 
 O projeto não consulta, altera nem substitui os relatórios do Tesouro Gerencial e não depende do EmailBackupHub. Nenhum dado histórico é considerado completo antes da coleta e da validação correspondentes.
 
@@ -12,6 +12,8 @@ O projeto não consulta, altera nem substitui os relatórios do Tesouro Gerencia
 
 - **CPF sempre mascarado:** `***.123.456-**` (somente os seis dígitos centrais). Nunca versionar ou publicar CPF integral.
 - CPF mascarado não é chave única de pessoa; dados pessoais devem ser minimizados.
+- Pessoa jurídica: CNPJ e denominação pública registrados em catálogo mensal sem duplicação por documento. Pessoa física: somente CPF mascarado; nomes não são persistidos.
+- Observações textuais livres da CGU ainda não são publicadas, por poderem conter outros identificadores pessoais.
 - Não gravar respostas brutas das APIs, tokens, `.env` ou logs com dados pessoais.
 - Identificadores de documentos SIAFI e relações entre documentos devem ser validados.
 - O token da CGU deve ser salvo **neste repositório** como GitHub Actions repository secret `CGU_API_KEY`; Secrets de outros repositórios não são compartilhados.
@@ -62,14 +64,14 @@ BACKFILL_MONTH=2026-10 BACKFILL_DAYS=3 npm run backfill:plan
 
 - `src/`: adaptador CGU, normalização, privacidade, armazenamento incremental e validação
 - `test/`: testes automatizados de coleta, esquema, idempotência e privacidade
-- `data/`: somente dados públicos normalizados e minimizados
+- `data/`: somente dados públicos normalizados e minimizados; catálogo de CNPJ por competência
 - `assets/`: interface da aplicação
 - `.github/workflows/`: CI de validação e coleta isolada
 
 ## Desenvolvimento
 
 1. Fundação, ingestão CGU e consulta documental (em desenvolvimento).
-2. Vínculos NE–NS–pagamentos e fichas detalhadas.
+2. Vínculos NE–NS–pagamentos, fichas detalhadas e enriquecimento por favorecido e processo (primeira versão implementada).
 3. Favorecidos, processos, itens, PNCP/Compras.gov.br e índices SIOP/SIDRA.
 4. Séries históricas completas, relatórios, qualidade e exportações.
 
