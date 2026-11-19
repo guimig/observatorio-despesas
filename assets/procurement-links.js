@@ -114,3 +114,26 @@ export function assessContractAttribution(contract, documents = []) {
   }
   return {level:'unverified',reason:'Sem NE vinculada ou processo que identifique a UG 158459'};
 }
+
+
+/** Uma licitação PNCP centralizada não é do campus por constar UG publicadora.
+ * A atribuição é confirmada apenas quando um contrato da própria contratação
+ * tem NE comprovada da UG 158459.
+ */
+export function assessNoticeAttribution(notice,contracts=[],documents=[]) {
+  if(!notice)return {level:'unverified',reason:'Contratação sem identificador PNCP'};
+  const related=contracts.filter(contract=>contract.procurementId &&
+    contract.procurementId===notice.pncpId);
+  if(related.some(contract=>
+    assessContractAttribution(contract,documents).level==='confirmed')) {
+    return {level:'confirmed',reason:'Contratação ligada a contrato com NE confirmada da UG 158459'};
+  }
+  if(isAraquariProcess(notice.process)) {
+    return {level:'process_indication',reason:'Processo SIPAC 23349: origem provável, digitada manualmente'};
+  }
+  if(related.some(contract=>
+    assessContractAttribution(contract,documents).level!=='unverified')) {
+    return {level:'context',reason:'Contratação relacionada a contrato com indícios de Araquari'};
+  }
+  return {level:'unverified',reason:'Edital publicado pela Reitoria, campus beneficiário não identificado'};
+}

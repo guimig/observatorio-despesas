@@ -120,3 +120,14 @@ A API de integração PNCP `/api/pncp/v1/orgaos/{cnpj}/contratos/{ano}/{sequenci
 O processo SIPAC iniciado por `23349` é forte **indício** de origem local, mas não é comprovação de execução de contrato e não deve ser único filtro. Há contratações centralizadas excepcionais que podem atender Araquari com processos de outros prefixos; essas surgirão por NE integral, mesmo sem `23349`.
 
 Licitações e contratações diretas têm coleção própria no PNCP: `/api/consulta/v1/contratacoes/publicacao`. Isso deverá ser integrado por modalidade (pregão eletrônico/presencial, concorrência, concurso, diálogo competitivo, dispensa, inexigibilidade, etc.), com filtro de Reitoria para obtenção e atribuição individual por NE/processo, jamais pelo publicador.
+
+
+## Publicações de licitações e contratações diretas PNCP
+
+O catálogo `data/procurement/notices.json` é independente dos contratos e do financeiro CGU. A coleta utiliza `/api/consulta/v1/contratacoes/publicacao` com os códigos oficiais das **14 modalidades** e CNPJ publicador da Reitoria `10635424000186`. Cada competência/modalidade mantém cobertura própria (`complete`, `partial`, `unavailable`), com falha de API tratada explicitamente.
+
+A normalização reduz os registros ao identificador PNCP, número, modalidade, processo, objeto público sanitizado, valores estimado/homologado em centavos, situação, indicador SRP, data e unidade informada pela fonte. Não se armazenam respostas completas ou dados pessoais.
+
+A exibição por padrão é **indiciária**: processo SIPAC `23349` ou contratação vinculada por ID PNCP a contrato com NE confirmada de Araquari. O atributo de unidade da licitação ou o CNPJ publicador da Reitoria **não** equivale à UG executora. Todas as publicações do IFC podem ser consultadas pelo filtro explícito; a ausência de vínculo não prova inexistência de execução pelo campus.
+
+O workflow de consulta pode completar modalidades diferentes em momentos distintos; falhas nunca removem publicações anteriores. O GitHub Pages recebe o catálogo somente quando validado pela allowlist do build.

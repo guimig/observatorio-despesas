@@ -127,6 +127,52 @@
       </section>
     </section>
 
+    <section id="notices-section" class="panel explorer" hidden aria-labelledby="notices-title">
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">PNCP · REITORIA UASG 158125</div>
+          <h2 id="notices-title">Licitações e contratações diretas</h2>
+          <p class="small-muted">Pregões, concorrências, dispensas, inexigibilidades e demais modalidades publicadas centralmente pelo IFC.</p>
+        </div>
+        <span class="pill pill-outline" id="notices-count">Aguardando consulta</span>
+      </div>
+      <p id="notices-coverage" role="status" aria-live="polite" class="notice">Verificando publicações oficiais…</p>
+      <div class="filters">
+        <label class="filter"><span>Objeto, número ou processo</span>
+          <input id="notices-search" type="search" placeholder="Pesquisar edital ou processo" autocomplete="off"></label>
+        <label class="filter"><span>Modalidade</span>
+          <select id="notices-modality"><option value="all">Todas as modalidades</option></select>
+        </label>
+        <label class="filter"><span>Evidência de Araquari</span>
+          <select id="notices-attribution">
+            <option value="likely">Com indícios de Araquari</option>
+            <option value="confirmed">Vínculo por NE confirmada</option>
+            <option value="all">Todas as publicações do IFC</option>
+            <option value="unverified">Sem indicação de campus</option>
+          </select>
+        </label>
+        <button type="button" class="button button-ghost" id="notices-reset">Limpar</button>
+      </div>
+      <div class="table-scroll">
+        <table class="contracts-table">
+          <thead>
+            <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th>
+              <th scope="col">Processo SIPAC</th><th scope="col">Objeto</th>
+              <th scope="col">Evidência de Araquari</th><th scope="col" class="align-right">Valor estimado</th></tr>
+          </thead>
+          <tbody id="notices-rows"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="notices-page-info" class="small-muted"></span>
+        <div class="page-actions">
+          <button class="button button-secondary" id="notices-prev" type="button">Anterior</button>
+          <button class="button button-secondary" id="notices-next" type="button">Próxima</button>
+        </div>
+      </div>
+      <p class="helper">A publicação centralizada é feita pela Reitoria, sem identificar automaticamente o campus atendido. O processo iniciado por 23349 é um indício secundário e não substitui a NE oficial emitida pela UG 158459. A ausência de contrato ou empenho no acervo não significa ausência de licitação.</p>
+    </section>
+
     <section id="procurement-section" class="panel explorer" hidden aria-labelledby="procurement-title">
       <div class="panel-heading">
         <div>

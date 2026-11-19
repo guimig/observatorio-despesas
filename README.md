@@ -138,3 +138,17 @@ O PNCP possui a consulta pública `GET /api/pncp/v1/orgaos/{cnpj}/contratos/{ano
 Para simular a próxima busca, execute `npm run pncp-ne:plan`. Nenhum novo token é necessário.
 
 **Atenção:** a API PNCP também publica licitações, dispensas e inexigibilidades na coleção separada `/v1/contratacoes/publicacao`. O fato de uma contratação não possuir contrato registrado não significa que ela não exista. A coleta dessa coleção será um módulo próprio, usando os mesmos graus de evidência e abrangendo todas as modalidades publicadas, não apenas contratos.
+
+
+## Licitações e contratações diretas publicadas pela Reitoria
+
+Além dos contratos e empenhos, o Observatório possui um coletor próprio da coleção de **contratações publicadas** no PNCP (`/api/consulta/v1/contratacoes/publicacao`). A Reitoria utiliza a UASG **158125** como publicadora centralizada, portanto o catálogo não associa automaticamente a compra a Araquari.
+
+A consulta varre os **14 códigos de modalidade** oficiais, incluindo pregão eletrônico e presencial, concorrência eletrônica e presencial, diálogo competitivo, concurso, dispensa de licitação, inexigibilidade, credenciamento, pré-qualificação, leilões e inaplicabilidade. O endpoint exige o código da modalidade; uma única requisição não cobre todas as modalidades.
+
+- **Retenção mínima:** `data/procurement/notices.json` com ID PNCP, número da contratação, modalidade, processo, objeto sanitizado, valor estimado e homologado, situação, SRP e mês; sem respostas brutas nem duplicação de contratos da CGU.
+- **Cobertura explícita:** cada mês/modalidade é identificado como completo, parcial ou indisponível. HTTP de falha não significa que não existam publicações.
+- **Identificação subsidiária de Araquari:** `23349` indica origem provável. Uma contratação pode ser associada com maior confiança quando um contrato PNCP vinculado tiver NE confirmada da UG 158459. A ausência de processo `23349` **não exclui** contratações centralizadas excepcionais.
+- **Explorador:** por padrão destaca publicações com evidência/indício de Araquari e oferece o filtro `Todas as publicações do IFC` para consulta integral do acervo da Reitoria.
+
+A rotina `Coletar editais e contratacoes diretas PNCP - IFC` executa automaticamente duas vezes por semana e pode ser iniciada em Actions, com competência opcional `AAAA-MM`. Para simular, sem consultar APIs, use `npm run pncp-notices:plan`. A publicação é feita pelo mesmo workflow GitHub Pages por Actions, somente quando o catálogo muda.

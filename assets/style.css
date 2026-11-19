@@ -35,3 +35,12 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 .contracts-table .beneficiary-cell{white-space:normal;overflow-wrap:anywhere}
 #contract-coverage{font-size:.82rem;margin-bottom:17px}
 #dialog-contracts .relation-item{border-left:3px solid var(--brand)}
+
+/* Editais e licitações centralizados pelo IFC, sem atribuição presumida a campi. */
+#notices-section{margin-top:22px}
+#notices-section .panel-heading{margin-bottom:16px}
+#notices-section .eyebrow{margin-bottom:6px}
+#notices-section .contracts-table{min-width:1030px}
+#notices-section .contracts-table td:nth-child(4){min-width:190px;max-width:340px}
+#notices-section .contracts-table td:nth-child(5){min-width:185px}
+#notices-coverage{font-size:.82rem;margin-bottom:17px}

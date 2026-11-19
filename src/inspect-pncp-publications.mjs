@@ -3,14 +3,8 @@ import {fileURLToPath} from 'node:url';
 import {structuralFields} from './inspect-cgu.mjs';
 import {requestPublicJSON,HttpFailure,REITORIA_CNPJ} from './procurement.mjs';
 
-export const MODALITIES=Object.freeze({
-  1:'Leilão - Eletrônico',2:'Diálogo Competitivo',3:'Concurso',
-  4:'Concorrência - Eletrônica',5:'Concorrência - Presencial',
-  6:'Pregão - Eletrônico',7:'Pregão - Presencial',
-  8:'Dispensa de Licitação',9:'Inexigibilidade',
-  10:'Manifestação de Interesse',11:'Pré-qualificação',
-  12:'Credenciamento',13:'Leilão - Presencial',14:'Inaplicabilidade'
-});
+import {MODALITIES} from '../assets/pncp-modalities.js';
+export {MODALITIES};
 export function publicationUrl(modality,start='20261101',end='20261118',page=1){
   if(!Object.hasOwn(MODALITIES,modality)||
      !/^\d{8}$/.test(start)||!/^\d{8}$/.test(end)||
