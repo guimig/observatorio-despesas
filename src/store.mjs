@@ -3,9 +3,11 @@ import { readFile, writeFile, mkdir, rename, readdir, unlink } from 'node:fs/pro
 import { join } from 'node:path';
 import { assertPublicSafe } from './privacy.mjs';
 import { UG } from './cgu.mjs';
+import { publicItemDescription } from './enrich-cgu.mjs';
 
 export const VERSION = 1;
 const DOCUMENT_RE = /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
+const NE_RE = /^158459\d{5}20\d{2}NE\d{6}$/;
 const MONTH_RE = /^20\d{2}-(0[1-9]|1[0-2])$/;
 const DATE_RE = /^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/;
 const phases = new Set([1, 2, 3]);
@@ -30,7 +32,7 @@ function validId(id) { return typeof id === 'string' && DOCUMENT_RE.test(id); }
 export function validateMonth(data) {
   assertPublicSafe(data);
   assertAllowedKeys(data, ['schema_version', 'unit', 'month', 'source',
-    'documents', 'relations', 'coverage', 'beneficiaries', 'updated_at']);
+    'documents', 'relations', 'coverage', 'beneficiaries', 'itemsByDocument', 'updated_at']);
   if (data.schema_version !== VERSION || data.unit !== UG || !MONTH_RE.test(data.month) ||
     data.source !== 'CGU' || !Array.isArray(data.documents) ||
     !Array.isArray(data.relations) || !Array.isArray(data.coverage)) {
@@ -47,7 +49,11 @@ export function validateMonth(data) {
   const ids = new Set();
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
-      'partyRef', 'cpfMasked', 'process', 'nature']);
+      'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked']);
+    if (doc.paymentLinksChecked !== undefined &&
+        (doc.phase !== 3 || doc.paymentLinksChecked !== true)) {
+      throw Error('Marcador de consulta de pagamento inválido');
+    }
     if (doc.partyRef !== undefined &&
         (!/^\d{14}$/.test(doc.partyRef) ||
           !Object.hasOwn(data.beneficiaries || {}, doc.partyRef))) {
@@ -77,11 +83,46 @@ export function validateMonth(data) {
     }
     assertCents(doc.cents); ids.add(doc.id);
   }
+  if (data.itemsByDocument !== undefined) {
+    if (!data.itemsByDocument || typeof data.itemsByDocument !== 'object' ||
+        Array.isArray(data.itemsByDocument)) throw Error('Catálogo de itens inválido');
+    for (const [id, items] of Object.entries(data.itemsByDocument)) {
+      const owner = data.documents.find(doc=>doc.id===id);
+      if (!NE_RE.test(id) || owner?.phase !== 1 || !Array.isArray(items) ||
+          items.length > 4000) throw Error('Itens sem empenho de origem válido');
+      const sequences=new Set();
+      for (const item of items) {
+        assertAllowedKeys(item, ['seq','code','sub','subdesc','description','cents']);
+        if (!Number.isSafeInteger(item.seq) || item.seq < 1 || item.seq > 100000 ||
+            sequences.has(item.seq)) throw Error('Sequencial de item inválido');
+        sequences.add(item.seq);
+        for (const key of ['code','sub']) {
+          const regex = key==='code' ? /^[A-Za-z0-9_./-]{1,80}$/ : /^[A-Za-z0-9_./-]{1,20}$/;
+          if (item[key] !== undefined &&
+              (typeof item[key] !== 'string' || !regex.test(item[key]))) {
+            throw Error('Código de item inválido');
+          }
+        }
+        for (const [key,max] of [['subdesc',110],['description',260]]) {
+          if (item[key] !== undefined && publicItemDescription(item[key],max) !== item[key]) {
+            throw Error('Descrição de item não sanitizada');
+          }
+        }
+        if (item.cents !== undefined && !Number.isSafeInteger(item.cents)) {
+          throw Error('Valor monetário de item inválido');
+        }
+      }
+    }
+  }
+  const relationPairs=new Set();
   for (const link of data.relations) {
     assertAllowedKeys(link, ['from', 'to', 'cents']);
-    if (!validId(link.from) || !validId(link.to) || !ids.has(link.from)) {
-      throw Error('Vínculo documental inválido');
-    }
+    const source=data.documents.find(doc=>doc.id===link.from);
+    if (!validId(link.from) || !NE_RE.test(link.to) || !ids.has(link.from) ||
+        ![2,3].includes(source?.phase)) throw Error('Vínculo documental inválido');
+    const pair=link.from+'/'+link.to;
+    if (relationPairs.has(pair)) throw Error('Vínculo documental duplicado');
+    relationPairs.add(pair);
     assertCents(link.cents);
     if (link.cents === null) throw Error('Vínculo sem valor comprovado');
   }
@@ -138,9 +179,11 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
     if (previous?.complete && !coverage.complete) continue;
     if (previous && !previous.complete && !coverage.complete &&
         previous.count > coverage.count) continue;
-    const removed = next.documents.filter(doc =>
-      doc.date === coverage.date && doc.phase === coverage.phase).map(doc => doc.id);
-    const removedIds = new Set(removed);
+    const previousDocs=next.documents.filter(doc =>
+      doc.date===coverage.date && doc.phase===coverage.phase);
+    const previousById=new Map(previousDocs.map(doc=>[doc.id,doc]));
+    const removedIds=new Set(previousDocs.map(doc=>doc.id));
+    const previousLinks=next.relations.filter(link=>removedIds.has(link.from));
     next.documents = next.documents.filter(doc =>
       !(doc.date === coverage.date && doc.phase === coverage.phase));
     next.relations = next.relations.filter(link => !removedIds.has(link.from));
@@ -159,9 +202,27 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       delete doc.beneficiary;
       return doc;
     });
+    for (const doc of normalized) {
+      const before=previousById.get(doc.id);
+      if (!before || before.cents !== doc.cents) {
+        // Dados retificados exigem nova consulta dos itens/vínculos.
+        if (doc.phase===1 && next.itemsByDocument) delete next.itemsByDocument[doc.id];
+        continue;
+      }
+      if (doc.phase===3 && before.paymentLinksChecked===true) {
+        doc.paymentLinksChecked=true;
+        next.relations.push(...previousLinks.filter(link=>link.from===doc.id));
+      }
+    }
     next.documents.push(...normalized);
     next.relations.push(...structuredClone(links));
     next.coverage.push(structuredClone(coverage));
+  }
+  if (next.itemsByDocument) {
+    const available=new Set(next.documents.filter(doc=>doc.phase===1).map(doc=>doc.id));
+    next.itemsByDocument=Object.fromEntries(Object.entries(next.itemsByDocument)
+      .filter(([id])=>available.has(id)).sort(([a],[b])=>a.localeCompare(b)));
+    if (!Object.keys(next.itemsByDocument).length) delete next.itemsByDocument;
   }
   if (next.beneficiaries) {
     const used = new Set(next.documents.map(doc => doc.partyRef).filter(Boolean));
@@ -181,6 +242,48 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
   if (stripTime(next) === stripTime(original)) return { changed: false, data: original };
   next.updated_at = now.toISOString();
   return { changed: true, data: next };
+}
+
+/** Atualiza detalhes independentes da consulta documental, com idempotência. */
+export function applyDocumentEnrichment(existing,id,result,now=new Date()){
+  const original=validateMonth(structuredClone(existing));
+  const doc=original.documents.find(item=>item.id===id);
+  if(!doc)throw Error('Documento não encontrado no JSON mensal');
+  const next=structuredClone(original);
+  const target=next.documents.find(item=>item.id===id);
+  if(result.kind==='payment'){
+    if(target.phase!==3||!Array.isArray(result.links)||
+       result.links.some(link=>link.from!==id))throw Error('Vínculos de pagamento inválidos');
+    target.paymentLinksChecked=true;
+    next.relations=next.relations.filter(link=>link.from!==id);
+    next.relations.push(...structuredClone(result.links));
+    next.relations.sort((a,b)=>a.from.localeCompare(b.from)||
+      a.to.localeCompare(b.to)||a.cents-b.cents);
+  }else if(result.kind==='items'){
+    if(target.phase!==1||!Array.isArray(result.items))throw Error('Itens de empenho inválidos');
+    next.itemsByDocument ||= {};
+    next.itemsByDocument[id]=structuredClone(result.items);
+    next.itemsByDocument=Object.fromEntries(Object.entries(next.itemsByDocument)
+      .sort(([a],[b])=>a.localeCompare(b)));
+  }else throw Error('Tipo de enriquecimento não permitido');
+  validateMonth(next);
+  const withoutTimestamp=value=>{
+    const copy=structuredClone(value);delete copy.updated_at;
+    return JSON.stringify(copy);
+  };
+  if(withoutTimestamp(next)===withoutTimestamp(original))return {changed:false,data:original};
+  next.updated_at=now.toISOString();
+  return {changed:true,data:next};
+}
+
+export async function persistEnrichment(root,month,id,result,now=new Date()){
+  if(!MONTH_RE.test(month))throw Error('Competência inválida');
+  const path=join(root,'data','months',month+'.json');
+  const current=await readJson(path,null);
+  if(!current)throw Error('Arquivo da competência inexistente');
+  const outcome=applyDocumentEnrichment(current,id,result,now);
+  if(outcome.changed)await atomicWrite(path,JSON.stringify(outcome.data)+'\n');
+  return outcome.changed;
 }
 
 async function readJson(path, defaultValue) {

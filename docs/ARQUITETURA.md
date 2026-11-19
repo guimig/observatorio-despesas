@@ -73,3 +73,22 @@ Uma sondagem estrutural do retorno da API confirmou os campos `codigoFavorecido`
 O JSON mensal contém opcionalmente `beneficiaries`, um catálogo de **pessoas jurídicas indexado por CNPJ**, com nome armazenado uma única vez por competência. Os documentos utilizam `partyRef`. Pessoas físicas utilizam exclusivamente `cpfMasked`, no padrão `***.123.456-**`, sem nome de PF nem chave única de identidade. Os dados podem conter também `process` e `nature` (grupo, elemento, programa e ação), quando disponíveis. Os documentos preexistentes sem esses campos continuam válidos.
 
 O campo livre `observacao` permanece **não publicado** até haver um sanitizador e validação específicos para dados bancários, dados pessoais e textos contendo outras informações sensíveis. As interfaces e exportações usam somente campos da lista permitida.
+
+
+## Relações de pagamento e itens de empenho (próxima etapa)
+
+O adaptador `src/enrich-cgu.mjs` lê apenas duas consultas oficiais: `despesas/empenhos-impactados?fase=3`, para vínculo de pagamento a NE, e `despesas/itens-de-empenho` para conteúdo estruturado dos itens. As fontes são acessadas no backend do GitHub Actions, nunca no navegador.
+
+**Persistência mínima sem novas coleções redundantes:**
+
+- `documents[].paymentLinksChecked: true`: a consulta de impacto do pagamento terminou com paginação completa; se não houve impactos, esse estado evita consultas repetidas.
+- `relations[]`: os vínculos das fases 2 e 3 para NEs são armazenados com valores em centavos, usando os IDs documentais existentes. Para fase 3, os campos `valorPago` e `valorRestoPago` são somados por NE/subitem; nunca são subtraídos de outras fases para calcular saldo.
+- `itemsByDocument[NE]`: itens de empenho sanitizados; uma lista vazia significa consulta concluída sem itens, enquanto chave ausente indica consulta ainda pendente. Os campos são `seq`, `code`, `sub`, `subdesc`, `description` e `cents` (quando disponíveis).
+
+**Retomada e retificações:** o coletor recente preserva vínculos e itens de documentos com mesmo identificador/valor. Caso o valor documental mude, os enriquecimentos desse documento são invalidados e devem ser reconsultados. O enriquecimento é armazenado após cada documento concluído, com validação integral dos arquivos; itens não concluídos não recebem marca de sucesso.
+
+**Privacidade:** observações livres e respostas brutas continuam proibidas. Descrições de itens são opcionalmente publicadas após sanitização conservadora; identificadores pessoais, e-mails, telefones e dados bancários visíveis levam à supressão da descrição. CPF nunca sai em formato completo, e nomes de pessoas físicas não são publicados.
+
+**Ponto de atenção:** a ausência de um documento na competência atual não significa que o vínculo não exista: uma NE pode ter sido emitida em outro exercício, ainda não carregado no acervo. A interface busca competências adicionais sob demanda e informa quando a referência não está disponível.
+
+Integração PNCP e Compras.gov.br permanece planejamento subsequente: a ligação precisa de identificadores oficiais do processo/contrato, não apenas coincidência de descrição ou valores.

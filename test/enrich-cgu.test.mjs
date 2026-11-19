@@ -1,0 +1,128 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+ paymentUrl,itemsUrl,publicItemDescription,normalizeItem,resolvePaymentLinks,resolveItems
+} from '../src/enrich-cgu.mjs';
+import { planEnrichment } from '../src/enrich-month.mjs';
+import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
+
+const ne='158459000012026NE000001', ne2='158459000012026NE000002';
+const ob='158459000012026OB000001', ob2='158459000012026OB000002';
+const result=(id,phase,cents=1000)=>({
+ documents:[{id,date:'2026-11-18',phase,cents}],
+ links:[],coverage:{date:'2026-11-18',phase,count:1,invalid:0,complete:true}
+});
+const wrap=(patches)=>mergeMonth(emptyMonth('2026-11'),'2026-11',patches).data;
+
+test('URLs validadas, sem chave ou CPF, para pagamentos fase 3 e itens',()=>{
+ const a=new URL(paymentUrl(ob,2));
+ assert.equal(a.searchParams.get('fase'),'3');
+ assert.equal(a.searchParams.get('pagina'),'2');
+ assert.equal(a.searchParams.get('codigoDocumento'),ob);
+ assert.equal(new URL(itemsUrl(ne)).pathname,'/api-de-dados/despesas/itens-de-empenho');
+ assert.throws(()=>paymentUrl('00012345678'));
+ assert.throws(()=>itemsUrl(ob));
+});
+test('vínculos de pagamento somam normal + restos a pagar, subitens e sinais',async()=>{
+ const request=async(_,page)=>page===1?[
+  {empenho:ne,subitem:'01',valorPago:'100,00',valorRestoPago:'0,00'},
+  {empenho:ne,subitem:'02',valorPago:'-10,00',valorRestoPago:'5,00'},
+  {empenho:ne2,subitem:'01',valorPago:'0,00',valorRestoPago:'20,00'}
+ ]:[];
+ const res=await resolvePaymentLinks(ob,{token:'fake',request});
+ assert.equal(res.ok,true);
+ assert.equal(res.links.length,2);
+ assert.deepEqual(res.links,[{from:ob,to:ne,cents:9500},{from:ob,to:ne2,cents:2000}]);
+ assert.equal(res.impacts,3);
+});
+test('sem impacto é consulta concluída, sem presumir pagamento de valor zero',async()=>{
+ const res=await resolvePaymentLinks(ob,{token:'fake',request:async()=>[]});
+ assert.deepEqual(res,{ok:true,links:[],impacts:0});
+});
+test('resposta inválida, páginas repetidas, teto e identificação incorreta não são publicadas',async()=>{
+ const row={empenho:ne,valorPago:'10,00',valorRestoPago:'0,00'};
+ const repeated=await resolvePaymentLinks(ob,{token:'fake',request:async()=>[row]});
+ assert.deepEqual(repeated,{ok:false,reason:'pagina_repetida'});
+ const limited=await resolvePaymentLinks(ob,{token:'fake',limit:1,request:async()=>[row]});
+ assert.equal(limited.ok,false);
+ const unknown=await resolvePaymentLinks(ob,{token:'fake',request:async(_,page)=>
+  page===1?[{...row,empenho:'OTHER-NE'}]:[]});
+ assert.equal(unknown.reason,'impacto_nao_identificado');
+ const invalid=await resolvePaymentLinks(ob,{token:'fake',request:async(_,page)=>
+  page===1?[{...row,valorPago:'não numérico',valorRestoPago:null}]:[]});
+ assert.equal(invalid.ok,false);
+ const unavailable=await resolvePaymentLinks(ob,{token:'fake',request:async()=>{throw Error('erro remoto');}});
+ assert.equal(unavailable.ok,false);
+});
+test('itens validam valor em centavos, sequência, descrição e subelemento',async()=>{
+ const request=async(_,page)=>page===1?[
+  {sequencial:1,codigoItemEmpenho:'001',codigoSubelemento:'33',
+   descricaoSubelemento:'Material de consumo',descricao:'Tubos de ensaio 50 ml',
+   valorAtual:'R$ 2.345,60'},
+  {sequencial:2,codigoItemEmpenho:'002',codigoSubelemento:'33',
+   descricaoSubelemento:'Material de consumo',descricao:'Produto sem preço',
+   valorAtual:''}
+ ]:[];
+ const res=await resolveItems(ne,{token:'fake',request});
+ assert.equal(res.ok,true);
+ assert.equal(res.items.length,2);
+ assert.deepEqual(res.items[0],{
+  seq:1,code:'001',sub:'33',subdesc:'Material de consumo',
+  description:'Tubos de ensaio 50 ml',cents:234560
+ });
+ assert.equal(Object.hasOwn(res.items[1],'cents'),false);
+});
+test('CPF, e-mail, telefone e dados bancários nunca passam em descrições livres',()=>{
+ assert.equal(publicItemDescription('CPF 000.123.456-78'),null);
+ assert.equal(publicItemDescription('Banco - conta corrente 1234'),null);
+ assert.equal(publicItemDescription('email: servidor@example.com'),null);
+ assert.equal(publicItemDescription('Contato (47) 99999-9999'),null);
+ assert.equal(normalizeItem({sequencial:1,valorAtual:'4,50',descricao:'CPF 00012345678'}).description,undefined);
+});
+test('itens divergentes e paginação truncada mantêm estado de pendência',async()=>{
+ const duplicate=await resolveItems(ne,{token:'fake',request:async(_,page)=>
+  page===1?[{sequencial:1,valorAtual:'10,00'},{sequencial:1,valorAtual:'11,00'}]:[]});
+ assert.equal(duplicate.ok,false);
+ const limited=await resolveItems(ne,{token:'fake',limit:1,request:async()=>[{sequencial:1,valorAtual:'10,00'}]});
+ assert.equal(limited.reason,'limite_paginacao');
+});
+test('aplicação incremental armazena vínculos e itens sem repetir entidades',()=>{
+ const month=wrap([result(ne,1),result(ob,3)]);
+ const a=applyDocumentEnrichment(month,ob,{kind:'payment',links:[{from:ob,to:ne,cents:900}]});
+ assert.equal(a.changed,true);
+ assert.equal(a.data.documents.find(d=>d.id===ob).paymentLinksChecked,true);
+ assert.equal(a.data.relations.length,1);
+ const b=applyDocumentEnrichment(a.data,ne,{kind:'items',items:[
+  {seq:1,description:'Papel A4',cents:700}]});
+ assert.equal(b.data.itemsByDocument[ne][0].description,'Papel A4');
+ assert.equal(applyDocumentEnrichment(b.data,ne,{kind:'items',items:[
+  {seq:1,description:'Papel A4',cents:700}]}).changed,false);
+ assert.doesNotThrow(()=>validateMonth(b.data));
+});
+test('coleta diária idempotente preserva enriquecimentos de documentos inalterados',()=>{
+ const base=wrap([result(ne,1),result(ob,3)]);
+ let d=applyDocumentEnrichment(base,ob,{kind:'payment',links:[{from:ob,to:ne,cents:123}]}).data;
+ d=applyDocumentEnrichment(d,ne,{kind:'items',items:[{seq:1,description:'Caderno'}]}).data;
+ const fresh=mergeMonth(d,'2026-11',[result(ne,1),result(ob,3)]);
+ assert.equal(fresh.changed,false);
+ assert.equal(fresh.data.documents.find(item=>item.id===ob).paymentLinksChecked,true);
+ assert.equal(fresh.data.relations[0].cents,123);
+ assert.equal(fresh.data.itemsByDocument[ne].length,1);
+});
+test('retificação de valor invalida detalhes para reconsulta, sem conservar vínculo obsoleto',()=>{
+ let data=wrap([result(ne,1),result(ob,3)]);
+ data=applyDocumentEnrichment(data,ob,{kind:'payment',links:[{from:ob,to:ne,cents:123}]}).data;
+ data=applyDocumentEnrichment(data,ne,{kind:'items',items:[{seq:1,description:'Caderno'}]}).data;
+ const fresh=mergeMonth(data,'2026-11',[result(ne,1,2000),result(ob,3,2000)]);
+ assert.equal(fresh.data.documents.find(item=>item.id===ob).paymentLinksChecked,undefined);
+ assert.equal(fresh.data.relations.length,0);
+ assert.equal(fresh.data.itemsByDocument,undefined);
+});
+test('planejamento só seleciona documentos pendentes, respeita limites',()=>{
+ let d=wrap([result(ne,1),result(ob,3)]);
+ assert.deepEqual(planEnrichment(d),{payments:[ob],items:[ne]});
+ d=applyDocumentEnrichment(d,ob,{kind:'payment',links:[]}).data;
+ d=applyDocumentEnrichment(d,ne,{kind:'items',items:[]}).data;
+ assert.deepEqual(planEnrichment(d),{payments:[],items:[]});
+ assert.throws(()=>planEnrichment(d,{maxPayments:1000}));
+});
