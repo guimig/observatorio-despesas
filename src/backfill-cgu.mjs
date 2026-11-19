@@ -16,6 +16,7 @@ async function readExisting(month) {
 async function main() {
   const now = new Date();
   const month = process.env.BACKFILL_MONTH || previousMonthInBrazil(now);
+  if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) throw Error('Competência inválida');
   const options = {
     month, now, existing: await readExisting(month),
     batchDays: Number(process.env.BACKFILL_DAYS || 3),
