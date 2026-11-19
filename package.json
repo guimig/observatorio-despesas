@@ -11,9 +11,11 @@
     "test": "node --test test/*.test.mjs",
     "check:data": "node src/validate-data.mjs",
     "collect:cgu": "node src/collect-cgu.mjs",
-    "check:syntax": "node --check src/privacy.mjs && node --check src/cgu.mjs && node --check src/store.mjs && node --check src/collect-cgu.mjs && node --check assets/app.js && node --check src/backfill.mjs && node --check src/backfill-cgu.mjs && node --check src/build-site.mjs && node --check src/inspect-cgu.mjs",
+    "check:syntax": "node --check src/privacy.mjs && node --check src/cgu.mjs && node --check src/store.mjs && node --check src/collect-cgu.mjs && node --check assets/app.js && node --check src/backfill.mjs && node --check src/backfill-cgu.mjs && node --check src/build-site.mjs && node --check src/inspect-cgu.mjs && node --check src/enrich-cgu.mjs && node --check src/enrich-month.mjs",
     "build:site": "node src/build-site.mjs",
     "backfill:cgu": "node src/backfill-cgu.mjs",
-    "backfill:plan": "node src/backfill-cgu.mjs --dry-run"
+    "backfill:plan": "node src/backfill-cgu.mjs --dry-run",
+    "enrich:cgu": "node src/enrich-month.mjs",
+    "enrich:plan": "node src/enrich-month.mjs --dry-run"
   }
 }
