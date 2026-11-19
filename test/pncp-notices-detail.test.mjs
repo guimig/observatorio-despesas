@@ -26,7 +26,7 @@ const contract=(purchaseId=pncpId)=>({
 });
 test('URL direta do detalhe PNCP usa ID de contratação oficial Reitoria',()=>{
  assert.equal(new URL(noticeDetailUrl(pncpId)).pathname,
-  '/api/pncp/v1/orgaos/10635424000186/compras/2025/263');
+  '/api/consulta/v1/orgaos/10635424000186/compras/2025/263');
  assert.throws(()=>noticeDetailUrl(contractId));
  assert.throws(()=>noticeDetailUrl('000.123.456-78'));
  assert.throws(()=>noticeDetailUrl('10635424000348-1-000263/2025'));
