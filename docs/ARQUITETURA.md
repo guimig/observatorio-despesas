@@ -65,3 +65,11 @@ O backfill seleciona primeiro os dias que não estejam plenamente cobertos, sem 
 ## Publicação por artefato GitHub Actions
 
 O workflow `.github/workflows/publicar-pages.yml` é reutilizável e pode ser chamado após o commit do coletor; mantém o mesmo ponto de entrada estático da interface (`index.html`) e aplica validação de privacidade antes de empacotar o site. Em Settings → Pages, a fonte deve ser **GitHub Actions**, nunca a branch `main` diretamente. O arquivo `dist/` é transitório e não é versionado.
+
+## Enriquecimento seguro da CGU
+
+Uma sondagem estrutural do retorno da API confirmou os campos `codigoFavorecido`, `nomeFavorecido`, `numeroProcesso`, `grupo`, `elemento`, `programa` e `acao` nas três fases. O normalizador utiliza esses campos explicitamente, sem inferir relacionamentos a partir de nomes ou valores semelhantes.
+
+O JSON mensal contém opcionalmente `beneficiaries`, um catálogo de **pessoas jurídicas indexado por CNPJ**, com nome armazenado uma única vez por competência. Os documentos utilizam `partyRef`. Pessoas físicas utilizam exclusivamente `cpfMasked`, no padrão `***.123.456-**`, sem nome de PF nem chave única de identidade. Os dados podem conter também `process` e `nature` (grupo, elemento, programa e ação), quando disponíveis. Os documentos preexistentes sem esses campos continuam válidos.
+
+O campo livre `observacao` permanece **não publicado** até haver um sanitizador e validação específicos para dados bancários, dados pessoais e textos contendo outras informações sensíveis. As interfaces e exportações usam somente campos da lista permitida.
