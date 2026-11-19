@@ -24,17 +24,39 @@ Requer **Node.js 22 ou superior**. Nenhuma dependência de terceiros é necessá
 ```bash
 npm test
 npm run check:data
+npm run build:site        # gera dist/ com interface e JSONs publicos
+npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
 npm run collect:cgu
 ```
 
 O coletor consulta apenas uma janela recente configurável (`CGU_LOOKBACK_DAYS`, padrão 7) e grava arquivos mensais em `data/months/`, com `data/manifest.json` como índice. Um período incompleto **não** é apresentado como total definitivo. A coleta é idempotente e só altera arquivos quando o conteúdo canônico muda.
 
-## Publicação
+## Publicação por GitHub Actions
 
-A interface estática usa o `index.html` na raiz. Após o primeiro merge, habilite GitHub Pages em **Settings → Pages → Deploy from a branch → main → /(root)**. A URL prevista é `https://guimig.github.io/observatorio-despesas/`. Isso não habilita o token: ele deve ser configurado separadamente em Settings → Secrets and variables → Actions.
+**Ação necessária no repositório:** em **Settings → Pages → Build and deployment → Source**, selecionar **GitHub Actions** (não `Deploy from a branch`). O workflow `.github/workflows/publicar-pages.yml` realiza o build e o deploy de um artefato que inclui **somente** `index.html`, `assets/`, `.nojekyll`, `data/manifest.json` e os JSONs mensais explicitamente listados no manifesto.
 
-A coleta tem workflow próprio, separado da validação de PR. Sem o Secret `CGU_API_KEY`, a rotina de atualização é ignorada, sem publicar informações artificiais.
+A publicação ocorre por `push` em alterações de código/arquivos do site ou por **Actions → Publicar Observatório → Run workflow**. Após uma coleta que efetivamente modificar JSONs, a rotina de coleta **chama diretamente** o workflow reutilizável de Pages. Isso é importante porque pushes produzidos pelo `GITHUB_TOKEN` não acionam, em geral, outros workflows de `push`. Coleta e publicação têm grupos de concorrência separados, garantindo ordem de deploy.
+
+Site: `https://guimig.github.io/observatorio-despesas/`. O Secret `CGU_API_KEY` é exclusivo do coletor e **nunca é necessário no workflow de Pages**.
+
+Sem `CGU_API_KEY`, a coleta é ignorada, sem publicar informações artificiais.
+
+## Coleta histórica incremental
+
+O workflow `.github/workflows/backfill-cgu.yml` faz a recuperação em **lotes pequenos** (padrão três dias, máximo sete dias por execução). O mês padrão é o **mês anterior em America/Sao_Paulo**; é possível escolher qualquer competência como `2026-10` usando **Actions → Recuperar histórico CGU → Run workflow**. Ele também executa lotes agendados às segundas e quintas.
+
+Ao iniciar, o planejador examina `data/months/AAAA-MM.json` e seleciona somente dias sem três fases completas e válidas; a cobertura existente atua como **checkpoint**. Repetir a ação avança nos próximos dias, sem duplicar documentos. `start_day` permite retomar uma faixa específica, e `recheck` força uma nova consulta de período já considerado completo. O histórico precisa de sucessivos lotes e só será tratado como íntegro se todos os dias elegíveis forem consultados com sucesso.
+
+O sistema salva apenas JSONs normalizados, jamais respostas brutas. Cada dia bem-sucedido é salvo no checkpoint antes de passar ao próximo; falhas individuais não apagam dias anteriores. O workflow versiona apenas os arquivos públicos alterados e aciona o deploy de Pages quando houver mudança.
+
+Para simular uma competência sem token nem consultas:
+
+```bash
+BACKFILL_MONTH=2026-10 BACKFILL_DAYS=3 npm run backfill:plan
+```
+
+**Nota:** a atualização diária da CGU consulta a janela recente. A recuperação histórica atua sobre competências anteriores e não realiza qualquer comparação com o Tesouro Gerencial.
 
 ## Estrutura
 
