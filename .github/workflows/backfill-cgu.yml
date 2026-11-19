@@ -1,0 +1,110 @@
+name: Recuperar historico CGU - Observatorio
+
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: 'Competencia AAAA-MM (vazio = mes anterior)'
+        type: string
+        required: false
+      days:
+        description: 'Dias por lote (maximo 7)'
+        type: choice
+        required: true
+        default: '3'
+        options: ['1', '2', '3', '5', '7']
+      start_day:
+        description: 'Dia inicial do mes (1 a 31)'
+        type: string
+        required: false
+        default: '1'
+      recheck:
+        description: 'Reconsultar inclusive dias ja completos?'
+        type: boolean
+        required: false
+        default: false
+  # A primeira entrada deste workflow na main recupera o primeiro lote.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/backfill-cgu.yml'
+  # Lotes pequenos, duas vezes por semana, para completar o mes anterior.
+  schedule:
+    - cron: '13 11 * * 1,4'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar Secret da CGU
+        id: credential
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: |
+          if [ -z "$CGU_API_KEY" ]; then
+            echo 'Secret CGU_API_KEY ausente: backfill ignorado.'
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Testar coletores e arquivos publicados
+        if: steps.credential.outputs.enabled == 'true'
+        run: |
+          npm test
+          npm run check:data
+      - name: Buscar proximo lote historico
+        if: steps.credential.outputs.enabled == 'true'
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          BACKFILL_MONTH: ${{ inputs.month }}
+          BACKFILL_DAYS: ${{ inputs.days || '3' }}
+          BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
+          BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
+          CGU_MAX_PAGES: '30'
+          CGU_MAX_IMPACT_PAGES: '8'
+        run: npm run backfill:cgu
+      - name: Validar checkpoint antes de publicar
+        if: steps.credential.outputs.enabled == 'true'
+        run: npm run check:data
+      - name: Versionar apenas JSONs mensais alterados
+        if: steps.credential.outputs.enabled == 'true'
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/manifest.json data/months/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Nenhuma alteracao no lote historico.'
+            exit 0
+          fi
+          git commit -m 'data: acrescentar lote historico CGU validado'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+  publicar:
+    needs: atualizar
+    if: needs.atualizar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
