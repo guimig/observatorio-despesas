@@ -8,13 +8,14 @@ import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procuremen
 const SOURCE=new Set(['pncp','compras']);
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
 const PNCP_ID=/^\d{14}-[1-9]-\d{6}\/20\d{2}$/;
+const PURCHASE_ID=/^\d{14}-1-\d{6}\/20\d{2}$/;
 const CPF=/^\*\*\*\.\d{3}\.\d{3}-\*\*$/;
 const CNPJ=/^\d{14}$/;
 const DATE=/^20\d{2}-\d{2}-\d{2}$/;
 const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
  'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','kind',
- 'commitmentStatus','commitmentAt','commitmentRefs'];
+ 'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt'];
 
 export const blankProcurement=()=>({
   schema_version:1,unit:CAMPUS_UG,contracts:[],coverage:[]
@@ -83,8 +84,22 @@ export function validateProcurement(data){
         throw Error('NE oficial incompatível com a UG 158459');
       }
     }
-    if(contract.procurementId!==undefined&&!PNCP_ID.test(contract.procurementId))
+    if(contract.procurementId!==undefined&&!PURCHASE_ID.test(contract.procurementId))
       throw Error('Referência de contratação PNCP inválida');
+    if(contract.procurementLinkStatus!==undefined) {
+      if(contract.source!=='pncp' ||
+         !['linked','not_reported','unavailable'].includes(contract.procurementLinkStatus) ||
+         typeof contract.procurementLinkAt!=='string' ||
+         !date(contract.procurementLinkAt)) {
+        throw Error('Status de vínculo contrato-contratação inválido');
+      }
+      if(contract.procurementLinkStatus==='linked' && !contract.procurementId)
+        throw Error('Vínculo oficial declarado sem ID da contratação');
+      if(contract.procurementLinkStatus==='not_reported' && contract.procurementId)
+        throw Error('Vínculo contraditório: informado e ausente');
+    } else if (contract.procurementLinkAt!==undefined) {
+      throw Error('Data de verificação sem estado de vínculo');
+    }
     if(contract.process!==undefined && normalizeProcess(contract.process)!==contract.process)
       throw Error('Processo administrativo inválido');
     if(contract.orgCnpj!==undefined && !CNPJ.test(contract.orgCnpj))
@@ -154,13 +169,23 @@ export function mergeProcurement(current,scans,now=new Date()){
           const old=oldContracts.get(copy.id);
           // Preservar consulta de NE apenas se os campos-base do instrumento
           // não mudaram. Contratos retificados devem ser reconsultados.
-          if(old?.commitmentStatus && old.number===copy.number &&
-             old.unitCode===copy.unitCode && old.process===copy.process) {
+          const sameInstrument=old && old.number===copy.number &&
+            old.unitCode===copy.unitCode && old.process===copy.process;
+          if(sameInstrument && old.commitmentStatus) {
             copy.commitmentStatus=old.commitmentStatus;
             copy.commitmentAt=old.commitmentAt;
             if(old.commitmentStatus==='complete'){
               copy.commitmentRefs=structuredClone(old.commitmentRefs);
             }
+          }
+          // O detalhe do contrato confirma o vínculo. Uma atualização do
+          // resumo não deve apagá-lo; divergência explícita exige rechecagem.
+          if(sameInstrument && old.procurementId && !copy.procurementId)
+            copy.procurementId=old.procurementId;
+          if(sameInstrument && old.procurementLinkStatus &&
+             (!copy.procurementId || copy.procurementId===old.procurementId)) {
+            copy.procurementLinkStatus=old.procurementLinkStatus;
+            copy.procurementLinkAt=old.procurementLinkAt;
           }
           next.contracts.push(copy);
         }
@@ -225,6 +250,49 @@ export async function writeCommitmentResult(root,id,result,now=new Date()){
   const previous=await readProcurement(root);
   if(!previous)throw Error('Catálogo PNCP indisponível');
   const outcome=applyCommitmentResult(previous,id,result,now);
+  if(!outcome.changed)return outcome;
+  const tmp=filename+'.tmp';
+  try{
+    await writeFile(tmp,JSON.stringify(outcome.data)+'\n','utf8');
+    await rename(tmp,filename);
+  }catch(error){await unlink(tmp).catch(()=>{});throw error}
+  return outcome;
+}
+
+/** Atualiza somente o vínculo contratual comprovado pelo ID PNCP. */
+export function applyContractPurchaseLink(current,id,result,now=new Date()) {
+  const original=validateProcurement(structuredClone(current));
+  const contract=original.contracts.find(c=>c.id===id);
+  if(!contract || contract.source!=='pncp')throw Error('Contrato PNCP não encontrado');
+  if(!result||!['linked','not_reported','unavailable'].includes(result.status))
+    throw Error('Estado do vínculo PNCP não reconhecido');
+  if(result.status==='linked' &&
+     (typeof result.procurementId!=='string'||!PURCHASE_ID.test(result.procurementId))) {
+    throw Error('ID oficial de contratação inválido');
+  }
+  // Falha ou campo ausente não derrubam vínculo oficial previamente obtido.
+  if(result.status!=='linked' && contract.procurementId) {
+    return {changed:false,data:original};
+  }
+  if(result.status==='unavailable'&&contract.procurementLinkStatus==='not_reported'){
+    return {changed:false,data:original};
+  }
+  const next=structuredClone(original);
+  const target=next.contracts.find(c=>c.id===id);
+  target.procurementLinkStatus=result.status;
+  target.procurementLinkAt=now.toISOString().slice(0,10);
+  if(result.status==='linked')target.procurementId=result.procurementId;
+  else delete target.procurementId;
+  validateProcurement(next);
+  if(JSON.stringify(target)===JSON.stringify(contract))return {changed:false,data:original};
+  next.updated_at=now.toISOString();
+  return {changed:true,data:next};
+}
+export async function writeContractPurchaseLink(root,id,result,now=new Date()){
+  const filename=join(root,'data','procurement','contracts.json');
+  const previous=await readProcurement(root);
+  if(!previous)throw Error('Catálogo contratual não disponível');
+  const outcome=applyContractPurchaseLink(previous,id,result,now);
   if(!outcome.changed)return outcome;
   const tmp=filename+'.tmp';
   try{
