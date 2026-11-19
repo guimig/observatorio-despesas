@@ -40,7 +40,7 @@ test('normalizar edital PNCP não atribui pela UASG 158125',()=>{
  assert.equal(assessNoticeAttribution(other).level,'unverified');
 });
 test('objeto inseguro suprimido e sem CPF integral publicado',()=>{
- const n=normalizeNotice({...fixture(),
+ const n=normalizeNotice({...fixture(8),
   objetoCompra:'CPF 000.123.456-78 de servidor e email user@example.com'},8);
  assert.equal(n.object,undefined);
  assert.equal(JSON.stringify(n).includes('000.123.456-78'),false);
