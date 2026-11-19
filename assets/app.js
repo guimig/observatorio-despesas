@@ -106,11 +106,22 @@ function renderQuality() {
     : 'Todos os dias encerrados da competência têm consulta documental completa. Valores não conciliados com sistemas contábeis.',
     hasIssues ? 'warning' : 'success');
 }
+function formatCnpj(value) {
+  return /^\d{14}$/.test(value || '') ? value.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : value;
+}
+function beneficiaryLabel(doc) {
+  if (doc.cpfMasked) return 'Pessoa física · CPF ' + doc.cpfMasked;
+  if (!doc.partyRef) return 'Não identificado';
+  const name = state.data.beneficiaries?.[doc.partyRef] || 'Pessoa jurídica';
+  return name + ' · CNPJ ' + formatCnpj(doc.partyRef);
+}
 function filteredDocuments() {
   return state.data.documents.filter(doc => {
     if (state.phase !== 'all' && String(doc.phase) !== state.phase) return false;
     if (state.day !== 'all' && doc.date !== state.day) return false;
-    if (state.search && !doc.id.toLowerCase().includes(state.search)) return false;
+    const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
+      doc.partyRef && state.data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {})];
+    if (state.search && !fields.filter(Boolean).join(' ').toLowerCase().includes(state.search)) return false;
     return true;
   });
 }
@@ -128,7 +139,7 @@ function renderTable() {
   if (!shown.length) {
     const row = element('tr');
     const td = element('td', '', 'Nenhum documento para os filtros selecionados.');
-    td.colSpan = 5;
+    td.colSpan = 7;
     row.append(td); body.append(row);
     return;
   }
@@ -138,6 +149,8 @@ function renderTable() {
     const date = element('td', '', localDate(doc.date));
     const phase = element('td');
     phase.append(element('span', 'phase-label', phaseNames[doc.phase] || 'Outro'));
+    const beneficiary = element('td', 'beneficiary-cell', beneficiaryLabel(doc));
+    const process = element('td', 'doc-code', doc.process || '—');
     const amount = element('td', 'align-right', fmtMoney(doc.cents));
     const details = element('td');
     const button = element('button', 'details-button', 'Ver detalhes');
@@ -145,7 +158,7 @@ function renderTable() {
     button.setAttribute('aria-label', 'Ver detalhes do documento ' + doc.id);
     button.addEventListener('click', () => showDocument(doc));
     details.append(button);
-    row.append(id, date, phase, amount, details);
+    row.append(id, date, phase, beneficiary, process, amount, details);
     row.addEventListener('click', event => {
       if (event.target !== button) showDocument(doc);
     });
@@ -159,7 +172,13 @@ function showDocument(doc) {
   const entries = [
     ['Documento SIAFI', doc.id], ['Fase', phaseNames[doc.phase] || 'Outra'],
     ['Data de emissão', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
-    ['Unidade gestora', '158459 · IFC Araquari'], ['Fonte', 'CGU / Portal da Transparência']
+    ['Unidade gestora', '158459 · IFC Araquari'],
+    ['Favorecido', beneficiaryLabel(doc)], ['Processo administrativo', doc.process || 'Não informado'],
+    ['Grupo de despesa', doc.nature?.group || 'Não informado'],
+    ['Elemento', doc.nature?.element || 'Não informado'],
+    ['Programa', doc.nature?.program || 'Não informado'],
+    ['Ação orçamentária', doc.nature?.action || 'Não informada'],
+    ['Fonte', 'CGU / Portal da Transparência']
   ];
   entries.forEach(([label, value]) => {
     const group = element('div');
@@ -228,11 +247,18 @@ async function loadMonth(month) {
   $('search-doc').value = '';
   renderAll();
 }
+function csvCell(value) {
+  const text = String(value ?? '');
+  const safe = /^[\s]*[=+@-]/.test(text) ? "'" + text : text;
+  return '"' + safe.replace(/"/g, '""') + '"';
+}
 function exportCsv() {
   const rows = filteredDocuments();
-  const data = ['documento,data_emissao,fase,valor_centavos'];
+  const data = ['documento,data_emissao,fase,valor_centavos,favorecido,processo'];
   for (const row of rows) {
-    data.push([row.id, row.date, phaseNames[row.phase], row.cents === null ? '' : row.cents].join(','));
+    data.push([row.id, row.date, phaseNames[row.phase],
+      row.cents === null ? '' : row.cents,
+      beneficiaryLabel(row), row.process || ''].map(csvCell).join(','));
   }
   const blob = new Blob(['\uFEFF' + data.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
