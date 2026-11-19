@@ -46,9 +46,9 @@ test('PNCP institucional não é automaticamente atribuído ao campus',()=>{
  assert.equal(rec.object,'Aquisição de material para laboratório');
  assert.equal(rec.procurementId,REITORIA_CNPJ+'-1-000001/2026');
 });
-test('PNCP campus com código da unidade tem escopo campus',()=>{
+test('Cadastro PNCP centralizado não se torna contratação do campus pela unidadeOrgao',()=>{
  assert.equal(normalizePncp(fixture(idCampus)).scope,'campus');
- assert.equal(normalizePncp(fixture(idReitoria,'158459')).scope,'campus');
+ assert.equal(normalizePncp(fixture(idReitoria,'158459')).scope,'ifc');
  assert.equal(normalizePncp({...fixture(),orgaoEntidade:{cnpj:'00000000000000'}}),null);
 });
 test('CPF integral não é publicado; nome de PF suprimido em ambas as fontes',()=>{
@@ -114,14 +114,15 @@ test('falha HTTP e dados ausentes não equivalem a zero contratos',async()=>{
   fetcher:async()=>({ok:false,status:404})}),e=>e.status===404);
  await assert.rejects(requestPublicJSON('https://exemplo.com/privado'),/não autorizado/);
 });
-test('vínculo confirmado exige NE oficial e escopo campus; contextual exige processo+CNPJ',()=>{
+test('Vínculo NE exige unidade oficial e correspondência CGU, não CNPJ publicador',()=>{
  const doc={id:'158459000012026NE000001',phase:1,
   process:'23349.000001/2026-01',partyRef:'12345678000190'};
  const institutional=normalizePncp(fixture());
  assert.equal(matchDocumentContract(doc,institutional).level,'context');
- const campus=normalizePncp(fixture(idCampus));
+ const campus=normalizePncp(fixture(idReitoria,'158459'));
+ assert.equal(campus.scope,'ifc');
  assert.equal(matchDocumentContract(doc,campus).level,'confirmed');
- assert.equal(matchDocumentContract({...doc,partyRef:'00000000000000'},institutional),null);
+ assert.equal(matchDocumentContract({...doc,partyRef:'00000000000000'},institutional).level,'process');
  assert.equal(matchDocumentContract({...doc,process:'23349.000002/2026-01'},institutional),null);
 });
 test('JSON contratual único é idempotente e falha remota não remove registros',()=>{
