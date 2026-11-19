@@ -1,0 +1,27 @@
+name: Validar Observatório
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar sintaxe
+        run: npm run check:syntax
+      - name: Testes unitarios
+        run: npm test
+      - name: Validar privacidade e esquema dos JSONs versionados
+        run: npm run check:data

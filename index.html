@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Observatório de Despesas Públicas do IFC: documentos da CGU com consulta, filtros e rastreabilidade.">
+  <title>Observatório de Despesas · IFC Araquari</title>
+  <link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">OD</div>
+        <div>
+          <div class="brand-title">Observatório de Despesas</div>
+          <div class="brand-subtitle">Transparência e rastreabilidade · IFC</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="pill pill-outline">UG 158459 · Araquari</span>
+        <button class="icon-button" id="theme-toggle" title="Alternar aparência" aria-label="Alternar aparência">
+          <span id="theme-icon" aria-hidden="true">◐</span>
+        </button>
+      </div>
+    </div>
+  </header>
+  <main id="conteudo" class="container main-content">
+    <div class="hero">
+      <div>
+        <div class="eyebrow">DADOS PÚBLICOS · LABORATÓRIO</div>
+        <h1>Execução documental da despesa</h1>
+        <p>Empenhos, liquidações e pagamentos emitidos pela unidade gestora do IFC Campus Araquari, com dados oficiais da CGU. Valores documentais não representam saldos nem execução acumulada.</p>
+      </div>
+      <div class="hero-meta">
+        <span class="meta-label">Fonte de dados</span>
+        <strong>Portal da Transparência · CGU</strong>
+        <span id="updated" class="small-muted">Ainda não publicado</span>
+      </div>
+    </div>
+    <div id="status" role="status" aria-live="polite" class="notice">Verificando o acervo publicado…</div>
+
+    <section id="dashboard" hidden>
+      <div class="toolbar panel">
+        <div>
+          <label for="month-select" class="field-label">Competência dos documentos</label>
+          <select id="month-select" aria-label="Selecionar mês dos documentos"></select>
+        </div>
+        <div class="toolbar-right">
+          <span id="coverage-chip" class="pill pill-soft"></span>
+          <button id="export-button" class="button button-secondary" type="button">
+            Exportar CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <h2>Indicadores por fase</h2>
+          <p>Documentos emitidos na competência selecionada; cada fase tem natureza própria.</p>
+        </div>
+      </div>
+      <div class="stats" aria-label="Indicadores das fases">
+        <button class="stat-card" type="button" data-phase="1" aria-label="Filtrar empenhos">
+          <span class="stat-top"><span class="stat-label">Empenhos</span><span class="stat-icon">NE</span></span>
+          <span class="stat-value" id="amount-1">—</span>
+          <span class="stat-foot" id="count-1">Aguardando</span>
+        </button>
+        <button class="stat-card" type="button" data-phase="2" aria-label="Filtrar liquidações">
+          <span class="stat-top"><span class="stat-label">Liquidações</span><span class="stat-icon">NS</span></span>
+          <span class="stat-value" id="amount-2">—</span>
+          <span class="stat-foot" id="count-2">Aguardando</span>
+        </button>
+        <button class="stat-card" type="button" data-phase="3" aria-label="Filtrar pagamentos">
+          <span class="stat-top"><span class="stat-label">Pagamentos</span><span class="stat-icon">PG</span></span>
+          <span class="stat-value" id="amount-3">—</span>
+          <span class="stat-foot" id="count-3">Aguardando</span>
+        </button>
+      </div>
+
+      <div class="insights">
+        <section class="panel chart-panel" aria-labelledby="chart-title">
+          <div class="panel-heading">
+            <h2 id="chart-title">Valores documentais por fase</h2>
+            <span class="small-muted">Escala automática</span>
+          </div>
+          <div id="phase-chart" class="phase-chart" aria-live="polite"></div>
+          <p class="helper">Comparação descritiva de valores emitidos. Não indica conversão, disponibilidade financeira ou saldo.</p>
+        </section>
+        <section class="panel" aria-labelledby="quality-title">
+          <div class="panel-heading"><h2 id="quality-title">Cobertura e qualidade</h2></div>
+          <div class="quality-grid">
+            <div class="quality-metric"><strong id="days-covered">—</strong><span>Dias com consulta</span></div>
+            <div class="quality-metric"><strong id="incomplete-count">—</strong><span>Consultas parciais</span></div>
+            <div class="quality-metric"><strong id="invalid-count">—</strong><span>Valores indisponíveis</span></div>
+            <div class="quality-metric"><strong id="relations-count">—</strong><span>Vínculos NS–NE</span></div>
+          </div>
+          <p class="helper">Sem dados não significa zero. Vínculos são exibidos apenas quando os identificadores oficiais permitem confirmação.</p>
+        </section>
+      </div>
+
+      <section class="panel explorer" aria-labelledby="explorer-title">
+        <div class="panel-heading">
+          <div><h2 id="explorer-title">Explorador de documentos</h2><p class="small-muted">Selecione uma linha para consultar seus detalhes e vínculos.</p></div>
+          <span class="pill pill-outline" id="table-count">0 resultados</span>
+        </div>
+        <div class="filters">
+          <label class="filter"><span>Documento SIAFI</span><input id="search-doc" type="search" placeholder="NE, NS, OB ou código do documento" autocomplete="off"></label>
+          <label class="filter"><span>Fase</span>
+            <select id="phase-filter"><option value="all">Todas</option><option value="1">Empenho</option><option value="2">Liquidação</option><option value="3">Pagamento</option></select>
+          </label>
+          <label class="filter"><span>Dia</span><select id="day-filter"><option value="all">Todos os dias</option></select></label>
+          <button class="button button-ghost" id="clear-filters" type="button">Limpar</button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col">Documento</th><th scope="col">Emissão</th><th scope="col">Fase</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
+            <tbody id="doc-rows"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <span id="page-information" class="small-muted"></span>
+          <div class="page-actions"><button class="button button-secondary" id="previous-page" type="button">Anterior</button><button class="button button-secondary" id="next-page" type="button">Próxima</button></div>
+        </div>
+      </section>
+    </section>
+
+    <section id="empty-state" class="panel empty-state" hidden>
+      <div class="empty-symbol" aria-hidden="true">◫</div>
+      <h2 id="empty-title">Aguardando primeira coleta</h2>
+      <p id="empty-description">O Observatório está preparado. Assim que o Secret CGU_API_KEY for cadastrado no novo repositório e a coleta for executada, os documentos publicados aparecerão aqui.</p>
+      <a class="inline-link" href="https://github.com/guimig/observatorio-despesas/actions">Verificar GitHub Actions</a>
+    </section>
+    <section class="methodology">
+      <h2>Como interpretar estes dados</h2>
+      <p>A consulta é documental e limitada à <strong>UG 158459</strong>. A UO 26422 representa o IFC como um todo. As somas de empenhos, liquidações e pagamentos não devem ser subtraídas diretamente, porque os documentos podem se referir a empenhos de períodos diferentes, inclusive restos a pagar.</p>
+      <p>Os JSONs públicos contêm apenas identificadores SIAFI validados, datas, fases, valores em centavos e vínculos confirmados entre documentos. Não publicamos nomes de pessoas físicas, CPF integral ou respostas brutas da API.</p>
+      <div class="source-links">
+        <a href="https://portaldatransparencia.gov.br/" target="_blank" rel="noopener noreferrer">Portal da Transparência</a>
+        <a href="https://github.com/guimig/observatorio-despesas" target="_blank" rel="noopener noreferrer">Código-fonte e metodologia</a>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="document-dialog" aria-labelledby="dialog-title" class="document-dialog">
+    <div class="dialog-content">
+      <div class="dialog-heading">
+        <div><div class="eyebrow">FICHA DOCUMENTAL</div><h2 id="dialog-title">Documento</h2></div>
+        <button type="button" class="icon-button" id="close-dialog" aria-label="Fechar detalhes">✕</button>
+      </div>
+      <dl id="dialog-fields" class="document-fields"></dl>
+      <h3>Relacionamentos documentais</h3>
+      <div id="dialog-relations" class="relations"></div>
+      <p class="helper">Relações baseadas nos empenhos impactados disponibilizados pela CGU. A ausência de vínculo não comprova inexistência de relação.</p>
+    </div>
+  </dialog>
+  <footer class="site-footer">
+    <div class="container"><span>Observatório de Despesas · Projeto público experimental</span><span>Fonte oficial CGU · Dados minimizados · Sem integração com Tesouro Gerencial</span></div>
+  </footer>
+  <script type="module" src="./assets/app.js"></script>
+</body>
+</html>
