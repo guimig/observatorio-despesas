@@ -1,0 +1,32 @@
+name: Diagnosticar formato de campos CGU (sem valores)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnostico-cgu.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Garantir schema sem dados pessoais
+        run: |
+          npm test
+          node --check src/inspect-cgu.mjs
+      - name: Ler somente nomes e tipos de campos da API
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          CGU_SAMPLE_DATE: '13/11/2026'
+        run: node src/inspect-cgu.mjs
