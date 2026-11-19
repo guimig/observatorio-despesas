@@ -73,14 +73,14 @@ test('paginação PNCP exige todas as páginas e não aceita páginas repetidas'
  const get=async url=>{
   const page=Number(new URL(url).searchParams.get('pagina'));
   fetched.push(page);
-  return {dados:page===1?[fixture()]:[fixture(idCampus)],
+  return {data:page===1?[fixture()]:[fixture(idCampus)],
     totalPaginas:2};
  };
  const result=await paginate(page=>pncpUrl('2026-11',REITORIA_CNPJ,page),{fetcher:get});
  assert.equal(result.length,2);
  assert.deepEqual(fetched,[1,2]);
  await assert.rejects(paginate(page=>pncpUrl('2026-11',REITORIA_CNPJ,page),{
-  fetcher:async()=>({dados:[fixture()],totalPaginas:2})}),/duplicada/);
+  fetcher:async()=>({data:[fixture()],totalPaginas:2})}),/duplicada/);
  await assert.rejects(paginate(page=>pncpUrl('2026-11',REITORIA_CNPJ,page),{
   fetcher:get,maxPages:1}),/incompleta/);
 });
@@ -90,7 +90,7 @@ test('sem conteúdo PNCP é página completa vazia; scan não mistura CNPJs',asy
   fetcher:async url=>{
     requested++;
     return new URL(url).searchParams.get('cnpjOrgao')===CAMPUS_CNPJ?
-      {dados:[],totalPaginas:0}:{dados:[fixture()],totalPaginas:1};
+      {data:[],totalPaginas:0}:{data:[fixture()],totalPaginas:1};
   }
  });
  assert.equal(requested,2);
@@ -146,4 +146,14 @@ test('cobertura incompleta é identificada, não transformada em completa',()=>{
  assert.equal(data.data.coverage[0].status,'partial');
  assert.throws(()=>validateProcurement({...data.data,contracts:[
   {...row,supplierCpfMasked:'000.123.456-78'}]}));
+});
+
+test('PNCP oficial pagina com data, não somente dados',async()=>{
+ const result=await scanPncp('2026-11',{fetcher:async url=>{
+  const org=new URL(url).searchParams.get('cnpjOrgao');
+  return org===CAMPUS_CNPJ?{data:[],totalPaginas:0}:
+    {data:[fixture()],totalPaginas:1};
+ }});
+ assert.equal(result.records.length,1);
+ assert.equal(result.skipped,0);
 });
