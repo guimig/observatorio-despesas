@@ -12,6 +12,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/recuperar-licitacoes-vinculadas.yml'
+      - 'src/pncp-notices-detail.mjs'
+      - 'src/backfill-pncp-linked-notices.mjs'
   schedule:
     - cron: '13 13 * * 1'
 permissions:
