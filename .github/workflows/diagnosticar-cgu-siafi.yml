@@ -1,0 +1,32 @@
+name: Diagnosticar documentos e historicos SIAFI pela API CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnosticar-cgu-siafi.yml'
+      - 'src/inspect-cgu-siafi.mjs'
+permissions:
+  contents: read
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - name: Consultar apenas codigo revisado da main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar sintaxe, contratos e privacidade
+        run: |
+          npm run check:syntax
+          npm test
+          npm run check:data
+      - name: Inspecionar amostras pela API autenticada do Portal da Transparencia
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/inspect-cgu-siafi.mjs
