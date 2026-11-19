@@ -241,6 +241,7 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()) {
   const target=next.documents.find(item=>item.id===id);
   if(result.kind==='payment'){
     if(target.phase!==3||!Array.isArray(result.links))throw Error('Vínculo de pagamento inválido');
+    if(result.links.some(link=>link.from!==id))throw Error('Vínculo pertence a documento diferente');
     target.paymentLinksChecked=true;
     next.relations=next.relations.filter(link=>link.from!==id);
     next.relations.push(...structuredClone(result.links));
@@ -361,11 +362,17 @@ export async function validatePublishedData(root) {
       }
     }
   }
+  const linkPairs=new Set();
   for (const link of data.relations) {
     assertAllowedKeys(link, ['from', 'to', 'cents']);
-    if (!validId(link.from) || !validId(link.to) || !ids.has(link.from)) {
+    const source=data.documents.find(doc=>doc.id===link.from);
+    if (!validId(link.from) || !validId(link.to) || !link.to.includes('NE') ||
+        !ids.has(link.from) || ![2,3].includes(source?.phase)) {
       throw Error('Vínculo documental inválido');
     }
+    const pair=link.from+'/'+link.to;
+    if(linkPairs.has(pair))throw Error('Vínculo documental duplicado');
+    linkPairs.add(pair);
     assertCents(link.cents);
     if (link.cents === null) throw Error('Vínculo sem valor comprovado');
   }
