@@ -178,3 +178,14 @@ A rotina é semanal ou pode ser acionada manualmente; `npm run pncp-related:plan
 **Ajuste da rota de consulta histórica (novembro de 2026):** a primeira tentativa com `/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` não recuperou os registros amostrados. O adaptador passou a usar o endpoint público `/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}`, documentado na API PNCP Consulta. Falhas são contabilizadas apenas por tipo (HTTP ou validação), sem dados pessoais ou respostas brutas nos logs.
 
 **Limites de requisições do PNCP:** a recuperação histórica direta encontrou HTTP 429 em cinco consultas após os primeiros 13 resultados. Para evitar bloqueio e consultas repetidas, o workflow passou a espaçar as requisições em 5,5 segundos e executar backoff adicional de 15/30 segundos somente após HTTP 429 persistente. A indisponibilidade é contabilizada e o registro continua pendente; nunca é convertido em ausência de licitação. O lote padrão foi ajustado para até 30 IDs por execução, respeitando os limites da API.
+
+
+## Contratos formais, empenhos substitutivos e documentos SIAFI
+
+**Correção de tipologia:** a coleção `/contratos` do PNCP inclui `tipoContrato.nome = "Empenho"`, correspondente a instrumento substitutivo, não a termo de contrato. O Observatório agora lista na tabela **Contratos formais** somente instrumentos explicitamente reconhecidos como `Contrato (termo inicial)` ou equivalente estrito. Os registros PNCP de NEs continuam rastreáveis por ID de licitação, sem aparecer como contratos formais, sem somar valores novamente e sem reproduzir notas de outros campi na tabela de despesas da UG 158459.
+
+Na fotografia de novembro/2026, dos 70 instrumentos publicados pelo IFC na coleção PNCP: 9 termos de contrato e 61 notas de empenho. Somente um termo formal desse grupo apresenta processo começando por `23349`; trata-se de um indício, não de NE confirmada. Essa fotografia de novembro **não é um inventário exaustivo de todos os contratos de Araquari em vigor**.
+
+Os registros da CGU distinguem fase da despesa e espécie SIAFI: NE, NS, OB, DF e outras. A fase da CGU **não certifica** estorno, anulação, reforço, saldo, quitação ou a natureza completa do movimento. As regras de relacionamento N:M e critérios de cobertura são documentados em [Modelo conceitual das despesas](docs/MODELO-CONCEITUAL-DESPESAS.md).
+
+A configuração autenticada já existente é a chave de **CGU** `CGU_API_KEY`, transmitida somente no GitHub Actions pelo cabeçalho `chave-api-dados`. Não há chaves no JavaScript do Pages. O PNCP tem API pública separada, sem necessidade dessa chave.
