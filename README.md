@@ -174,3 +174,5 @@ O workflow `Recuperar licitações históricas vinculadas a contratos PNCP` comp
 A rotina é semanal ou pode ser acionada manualmente; `npm run pncp-related:plan` permite conhecer a quantidade de IDs faltantes sem chamar a API. Contratos centralizados da Reitoria não passam a ser atribuídos a Araquari por causa desse vínculo; a comprovação por NE da UG 158459 continua independente.
 
 **Confiabilidade dos workflows:** todas as rotinas que escrevem dados consultam o `main` mais recente no início do job (sem alterar branch de CI). Isso corrige o conflito observado quando duas coletas eram enfileiradas no mesmo commit: a segunda tentativa de push falhava por estar baseada em uma versão antiga.
+
+**Ajuste da rota de consulta histórica (novembro de 2026):** a primeira tentativa com `/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}` não recuperou os registros amostrados. O adaptador passou a usar o endpoint público `/api/consulta/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}`, documentado na API PNCP Consulta. Falhas são contabilizadas apenas por tipo (HTTP ou validação), sem dados pessoais ou respostas brutas nos logs.
