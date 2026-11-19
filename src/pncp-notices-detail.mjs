@@ -10,7 +10,7 @@ const ID=/^10635424000186-1-(\d{6})\/(20\d{2})$/;
 export function noticeDetailUrl(id) {
   const m=ID.exec(String(id??''));
   if(!m)throw Error('ID de contratação PNCP fora do cadastro da Reitoria');
-  return 'https://pncp.gov.br/api/pncp/v1/orgaos/10635424000186/compras/'+
+  return 'https://pncp.gov.br/api/consulta/v1/orgaos/10635424000186/compras/'+
     m[2]+'/'+Number(m[1]);
 }
 export function normalizeNoticeDetail(raw,expectedId){
