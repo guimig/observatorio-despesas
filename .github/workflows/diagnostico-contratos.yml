@@ -1,0 +1,25 @@
+name: Diagnosticar APIs PNCP e Compras.gov sem dados pessoais
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnostico-contratos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testes e sintaxe
+        run: |
+          node --check src/inspect-procurement.mjs
+          npm test
+      - name: Sondar formatos PNCP e Compras.gov (sem valores)
+        run: node src/inspect-procurement.mjs
