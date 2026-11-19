@@ -107,7 +107,7 @@
           <span class="pill pill-outline" id="table-count">0 resultados</span>
         </div>
         <div class="filters">
-          <label class="filter"><span>Documento SIAFI</span><input id="search-doc" type="search" placeholder="NE, NS, OB ou código do documento" autocomplete="off"></label>
+          <label class="filter"><span>Documento, favorecido ou processo</span><input id="search-doc" type="search" placeholder="Documento, CNPJ, CPF mascarado, nome ou processo" autocomplete="off"></label>
           <label class="filter"><span>Fase</span>
             <select id="phase-filter"><option value="all">Todas</option><option value="1">Empenho</option><option value="2">Liquidação</option><option value="3">Pagamento</option></select>
           </label>
@@ -116,7 +116,7 @@
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th scope="col">Documento</th><th scope="col">Emissão</th><th scope="col">Fase</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
+            <thead><tr><th scope="col">Documento</th><th scope="col">Emissão</th><th scope="col">Fase</th><th scope="col">Favorecido</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
             <tbody id="doc-rows"></tbody>
           </table>
         </div>
@@ -136,7 +136,7 @@
     <section class="methodology">
       <h2>Como interpretar estes dados</h2>
       <p>A consulta é documental e limitada à <strong>UG 158459</strong>. A UO 26422 representa o IFC como um todo. As somas de empenhos, liquidações e pagamentos não devem ser subtraídas diretamente, porque os documentos podem se referir a empenhos de períodos diferentes, inclusive restos a pagar.</p>
-      <p>Os JSONs públicos contêm apenas identificadores SIAFI validados, datas, fases, valores em centavos e vínculos confirmados entre documentos. Não publicamos nomes de pessoas físicas, CPF integral ou respostas brutas da API.</p>
+      <p>Os JSONs públicos contêm identificadores SIAFI validados, datas, fases, valores em centavos, vínculos documentais e campos minimizados de favorecido, processo e classificação. Dados de pessoas físicas não incluem nomes, e CPF é sempre exibido como ***.123.456-**. Não publicamos CPF integral, observações livres nem respostas brutas da API.</p>
       <div class="source-links">
         <a href="https://portaldatransparencia.gov.br/" target="_blank" rel="noopener noreferrer">Portal da Transparência</a>
         <a href="https://github.com/guimig/observatorio-despesas" target="_blank" rel="noopener noreferrer">Código-fonte e metodologia</a>
