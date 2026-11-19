@@ -119,6 +119,46 @@ export function mergeNotices(previous,scans,now=new Date()){
   next.updated_at=now.toISOString();
   return {changed:true,data:next};
 }
+/**
+ * Inclui publicação individual comprovada sem alegar cobertura mensal completa.
+ * Usa somente o JSON canônico de publicações e preserva modalidades já coletadas.
+ */
+export function applyDirectNotice(existing,notice,now=new Date()) {
+  const original=validateNotices(structuredClone(existing||blankNotices()));
+  if(original.notices.some(row=>row.pncpId===notice?.pncpId)){
+    return {changed:false,data:original};
+  }
+  const next=structuredClone(original);
+  next.notices.push(structuredClone(notice));
+  next.notices.sort((a,b)=>a.id.localeCompare(b.id));
+  const i=next.coverage.findIndex(c=>c.month===notice.month &&
+    c.modality===notice.modality);
+  const count=next.notices.filter(n=>n.month===notice.month &&
+    n.modality===notice.modality).length;
+  const partial={month:notice.month,modality:notice.modality,
+    status:'partial',count,skipped:0};
+  // Detalhe individual não autoriza afirmar que o mês/modalidade está completo.
+  if(i>=0)next.coverage[i]=partial;
+  else next.coverage.push(partial);
+  next.coverage.sort((a,b)=>a.month.localeCompare(b.month)||a.modality-b.modality);
+  validateNotices(next);
+  next.updated_at=now.toISOString();
+  return {changed:true,data:next};
+}
+export async function writeDirectNotice(root,notice,now=new Date()) {
+  const folder=join(root,'data','procurement');
+  const path=join(folder,'notices.json');
+  const result=applyDirectNotice(await readNotices(root),notice,now);
+  if(!result.changed)return result;
+  await mkdir(folder,{recursive:true});
+  const tmp=path+'.tmp';
+  try{
+    await writeFile(tmp,JSON.stringify(result.data)+'\n','utf8');
+    await rename(tmp,path);
+  }catch(error){await unlink(tmp).catch(()=>{});throw error}
+  return result;
+}
+
 export async function readNotices(root){
   const path=join(root,'data','procurement','notices.json');
   try{return validateNotices(JSON.parse(await readFile(path,'utf8')))}
