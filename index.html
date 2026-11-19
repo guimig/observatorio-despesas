@@ -127,6 +127,43 @@
       </section>
     </section>
 
+    <section id="procurement-section" class="panel explorer" hidden aria-labelledby="procurement-title">
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">PNCP · COMPRAS.GOV.BR</div>
+          <h2 id="procurement-title">Contratações e contratos públicos</h2>
+          <p class="small-muted">Contratos do IFC e da UG Araquari. Publicação institucional não significa despesa executada pelo campus.</p>
+        </div>
+        <span class="pill pill-outline" id="contract-count">Aguardando coleta</span>
+      </div>
+      <p id="contract-coverage" class="notice" role="status" aria-live="polite">Consultando catálogo público…</p>
+      <div class="filters">
+        <label class="filter"><span>Contrato, processo ou fornecedor</span>
+          <input id="contract-search" type="search" placeholder="Número, CNPJ, processo ou objeto" autocomplete="off"></label>
+        <label class="filter"><span>Origem</span>
+          <select id="contract-source"><option value="all">Todas as fontes</option><option value="pncp">PNCP</option><option value="compras">Compras.gov.br</option></select>
+        </label>
+        <label class="filter"><span>Abrangência</span>
+          <select id="contract-scope"><option value="all">IFC e Campus</option><option value="campus">Campus Araquari</option><option value="ifc">IFC institucional</option></select>
+        </label>
+        <button type="button" class="button button-ghost" id="clear-contract-filters">Limpar</button>
+      </div>
+      <div class="table-scroll">
+        <table class="contracts-table">
+          <thead><tr><th scope="col">Fonte / abrangência</th><th scope="col">Instrumento</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col">Objeto</th><th scope="col" class="align-right">Valor contratual</th></tr></thead>
+          <tbody id="contract-rows"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="contract-pages" class="small-muted">Nenhum resultado</span>
+        <div class="page-actions">
+          <button type="button" class="button button-secondary" id="contract-prev">Anterior</button>
+          <button type="button" class="button button-secondary" id="contract-next">Próxima</button>
+        </div>
+      </div>
+      <p class="helper">Valores de contratos não são valores empenhados, liquidados ou pagos. Registros do PNCP e Compras.gov.br podem representar o mesmo instrumento; por isso, não são somados entre fontes. Vínculos com documentos CGU exigem chave oficial coincidente ou são identificados como contexto, nunca como conciliação.</p>
+    </section>
+
     <section id="empty-state" class="panel empty-state" hidden>
       <div class="empty-symbol" aria-hidden="true">◫</div>
       <h2 id="empty-title">Aguardando primeira coleta</h2>
@@ -154,6 +191,11 @@
       <h3>Relacionamentos documentais</h3>
       <div id="dialog-relations" class="relations"></div>
       <p class="helper">Relações confirmadas pelos empenhos impactados da CGU. A ausência de vínculo não comprova inexistência de relação. Vínculos em outras competências podem exigir carregamento adicional.</p>
+      <section aria-label="Contratações associadas">
+        <h3>Contratações relacionadas</h3>
+        <div id="dialog-contracts" class="relations"></div>
+        <p class="helper">Associação contextual por processo e CNPJ não demonstra execução contratual. Não equivale a vínculo documental confirmado.</p>
+      </section>
       <section id="dialog-items-section" hidden aria-label="Itens do empenho">
         <h3>Itens do empenho</h3>
         <div id="dialog-items" class="relations"></div>
