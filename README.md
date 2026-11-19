@@ -118,3 +118,23 @@ Nunca se somam valores de PNCP e Compras.gov para obter um total único, pois um
 Para executar manualmente: Actions → **Coletar contratos PNCP e Compras.gov** → Run workflow; opcionalmente informe `month` em `AAAA-MM`. A rotina agenda duas consultas semanais e chama o deploy do GitHub Pages somente quando o catálogo normalizado muda. Em caso de indisponibilidade, o último arquivo válido é preservado.
 
 Documentação oficial: [PNCP API Consulta](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e [Compras.gov dados abertos](https://dadosabertos.compras.gov.br/swagger-ui/index.html).
+
+## Centralização institucional das contratações (revisão da classificação)
+
+As contratações do IFC são publicadas centralmente pela Reitoria (**UASG 158125**), mesmo quando a execução é responsabilidade dos campi. Portanto, o CNPJ da Reitoria e o campo de unidade que publicou um contrato no PNCP **não identificam o campus beneficiário**. A UG financeira de Araquari é **158459** e o identificador SIPAC de origem de processos do campus é **23349**.
+
+A classificação pública agora se baseia na seguinte hierarquia:
+
+1. **Confirmação por NE:** nota de empenho vinculada ao contrato no PNCP contém UG 158459 e número completo. Também se aceita NE abreviada no PNCP **apenas quando confrontada** com NE da mesma UG, ano e número existente na CGU. Nunca se inventa código de gestão para completar números.
+2. **Indício por NE:** o PNCP informa unidade 158459 e número abreviado da NE, sem documento CGU correspondente; não classificar como vínculo confirmado.
+3. **Correspondência contextual:** mesmo número do processo e CNPJ do fornecedor entre contrato e documento CGU; não é prova de vínculo financeiro.
+4. **Indício administrativo:** processo `23349.XXXXXX/AAAA-DV`, prefixo utilizado em Araquari, mas digitado manualmente e sujeito a erros.
+5. **Sem atribuição:** não há evidência suficiente, embora o contrato ainda possa atender Araquari por centralização excepcional.
+
+O filtro padrão do explorador de contratos exibe instrumentos com **indícios ou confirmação**; `Todos os contratos do IFC` revela todo o acervo publicado pela Reitoria, sem confundir publicação centralizada com execução financeira do campus.
+
+O PNCP possui a consulta pública `GET /api/pncp/v1/orgaos/{cnpj}/contratos/{ano}/{sequencial}/empenhos`, que devolve `numeroEmpenho`. O workflow **Verificar empenhos PNCP vinculados aos contratos do IFC** consulta em pequenos lotes, preserva no mesmo JSON contratual somente números em que UG 158459 esteja explicitamente identificada, e marca conclusão ou indisponibilidade. Empenhos de outros campi não são replicados. A consulta pode não conter o campo necessário para identificar a UG; sua ausência **não é prova de que não existam empenhos**.
+
+Para simular a próxima busca, execute `npm run pncp-ne:plan`. Nenhum novo token é necessário.
+
+**Atenção:** a API PNCP também publica licitações, dispensas e inexigibilidades na coleção separada `/v1/contratacoes/publicacao`. O fato de uma contratação não possuir contrato registrado não significa que ela não exista. A coleta dessa coleção será um módulo próprio, usando os mesmos graus de evidência e abrangendo todas as modalidades publicadas, não apenas contratos.
