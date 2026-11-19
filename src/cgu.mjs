@@ -3,7 +3,7 @@
  * Nunca retorna a resposta bruta aos arquivos públicos. Fonte do laboratório
  * validado em guimig/EmailBackupHub (11/2026), com normalização canônica.
  */
-import { assertPublicSafe } from './privacy.mjs';
+import { assertPublicSafe, maskCpf, sanitizeText } from './privacy.mjs';
 
 export const UG = '158459';
 const BASE = 'https://api.portaldatransparencia.gov.br/api-de-dados/despesas';
@@ -119,12 +119,44 @@ export function requestImpacts(doc, page, options) {
   return getCguArray(impactUrl(doc, page), options);
 }
 
+function shortPublicText(value, max = 120) {
+  if (typeof value !== 'string') return null;
+  const output = sanitizeText(value).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return output && output.length <= max ? output : null;
+}
+
+/** Somente pessoa jurídica identificada por CNPJ recebe nome público no JSON. */
+export function normalizeBeneficiary(row) {
+  const raw = String(row?.codigoFavorecido ?? '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (/^\d{14}$/.test(digits)) {
+    const name = shortPublicText(row?.nomeFavorecido, 160);
+    return { type: 'pj', id: digits, ...(name ? { name } : {}) };
+  }
+  if (/^\d{11}$/.test(digits) || /^\*\*\*\.\d{3}\.\d{3}-\*\*$/.test(raw)) {
+    return { type: 'pf', id: maskCpf(raw) };
+  }
+  // Identificação ambígua ou inexistente: não publicar nome ou código incerto.
+  return null;
+}
+
 export function normalizeDocument(row, date, phase) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) throw Error('Documento CGU inválido');
   const ug = String(row.codigoUg ?? row.codigoUG ?? row.unidadeGestora?.codigo ?? '');
   const id = String(row.documento ?? '').trim();
   if (ug !== UG || !SIAFI_DOC.test(id)) throw Error('Documento não corresponde à UG 158459');
   const doc = { id, date: isoDate(date), phase, cents: parseMoneyCents(row.valor) };
+  const beneficiary = normalizeBeneficiary(row);
+  if (beneficiary) doc.beneficiary = beneficiary;
+  const process = shortPublicText(row.numeroProcesso, 90);
+  if (process && /^[A-Za-z0-9./\- ]+$/.test(process)) doc.process = process;
+  // Códigos e descrições de classificações conhecidos do schema real da CGU.
+  const nature = Object.fromEntries([
+    ['group', row.grupo], ['element', row.elemento],
+    ['program', row.programa], ['action', row.acao]
+  ].map(([key, value]) => [key, shortPublicText(value, 120)]).filter(([, value]) => value));
+  if (Object.keys(nature).length) doc.nature = nature;
+  // Observações livres podem conter dados pessoais além do CPF: ainda não publicadas.
   return assertPublicSafe(doc);
 }
 

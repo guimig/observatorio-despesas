@@ -2,6 +2,10 @@ name: Coletar CGU - Observatório
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/cgu.mjs'
   schedule:
     - cron: '27 10 * * *'
 

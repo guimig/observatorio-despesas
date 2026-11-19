@@ -79,3 +79,44 @@ test('dias distintos e meses distintos são preservados sem duplicar informaçõ
   assert.equal(result.data.documents.length, 2);
   assert.equal(result.data.coverage.length, 2);
 });
+
+
+test('catálogo mensal deduplica pessoas jurídicas e protege pessoa física', () => {
+  const a = make('2026-11-18', 1, ne, 1000);
+  a.documents[0].beneficiary = { type: 'pj', id: '12345678000190',
+    name: 'Empresa Exemplo' };
+  a.documents[0].process = '23349.000123/2026-01';
+  a.documents[0].nature = { group: 'Correntes', element: 'Serviços' };
+  const b = make('2026-11-18', 2, ns, 500);
+  b.documents[0].beneficiary = { type: 'pj', id: '12345678000190',
+    name: 'Empresa Exemplo' };
+  const merged = mergeMonth(emptyMonth('2026-11'), '2026-11', [a, b]);
+  assert.equal(Object.keys(merged.data.beneficiaries).length, 1);
+  assert.equal(merged.data.documents[0].partyRef, '12345678000190');
+  assert.equal(merged.data.documents[1].partyRef, '12345678000190');
+  assert.equal(JSON.stringify(merged.data).match(/Empresa Exemplo/g).length, 1);
+  assert.doesNotThrow(() => validateMonth(merged.data));
+  const again = mergeMonth(merged.data, '2026-11', [a, b]);
+  assert.equal(again.changed, false);
+});
+test('CPF mascarado permanece parcial e não cria chave de identidade compartilhada', () => {
+  const p = make('2026-11-18', 2, ns, 100);
+  p.documents[0].beneficiary = { type: 'pf', id: '***.123.456-**' };
+  const merged = mergeMonth(emptyMonth('2026-11'), '2026-11', [p]);
+  assert.equal(merged.data.documents[0].cpfMasked, '***.123.456-**');
+  assert.equal(merged.data.documents[0].partyRef, undefined);
+  assert.equal(merged.data.beneficiaries, undefined);
+  assert.doesNotThrow(() => validateMonth(merged.data));
+  const corrupted = structuredClone(merged.data);
+  corrupted.documents[0].cpfMasked = '000.123.456-78';
+  assert.throws(() => validateMonth(corrupted));
+});
+test('catálogo remove fornecedor sem documentos ativos após retificação', () => {
+  const p = make('2026-11-18', 1, ne, 1000);
+  p.documents[0].beneficiary = { type: 'pj', id: '12345678000190',
+    name: 'Empresa Exemplo' };
+  const stored = mergeMonth(emptyMonth('2026-11'), '2026-11', [p]).data;
+  const changed = mergeMonth(stored, '2026-11', [make('2026-11-18', 1, ne, 1000)]);
+  assert.equal(Object.keys(changed.data.beneficiaries).length, 0);
+  assert.equal(changed.data.documents[0].partyRef, undefined);
+});
