@@ -160,7 +160,7 @@ test('a relação licitação-contrato é oficial, mas não prova UG Araquari',(
   status:'linked',procurementId:purchaseId
  }).data.contracts[0];
  const notice={pncpId:purchaseId,process:'23350.001234/2026-01'};
- assert.equal(assessNoticeAttribution(notice,[linked],[]).level,'unverified');
+ assert.equal(assessNoticeAttribution(notice,[linked],[]).level,'context'); // Referência oficial à compra, mas campus só indicado no contrato.
  const withNe={...linked,commitmentRefs:['158459264222026NE000266'],
   commitmentAt:'2026-11-19',commitmentStatus:'complete'};
  assert.equal(assessNoticeAttribution(notice,[withNe],[]).level,'confirmed');
