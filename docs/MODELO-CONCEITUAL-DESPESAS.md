@@ -93,3 +93,8 @@ Um **contrato formal** de Araquari pode não constar da janela CGU disponível, 
 **Implementado nesta revisão:** tabela exclusiva de contratos formais; tipos documentais SIAFI exibidos sem presumir situação; classificação de NEs substitutivas e vínculos por ID PNCP preservados; nenhuma duplicação nos somatórios.
 
 **Próximas integrações dependentes de evidência:** (1) consultar \`/documentos-relacionados\` e \`/empenhos-impactados\` via Secret CGU para TODAS as NS selecionadas, mesmo quando o valor já está presente; (2) consultar amostras do histórico de itens e caracterizar operações de anulação/reforço; (3) integrar ARPs PNCP com itens e fornecedores e vinculação a instrumentos formais/equivalentes; (4) modelar vínculos documentais N:M e versões por documento; (5) ampliar a cobertura financeira e reconciliar movimentos apenas após classificação confiável dos eventos.
+
+
+## Inspeção autenticada do esquema CGU (etapa experimental somente leitura)
+
+Criados `src/inspect-cgu-siafi.mjs` e `.github/workflows/diagnosticar-cgu-siafi.yml`. Selecionam uma amostra local de NE com item, NS com múltiplos vínculos confirmados e documentos OB/DF para consultar a **API CGU de despesas com `secrets.CGU_API_KEY`**, somente no runner do GitHub Actions. A saída contém **somente nomes/tipos de campos e contagens agregadas**; não publica identificadores, valores, documentos brutos nem resultados pessoais. A inspeção deve determinar se o esquema disponibiliza semântica suficiente para estorno/anulação/reversão e qual vínculo é retornado por `documentos-relacionados`. **Nenhuma classificação de cancelamento é adicionada aos JSONs antes dessa verificação.**
