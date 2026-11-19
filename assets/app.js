@@ -1,4 +1,5 @@
-import { matchDocumentContract, assessContractAttribution } from './procurement-links.js';
+import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
+import { MODALITIES } from './pncp-modalities.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -8,6 +9,8 @@ const fmtCount = n => new Intl.NumberFormat('pt-BR').format(n);
 const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
 let procurementData=null;
+let noticesData=null;
+const noticesState={query:'',modality:'all',attribution:'likely',page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',page:0};
 const contractsPerPage=20;
 const cache = new Map();
@@ -400,6 +403,7 @@ async function loadMonth(month) {
   $('search-doc').value = '';
   renderAll();
   if(procurementData)renderContracts();
+  if(noticesData)renderNotices();
 }
 function csvCell(value) {
   const text = String(value ?? '');
@@ -615,5 +619,130 @@ async function initProcurement(){
   }
 }
 
+
+function publicNoticeUrl(notice) {
+  const id=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(notice?.pncpId||'');
+  return id?'https://pncp.gov.br/app/editais/'+id[1]+'/'+id[3]+'/'+Number(id[2]):null;
+}
+function noticeEvidence(notice) {
+  return assessNoticeAttribution(notice,procurementData?.contracts||[],loadedCguDocuments());
+}
+function filteredNotices() {
+  return (noticesData?.notices||[]).filter(item=>{
+    if(noticesState.modality!=='all' && String(item.modality)!==noticesState.modality)
+      return false;
+    const evidence=noticeEvidence(item);
+    if(noticesState.attribution==='confirmed' && evidence.level!=='confirmed')return false;
+    if(noticesState.attribution==='likely'&&evidence.level==='unverified')return false;
+    if(noticesState.attribution==='unverified'&&evidence.level!=='unverified')return false;
+    const values=[item.pncpId,item.number,item.process,item.object,
+      MODALITIES[item.modality],item.unitCode];
+    return !noticesState.query||values.filter(Boolean).join(' ').toLowerCase()
+      .includes(noticesState.query);
+  });
+}
+function renderNotices() {
+  if(!noticesData)return;
+  const all=filteredNotices();
+  const pages=Math.max(1,Math.ceil(all.length/20));
+  noticesState.page=Math.max(0,Math.min(pages-1,noticesState.page));
+  $('notices-count').textContent=fmtCount(all.length)+' de '+
+    fmtCount(noticesData.notices.length)+' publicações IFC';
+  $('notices-page-info').textContent='Página '+(noticesState.page+1)+' de '+pages;
+  $('notices-prev').disabled=noticesState.page===0;
+  $('notices-next').disabled=noticesState.page>=pages-1;
+  const tbody=$('notices-rows');
+  tbody.replaceChildren();
+  if(!all.length){
+    const row=element('tr'),cell=element('td','',
+      'Nenhuma publicação correspondente aos filtros ou competências já consultadas.');
+    cell.colSpan=6;row.append(cell);tbody.append(row);
+    return;
+  }
+  for(const notice of all.slice(noticesState.page*20,(noticesState.page+1)*20)){
+    const row=element('tr');
+    const modality=element('td','',MODALITIES[notice.modality]||'Outra modalidade');
+    const docCell=element('td');
+    const url=publicNoticeUrl(notice);
+    if(url){
+      const link=element('a','doc-code',notice.number||notice.pncpId);
+      link.href=url;link.rel='noopener noreferrer';link.target='_blank';
+      docCell.append(link);
+    }else docCell.append(element('span','doc-code',notice.number||notice.pncpId));
+    const process=element('td','doc-code',notice.process||'—');
+    const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
+    const evidence=noticeEvidence(notice);
+    const status=element('td','',campusEvidenceLabel(evidence));
+    status.title=evidence.reason;
+    const value=element('td','align-right',
+      Number.isSafeInteger(notice.estimatedCents)?
+        fmtMoney(notice.estimatedCents):'Não informado');
+    row.append(modality,docCell,process,object,status,value);
+    tbody.append(row);
+  }
+}
+function renderNoticesCoverage() {
+  const coverage=noticesData?.coverage||[];
+  if(!coverage.length){
+    $('notices-coverage').textContent='Nenhuma modalidade consultada até o momento.';
+    $('notices-coverage').className='notice warning';
+    return;
+  }
+  const complete=coverage.filter(c=>c.status==='complete').length;
+  const partial=coverage.filter(c=>c.status==='partial').length;
+  const missing=coverage.filter(c=>c.status==='unavailable').length;
+  $('notices-coverage').textContent='Cobertura PNCP: '+complete+
+    ' consultas de modalidade completas; '+partial+' parcial(is); '+missing+
+    ' indisponível(is). Modalidades e competências são avaliadas separadamente. '+
+    'O filtro inicial destaca possíveis publicações relacionadas a Araquari, '+
+    'mas todos os editais da Reitoria continuam acessíveis.';
+  $('notices-coverage').className='notice'+(partial||missing?' warning':' success');
+}
+async function initNotices() {
+  $('notices-section').hidden=false;
+  const selector=$('notices-modality');
+  Object.keys(MODALITIES).sort((a,b)=>Number(a)-Number(b)).forEach(key=>{
+    const option=element('option','',MODALITIES[key]);option.value=key;
+    selector.append(option);
+  });
+  $('notices-search').addEventListener('input',v=>{
+    noticesState.query=v.target.value.trim().toLowerCase();
+    noticesState.page=0;renderNotices();
+  });
+  selector.addEventListener('change',v=>{
+    noticesState.modality=v.target.value;noticesState.page=0;renderNotices();
+  });
+  $('notices-attribution').addEventListener('change',v=>{
+    noticesState.attribution=v.target.value;noticesState.page=0;renderNotices();
+  });
+  $('notices-reset').addEventListener('click',()=>{
+    noticesState.query='';noticesState.modality='all';noticesState.attribution='likely';
+    noticesState.page=0;
+    $('notices-search').value='';selector.value='all';
+    $('notices-attribution').value='likely';
+    renderNotices();
+  });
+  $('notices-prev').addEventListener('click',()=>{noticesState.page--;renderNotices();});
+  $('notices-next').addEventListener('click',()=>{noticesState.page++;renderNotices();});
+  try{
+    const response=await fetch('./data/procurement/notices.json',{cache:'no-store'});
+    if(!response.ok)throw Error('Catálogo ainda não publicado');
+    const data=await response.json();
+    if(data?.schema_version!==1||data.publicationUasg!=='158125'||
+      !Array.isArray(data.notices)||!Array.isArray(data.coverage))
+      throw Error('Dados PNCP incompatíveis');
+    noticesData=data;
+    renderNoticesCoverage();
+    renderNotices();
+  }catch{
+    noticesData={notices:[],coverage:[]};
+    $('notices-coverage').className='notice warning';
+    $('notices-coverage').textContent=
+      'Aguardando a primeira coleta de licitações e contratações diretas. Nenhuma contratação foi presumida.';
+    renderNotices();
+  }
+}
+
 init();
-initProcurement();
+initProcurement().then(()=>{if(noticesData)renderNotices();});
+initNotices();
