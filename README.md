@@ -163,3 +163,14 @@ A rotina `Vincular contratos às licitações pelo ID oficial PNCP` executa pequ
 A interface permite navegar de contrato a licitação de origem e da licitação a seus contratos **por ID oficial PNCP**. Esse vínculo comprova a associação da publicação do contrato à contratação; **não comprova execução pela UG 158459**. Para essa conclusão continuam valendo as regras anteriores: NE da UG 158459 registrada oficialmente e conferida, seguida de indícios processuais `23349`. A busca por licitações do IFC permanece aberta a todos os campi, evitando atribuir indevidamente a Araquari os contratos centralizados pela Reitoria.
 
 A relação pode apontar a uma contratação de outra competência ainda não coletada no catálogo de editais; nesse caso é exibido o link para o registro oficial, sem fabricar dados locais. Não existe novo arquivo redundante, token, coleta de pessoa física ou consulta ao Tesouro Gerencial.
+
+
+## Recuperação histórica pontual das licitações vinculadas
+
+Quando um contrato publicado hoje se refere a uma contratação de 2025 ou de outro mês de 2026, o Observatório recupera a licitação **diretamente pelo identificador PNCP informado no detalhe do contrato**: `GET /api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}`. Isso evita varrer todos os meses e as 14 modalidades para descobrir uma contratação já conhecida.
+
+O workflow `Recuperar licitações históricas vinculadas a contratos PNCP` compara `procurementId` dos contratos com os IDs já conhecidos de `notices.json`, consulta somente os faltantes e normaliza o resultado no **mesmo catálogo**. A consulta exige o retorno do mesmo ID esperado e suprime dados pessoais/objetos inseguros. Contratações antigas sem cobertura mensal integral entram com status `partial` para mês/modalidade; **uma consulta individual jamais é apresentada como cobertura completa**.
+
+A rotina é semanal ou pode ser acionada manualmente; `npm run pncp-related:plan` permite conhecer a quantidade de IDs faltantes sem chamar a API. Contratos centralizados da Reitoria não passam a ser atribuídos a Araquari por causa desse vínculo; a comprovação por NE da UG 158459 continua independente.
+
+**Confiabilidade dos workflows:** todas as rotinas que escrevem dados consultam o `main` mais recente no início do job (sem alterar branch de CI). Isso corrige o conflito observado quando duas coletas eram enfileiradas no mesmo commit: a segunda tentativa de push falhava por estar baseada em uma versão antiga.

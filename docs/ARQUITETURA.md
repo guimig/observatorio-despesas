@@ -144,3 +144,14 @@ O coletor independente `src/collect-pncp-contract-links.mjs` e o workflow `vincu
 O navegador utiliza o ID para montar ligações **contratação → contrato** e **contrato → contratação**, inclusive quando suas competências são diferentes. A interface rotula separadamente o *elo PNCP institucional* e a *evidência da UG executora*. Não se somam valores contratuais e orçamentários nem se inferem notas de empenho a partir do nome ou valor.
 
 Para a continuidade da cadeia, uma NE da UG 158459 explicitamente confirmada é necessária antes de classificar a contratação como executada por Araquari. O processo administrativo iniciado por `23349` é indício, nunca prova suficiente.
+
+
+## Recuperação direta de editais por identificador PNCP
+
+O caminho contrato→contratação gera `procurementId` que pode apontar a competência anterior à data de publicação do contrato. `src/pncp-notices-detail.mjs` recupera o detalhe oficial da compra sem varredura mensal (`/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}`) e só aceita respostas cujo `numeroControlePNCP` coincide exatamente com o solicitado. Usa o normalizador existente, que elimina identificadores pessoais, textos livres inseguros e campos desnecessários.
+
+A inserção em `notices.json` usa `applyDirectNotice`; deduplica por ID PNCP e acrescenta `coverage[month,modality]` como `partial` quando uma publicação é recuperada individualmente, sem declarar completude do período. Uma varredura posterior pode promover esse par a `complete`. Nenhum arquivo de histórico paralelo ou cache redundante é criado.
+
+O workflow `recuperar-licitacoes-vinculadas.yml` tem paginação de trabalho por quantidade de IDs, escolha de pendências pela referência efetiva nos contratos, preferência por casos com processo 23349 e retry semanal de ausências/erros de fonte. A fonte de verdade da relação continua sendo o ID PNCP, e a condição de execução financeira requer NE da UG 158459.
+
+**Proteção contra competição de commits:** jobs de coleta de escrita compartilham `concurrency.group=observatorio-coleta-main` e fazem checkout explícito de `main`. O uso do SHA do evento em jobs aguardando a fila causava push `non-fast-forward`; o novo checkout evita reaplicar dados sobre uma revisão anterior. O workflow do Pages já obtém `ref: main`.
