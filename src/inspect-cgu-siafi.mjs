@@ -207,7 +207,7 @@ async function main(){
   console.log('Diagnóstico concluído: somente tipos de campos, contagens e '+
     'classes gerais de operação. Nenhum ID, valor, nome, CPF, resposta bruta ou token em log.');
 }
-if(process.argv[1]&&fileURLToPath(import.meta.url)===new URL('file://'+resolve(process.argv[1])).href){
+if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
   main().catch(error=>{
     console.error(/CGU_API_KEY/.test(error.message)?'Secret CGU_API_KEY ausente':
       'Sondagem CGU não concluída; nenhum dado modificado.');

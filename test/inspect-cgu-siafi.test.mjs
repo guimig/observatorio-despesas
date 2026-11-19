@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {
   docType,detailUrl,relatedUrl,impactUrl,itemHistoryUrl,
   structuralFields,classifyMovement,summarizeItems,summarizeImpacts,
@@ -143,4 +145,17 @@ test('sondagem integrada NS usa fase 2, sem gravar valores/IDs',async()=>{
  for(const sensitive of [ns,ne,ob,'000.123.456-78','SEGREDO','100,00']){
   assert.equal(printable.includes(sensitive),false);
  }
+});
+
+test('entrypoint executa mesmo sem credencial e falha explicitamente, sem chamada de rede',()=>{
+  const file=fileURLToPath(new URL('../src/inspect-cgu-siafi.mjs',import.meta.url));
+  const outcome=spawnSync(process.execPath,[file],{
+    cwd:fileURLToPath(new URL('..',import.meta.url)),
+    env:{...process.env,CGU_API_KEY:''},
+    encoding:'utf8',timeout:5000
+  });
+  assert.equal(outcome.status,1);
+  const output=outcome.stdout+outcome.stderr;
+  assert.match(output,/Secret CGU_API_KEY ausente/);
+  assert.equal(output.includes('undefined'),false);
 });
