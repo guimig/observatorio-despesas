@@ -1,6 +1,9 @@
 {
   "schema_version": 1,
   "unit": "158459",
-  "status": "aguardando_primeira_coleta",
-  "months": []
+  "status": "dados_publicados",
+  "months": [
+    "2026-11"
+  ],
+  "updated_at": "2026-11-19T20:25:08.246Z"
 }
