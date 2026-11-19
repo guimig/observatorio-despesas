@@ -13,7 +13,8 @@ const CNPJ=/^\d{14}$/;
 const DATE=/^20\d{2}-\d{2}-\d{2}$/;
 const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
- 'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','kind'];
+ 'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','kind',
+ 'commitmentStatus','commitmentAt','commitmentRefs'];
 
 export const blankProcurement=()=>({
   schema_version:1,unit:CAMPUS_UG,contracts:[],coverage:[]
@@ -53,12 +54,34 @@ export function validateProcurement(data){
       if(!PNCP_ID.test(contract.pncpId??'') ||
          contract.id!=='pncp:'+contract.pncpId ||
          ![CAMPUS_CNPJ,REITORIA_CNPJ].includes(contract.orgCnpj) ||
-         (contract.scope==='campus' &&
-          contract.orgCnpj!==CAMPUS_CNPJ&&contract.unitCode!==CAMPUS_UG))
+         (contract.scope==='campus' && contract.orgCnpj!==CAMPUS_CNPJ))
         throw Error('Identificação ou escopo PNCP inválidos');
     }else if(!contract.id.startsWith('compras:'+CAMPUS_UG+':')||
              contract.scope!=='campus'||contract.unitCode!==CAMPUS_UG) {
       throw Error('Identificação Compras.gov inválida');
+    }
+    if(contract.commitmentStatus!==undefined){
+      if(contract.source!=='pncp' ||
+         !['complete','unavailable'].includes(contract.commitmentStatus) ||
+         !/^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/.test(contract.commitmentAt??'')) {
+        throw Error('Estado de consulta de NE do PNCP inválido');
+      }
+      if(contract.commitmentStatus==='complete'&& !Array.isArray(contract.commitmentRefs)) {
+        throw Error('Lista de NEs obrigatória em consulta concluída');
+      }
+      if(contract.commitmentStatus==='unavailable'&&contract.commitmentRefs!==undefined){
+        throw Error('Resposta incompleta de NE não pode ser publicada');
+      }
+    }else if(contract.commitmentAt!==undefined||contract.commitmentRefs!==undefined) {
+      throw Error('NE sem cobertura de consulta');
+    }
+    if(contract.commitmentRefs!==undefined){
+      if(contract.commitmentRefs.length>500 ||
+         new Set(contract.commitmentRefs).size!==contract.commitmentRefs.length ||
+         contract.commitmentRefs.some(ref=>typeof ref!=='string' ||
+           !/^158459(?:\d{5})?20\d{2}NE\d{6}$/.test(ref))) {
+        throw Error('NE oficial incompatível com a UG 158459');
+      }
     }
     if(contract.procurementId!==undefined&&!PNCP_ID.test(contract.procurementId))
       throw Error('Referência de contratação PNCP inválida');
@@ -123,9 +146,24 @@ export function mergeProcurement(current,scans,now=new Date()){
     if(status!=='unavailable'){
       // Apenas um lote paginado concluído pode substituir registros já publicados.
       if(status==='complete'||!before){
+        const oldContracts=new Map(next.contracts.map(record=>[record.id,record]));
         next.contracts=next.contracts.filter(entry=>
           entry.source!==source||entry.publishedMonth!==month);
-        next.contracts.push(...structuredClone(records));
+        for(const record of records){
+          const copy=structuredClone(record);
+          const old=oldContracts.get(copy.id);
+          // Preservar consulta de NE apenas se os campos-base do instrumento
+          // não mudaram. Contratos retificados devem ser reconsultados.
+          if(old?.commitmentStatus && old.number===copy.number &&
+             old.unitCode===copy.unitCode && old.process===copy.process) {
+            copy.commitmentStatus=old.commitmentStatus;
+            copy.commitmentAt=old.commitmentAt;
+            if(old.commitmentStatus==='complete'){
+              copy.commitmentRefs=structuredClone(old.commitmentRefs);
+            }
+          }
+          next.contracts.push(copy);
+        }
       }
     }
     next.coverage=next.coverage.filter(item=>item.source!==source||item.month!==month);
@@ -140,6 +178,52 @@ export function mergeProcurement(current,scans,now=new Date()){
   next.updated_at=now.toISOString();
   return {changed:true,data:next};
 }
+
+/** Enriquecimento por contrato PNCP, com checkpoint no catálogo (sem novo JSON). */
+export function applyCommitmentResult(existing,id,result,now=new Date()){
+  const original=validateProcurement(structuredClone(existing));
+  const contract=original.contracts.find(entry=>entry.id===id);
+  if(!contract || contract.source!=='pncp')throw Error('Instrumento PNCP não encontrado');
+  if(!['complete','unavailable'].includes(result?.status))throw Error('Estado PNCP inválido');
+  const next=structuredClone(original);
+  const updated=next.contracts.find(entry=>entry.id===id);
+  if(result.status==='unavailable'&&updated.commitmentStatus==='complete'){
+    return {changed:false,data:original};
+  }
+  updated.commitmentStatus=result.status;
+  if(result.status==='complete'){
+    updated.commitmentRefs=[...new Set(result.refs)].sort();
+  }else{
+    delete updated.commitmentRefs;
+  }
+  const before=structuredClone(original);
+  const after=structuredClone(next);
+  const previousContract=before.contracts.find(entry=>entry.id===id);
+  const proposed=after.contracts.find(entry=>entry.id===id);
+  delete previousContract.commitmentAt;
+  delete proposed.commitmentAt;
+  if(JSON.stringify(previousContract)===JSON.stringify(proposed)){
+    return {changed:false,data:original};
+  }
+  updated.commitmentAt=now.toISOString().slice(0,10);
+  next.updated_at=now.toISOString();
+  validateProcurement(next);
+  return {changed:true,data:next};
+}
+export async function writeCommitmentResult(root,id,result,now=new Date()){
+  const filename=join(root,'data','procurement','contracts.json');
+  const previous=await readProcurement(root);
+  if(!previous)throw Error('Catálogo PNCP indisponível');
+  const outcome=applyCommitmentResult(previous,id,result,now);
+  if(!outcome.changed)return outcome;
+  const tmp=filename+'.tmp';
+  try{
+    await writeFile(tmp,JSON.stringify(outcome.data)+'\n','utf8');
+    await rename(tmp,filename);
+  }catch(error){await unlink(tmp).catch(()=>{});throw error}
+  return outcome;
+}
+
 export async function readProcurement(root){
   const filename=join(root,'data','procurement','contracts.json');
   try{return validateProcurement(JSON.parse(await readFile(filename,'utf8')))}
