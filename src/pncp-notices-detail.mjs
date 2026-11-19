@@ -2,7 +2,7 @@
  * Recuperação pontual de licitações por ID oficial PNCP conhecido em um contrato.
  * Evita varrer desnecessariamente os 14 códigos de modalidade e todos os meses.
  */
-import {requestPublicJSON} from './procurement.mjs';
+import {requestPublicJSON,HttpFailure} from './procurement.mjs';
 import {normalizeNotice} from './pncp-notices.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
 
@@ -29,6 +29,19 @@ export function normalizeNoticeDetail(raw,expectedId){
 export async function fetchNoticeDetail(id,{fetcher=requestPublicJSON}={}){
   const result=await fetcher(noticeDetailUrl(id));
   return normalizeNoticeDetail(result,id);
+}
+/** Respeita bloqueio HTTP 429 sem inferir que o edital inexiste. */
+export async function fetchNoticeDetailWithRetry(id,{
+  fetcher=requestPublicJSON,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))
+}={}){
+  for(let attempt=0;attempt<3;attempt++){
+    try{return await fetchNoticeDetail(id,{fetcher});}
+    catch(error){
+      if(!(error instanceof HttpFailure)||error.status!==429||attempt===2)throw error;
+      await wait(attempt===0?15000:30000);
+    }
+  }
+  throw Error('PNCP não respondeu à consulta de contratação');
 }
 export function planMissingNotices(contracts,notices,{count=18}={}){
   const max=Number(count);
