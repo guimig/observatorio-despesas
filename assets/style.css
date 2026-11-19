@@ -19,3 +19,9 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 
 /* Enriquecimento documental: leitura de fornecedores e processos sem perder legibilidade */
 .table-scroll table{min-width:1040px}.beneficiary-cell{max-width:255px;overflow-wrap:anywhere;font-size:.8rem}
+
+/* Rastreabilidade e detalhamento: linhas navegáveis, sem depender de telas externas. */
+.relation-link{border:0;background:transparent;color:var(--brand);text-align:left;padding:4px 0;cursor:pointer;display:block;max-width:100%;overflow-wrap:anywhere;font-weight:700}
+.relation-link:hover{text-decoration:underline}.relation-link:disabled{opacity:.6;cursor:wait}
+.relation-item{display:flex;flex-direction:column;gap:5px}.relation-item strong{font-size:.8rem}
+#dialog-items-section{margin-top:18px;border-top:1px solid var(--border);padding-top:15px}
