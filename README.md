@@ -189,3 +189,17 @@ Na fotografia de novembro/2026, dos 70 instrumentos publicados pelo IFC na cole�
 Os registros da CGU distinguem fase da despesa e espécie SIAFI: NE, NS, OB, DF e outras. A fase da CGU **não certifica** estorno, anulação, reforço, saldo, quitação ou a natureza completa do movimento. As regras de relacionamento N:M e critérios de cobertura são documentados em [Modelo conceitual das despesas](docs/MODELO-CONCEITUAL-DESPESAS.md).
 
 A configuração autenticada já existente é a chave de **CGU** `CGU_API_KEY`, transmitida somente no GitHub Actions pelo cabeçalho `chave-api-dados`. Não há chaves no JavaScript do Pages. O PNCP tem API pública separada, sem necessidade dessa chave.
+
+
+## Diagnóstico autenticado de documentos SIAFI pela CGU
+
+A execução independente `Diagnosticar documentos e historicos SIAFI pela API CGU` utiliza o **repository secret já cadastrado `CGU_API_KEY`** apenas em GitHub Actions, enviando-o no cabeçalho `chave-api-dados` para consultar uma amostra de **NE, NS, OB e DF da UG 158459**. Verifica (quando disponível):
+
+- `/despesas/documentos/{codigo}` — **nomes e tipos dos campos** do documento detalhado;
+- `/despesas/documentos-relacionados` — somente quantidade e tipos dos campos dos documentos relacionados;
+- `/despesas/empenhos-impactados` nas fases 2 e 3 — somente contagem de NEs distintas impactadas e indicadores de valores negativos, **somente primeira página**;
+- `/despesas/itens-de-empenho/historico` — somente nomes dos campos e contagens por categorias de operação (emissão, reforço, anulação, cancelamento, estorno e não identificado).
+
+O diagnóstico não cria arquivos, não altera `data/`, não publica novos documentos e **nunca expõe token, identificador completo, valor, CPF, favorecido ou resposta bruta nos logs**. Dados pessoais da API são tratados exclusivamente em memória, sem serialização. O objetivo é validar o esquema que embasará futuro controle auditável de movimentos e anulações; ausência de campo ou HTTP de falha é **incerteza**, nunca movimento inexistente.
+
+As etapas completas da despesa, hipóteses de instrumento contratual substitutivo e relações N:M estão documentadas em `docs/MODELO-CONCEITUAL-DESPESAS.md`. A fonte autenticada em uso é a **CGU**, não AGU.
