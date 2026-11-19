@@ -95,7 +95,7 @@
             <div class="quality-metric"><strong id="days-covered">—</strong><span>Dias completos / previstos</span></div>
             <div class="quality-metric"><strong id="incomplete-count">—</strong><span>Consultas parciais</span></div>
             <div class="quality-metric"><strong id="invalid-count">—</strong><span>Valores indisponíveis</span></div>
-            <div class="quality-metric"><strong id="relations-count">—</strong><span>Vínculos NS–NE</span></div>
+            <div class="quality-metric"><strong id="relations-count">—</strong><span>Vínculos documentais</span></div>
           </div>
           <p class="helper">Sem dados não significa zero. Vínculos são exibidos apenas quando os identificadores oficiais permitem confirmação.</p>
         </section>
@@ -153,7 +153,12 @@
       <dl id="dialog-fields" class="document-fields"></dl>
       <h3>Relacionamentos documentais</h3>
       <div id="dialog-relations" class="relations"></div>
-      <p class="helper">Relações baseadas nos empenhos impactados disponibilizados pela CGU. A ausência de vínculo não comprova inexistência de relação.</p>
+      <p class="helper">Relações confirmadas pelos empenhos impactados da CGU. A ausência de vínculo não comprova inexistência de relação. Vínculos em outras competências podem exigir carregamento adicional.</p>
+      <section id="dialog-items-section" hidden aria-label="Itens do empenho">
+        <h3>Itens do empenho</h3>
+        <div id="dialog-items" class="relations"></div>
+        <p class="helper">Detalhamento e valor atual do item segundo a CGU; dados sujeitos à disponibilidade e atualização da fonte. Descrições com possíveis dados pessoais são suprimidas.</p>
+      </section>
     </div>
   </dialog>
   <footer class="site-footer">
