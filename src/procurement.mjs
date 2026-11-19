@@ -229,7 +229,15 @@ export async function scanCompras(month,{fetcher=requestPublicJSON,maxPages=15}=
     if(!value || value.publishedMonth!==month){skipped.push(1);continue;}
     valid.push(value);
   }
-  return {records:valid,skipped:skipped.length};
+  const unique=new Map();
+  for(const contract of valid){
+    if(unique.has(contract.id) &&
+       JSON.stringify(unique.get(contract.id))!==JSON.stringify(contract)) {
+      throw Error('Contrato Compras.gov duplicado com divergência');
+    }
+    unique.set(contract.id,contract);
+  }
+  return {records:[...unique.values()],skipped:skipped.length};
 }
 export function normalizeProcess(value){
   return processo(value);
