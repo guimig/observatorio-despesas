@@ -1,5 +1,6 @@
 /** Coleção de licitações e contratações diretas publicadas pela Reitoria do IFC. */
-import {REITORIA_CNPJ,monthBounds,requestPublicJSON,parseMoneyCents} from './procurement.mjs';
+import {REITORIA_CNPJ,monthBounds,requestPublicJSON} from './procurement.mjs';
+import {parseMoneyCents} from './cgu.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
 import {assertPublicSafe} from './privacy.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
