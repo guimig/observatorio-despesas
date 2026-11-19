@@ -173,7 +173,15 @@ export function mergeProcurement(current,scans,now=new Date()){
   next.contracts.sort((a,b)=>a.source.localeCompare(b.source)||a.id.localeCompare(b.id));
   next.coverage.sort((a,b)=>a.month.localeCompare(b.month)||a.source.localeCompare(b.source));
   validateProcurement(next);
-  const canonical=obj=>{const value=structuredClone(obj);delete value.updated_at;return JSON.stringify(value)};
+  // Ordenação de chaves evita commits falsos após anexar campos de
+  // enriquecimento em ordem distinta da publicação original.
+  const sortKeys=value=>Array.isArray(value)?value.map(sortKeys):
+    value&&typeof value==='object'?Object.fromEntries(
+      Object.keys(value).sort().map(key=>[key,sortKeys(value[key])])):value;
+  const canonical=obj=>{
+    const value=structuredClone(obj);delete value.updated_at;
+    return JSON.stringify(sortKeys(value));
+  };
   if(canonical(next)===canonical(previous))return {changed:false,data:previous};
   next.updated_at=now.toISOString();
   return {changed:true,data:next};
