@@ -4,7 +4,7 @@ Aplicação pública independente para consulta e rastreabilidade de documentos 
 
 ## Situação
 
-Projeto em implantação por etapas. Primeiro módulo: documentos de empenho, liquidação e pagamento do **Portal da Transparência/CGU**, com armazenamento mensal incremental, controle de cobertura, testes e interface estática. A primeira expansão inclui identificação segura de favorecidos, processos e classificação da despesa. Dados do SIOP, SIDRA, PNCP, Compras.gov.br e fontes complementares serão integrados progressivamente.
+Projeto em implantação por etapas. Primeiro módulo: documentos de empenho, liquidação e pagamento do **Portal da Transparência/CGU**, com armazenamento mensal incremental, controle de cobertura, testes e interface estática. A primeira expansão inclui identificação segura de favorecidos, processos e classificação da despesa. A integração inicial de PNCP e Compras.gov.br inclui um catálogo contratual separado, com classificação entre IFC institucional e Campus Araquari; SIOP, SIDRA e fontes complementares serão incorporados progressivamente.
 
 O projeto não consulta, altera nem substitui os relatórios do Tesouro Gerencial e não depende do EmailBackupHub. Nenhum dado histórico é considerado completo antes da coleta e da validação correspondentes.
 
@@ -28,6 +28,7 @@ npm test
 npm run check:data
 npm run build:site        # gera dist/ com interface e JSONs publicos
 npm run enrich:plan       # simula itens e vínculos de pagamentos pendentes
+npm run contracts:plan    # simula consulta PNCP/Compras sem requisicoes
 npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
 npm run collect:cgu
@@ -96,3 +97,24 @@ npm run enrich:cgu
 ```
 
 Os resultados devem ser interpretados como **relações documentais da CGU**, não conciliação contábil, situação de pagamento bancário ou medida de saldo. A interface informa quando itens ou vínculos ainda aguardam consulta e permite localizar documentos relacionados em outras competências já coletadas.
+
+
+## Integração de contratações — PNCP e Compras.gov.br
+
+O Observatório diferencia **UG 158459**, **CNPJ do Campus Araquari 10.635.424/0003-48** e **CNPJ da Reitoria 10.635.424/0001-86**. Muitas contratações do IFC podem ser publicadas centralmente. Um contrato identificado no CNPJ da Reitoria **não é automaticamente despesa de Araquari**.
+
+O workflow `Coletar contratos PNCP e Compras.gov` consulta, sem autenticação, o PNCP por mês de publicação e CNPJ do órgão. Para Compras.gov, primeiro tenta obter o código oficial do órgão pelo cadastro da UASG 158459; somente com essa identificação consulta os contratos correspondentes, usando filtros de vigência. **Se a API retornar HTTP 404 ou outro erro, o sistema registra a fonte indisponível, nunca zero contratos.**
+
+O arquivo `data/procurement/contracts.json` é um catálogo mínimo separado dos documentos CGU; não se salvam cópias de contratos em cada empenho. Ele inclui identificador oficial, processo, fornecedor identificado como PJ/CPF parcialmente mascarado, unidade, objeto sanitizado, valor global, vigência e cobertura por fonte/competência. Os detalhes públicos estão disponíveis no explorador de contratos. Não há download de respostas brutas nem novos Secrets.
+
+A conciliação é **conservadora**:
+
+- **Identificador confirmado:** documento CGU de empenho com código de NE coincidente com instrumento publicado da unidade Araquari.
+- **Correspondência contextual:** processo administrativo **e CNPJ** do fornecedor iguais, porém sem identificação documental direta. Nunca considerada pagamento ou execução de contrato.
+- **Sem correspondência:** não é evidência de inexistência da contratação; as bases têm coberturas e ciclos de atualização distintos.
+
+Nunca se somam valores de PNCP e Compras.gov para obter um total único, pois um mesmo contrato pode constar em ambas as fontes. Tampouco se somam valores contratuais à execução documental da despesa.
+
+Para executar manualmente: Actions → **Coletar contratos PNCP e Compras.gov** → Run workflow; opcionalmente informe `month` em `AAAA-MM`. A rotina agenda duas consultas semanais e chama o deploy do GitHub Pages somente quando o catálogo normalizado muda. Em caso de indisponibilidade, o último arquivo válido é preservado.
+
+Documentação oficial: [PNCP API Consulta](https://pncp.gov.br/api/consulta/swagger-ui/index.html) e [Compras.gov dados abertos](https://dadosabertos.compras.gov.br/swagger-ui/index.html).

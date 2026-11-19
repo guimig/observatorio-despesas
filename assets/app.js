@@ -1,3 +1,4 @@
+import { matchDocumentContract } from './procurement-links.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -6,6 +7,9 @@ const fmtMoney = cents => Number.isSafeInteger(cents)
 const fmtCount = n => new Intl.NumberFormat('pt-BR').format(n);
 const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
+let procurementData=null;
+const contractsState={query:'',source:'all',scope:'all',page:0};
+const contractsPerPage=20;
 const cache = new Map();
 const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0 };
 
@@ -184,6 +188,63 @@ async function locateLinkedDocument(id) {
   }
   return null;
 }
+function contractSourceName(source){
+  return source==='pncp'?'PNCP':'Compras.gov.br';
+}
+function contractScopeName(scope){
+  return scope==='campus'?'Campus Araquari':'IFC institucional';
+}
+function publicPncpUrl(contract){
+  if(contract.source!=='pncp')return null;
+  const match=/^(\d{14})-[1-9]-(\d{6})\/(20\d{2})$/.exec(contract.pncpId||'');
+  return match?'https://pncp.gov.br/app/contratos/'+match[1]+'/'+match[3]+'/'+Number(match[2]):null;
+}
+function contractSupplier(contract){
+  if(contract.supplierCpfMasked)return 'Pessoa física · CPF '+contract.supplierCpfMasked;
+  if(contract.supplierCnpj){
+    return (contract.supplierName||'Pessoa jurídica')+' · CNPJ '+formatCnpj(contract.supplierCnpj);
+  }
+  return 'Não informado';
+}
+function contractBadge(contract){
+  return contractSourceName(contract.source)+' · '+contractScopeName(contract.scope);
+}
+function showContractAssociations(doc){
+  const slot=$('dialog-contracts');
+  slot.replaceChildren();
+  if(!procurementData){
+    slot.append(element('p','small-muted','Catálogo de contratos ainda não disponível.'));
+    return;
+  }
+  const matches=procurementData.contracts.map(contract=>
+    ({contract,evidence:matchDocumentContract(doc,contract)}))
+    .filter(item=>item.evidence)
+    .sort((a,b)=>(a.evidence.level==='confirmed'?0:1)-
+      (b.evidence.level==='confirmed'?0:1));
+  if(!matches.length){
+    slot.append(element('p','small-muted',
+      'Nenhuma correspondência comprovada ou contextual encontrada no catálogo consultado.'));
+    return;
+  }
+  for(const {contract,evidence} of matches.slice(0,8)){
+    const block=element('div','relation-item');
+    block.append(element('strong','',
+      (evidence.level==='confirmed'?'Identificador oficial coincidente':'Correspondência contextual')+
+      ' · '+(contract.number||contract.id)));
+    block.append(element('span','small-muted',contractBadge(contract)));
+    block.append(element('span','small-muted',evidence.reason));
+    if(contract.object)block.append(element('span','small-muted',contract.object));
+    const url=publicPncpUrl(contract);
+    if(url){
+      const link=element('a','inline-link','Ver registro oficial no PNCP');
+      link.href=url;link.target='_blank';link.rel='noopener noreferrer';
+      block.append(link);
+    }
+    slot.append(block);
+  }
+  if(matches.length>8)slot.append(element('p','small-muted',
+    'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
+}
 function showDocument(doc, monthData = state.data) {
   $('dialog-title').textContent = doc.id;
   const fields = $('dialog-fields');
@@ -275,6 +336,7 @@ function showDocument(doc, monthData = state.data) {
       }
     }
   }
+  showContractAssociations(doc);
   const dialog=$('document-dialog');
   if(!dialog.open)dialog.showModal();
 }
@@ -409,4 +471,117 @@ async function init() {
     status('Falha ao carregar o acervo público. Nenhum total foi presumido.', 'warning');
   }
 }
+
+function filteredContracts(){
+  if(!procurementData)return [];
+  return procurementData.contracts.filter(contract=>{
+    if(contractsState.source!=='all'&&contract.source!==contractsState.source)return false;
+    if(contractsState.scope!=='all'&&contract.scope!==contractsState.scope)return false;
+    const fields=[contract.id,contract.number,contract.pncpId,contract.procurementId,
+      contract.process,contract.supplierCnpj,contract.supplierCpfMasked,
+      contract.supplierName,contract.object,contract.kind];
+    return !contractsState.query||fields.filter(Boolean).join(' ').toLowerCase()
+      .includes(contractsState.query);
+  });
+}
+function renderContracts(){
+  const all=filteredContracts();
+  const totalPages=Math.max(1,Math.ceil(all.length/contractsPerPage));
+  contractsState.page=Math.min(Math.max(contractsState.page,0),totalPages-1);
+  const rows=all.slice(contractsState.page*contractsPerPage,
+    (contractsState.page+1)*contractsPerPage);
+  $('contract-count').textContent=fmtCount(all.length)+' instrumento(s) filtrado(s)';
+  $('contract-pages').textContent='Página '+(contractsState.page+1)+' de '+totalPages;
+  $('contract-prev').disabled=contractsState.page===0;
+  $('contract-next').disabled=contractsState.page>=totalPages-1;
+  const tbody=$('contract-rows');
+  tbody.replaceChildren();
+  if(!rows.length){
+    const row=element('tr'),cell=element('td','',
+      'Nenhum contrato disponível para os filtros e períodos já consultados.');
+    cell.colSpan=6;row.append(cell);tbody.append(row);return;
+  }
+  for(const contract of rows){
+    const row=element('tr');
+    const source=element('td','',
+      contractSourceName(contract.source)+' · '+contractScopeName(contract.scope));
+    const idcell=element('td','');
+    const link=publicPncpUrl(contract);
+    if(link){
+      const a=element('a','doc-code',contract.number||contract.pncpId);
+      a.href=link;a.target='_blank';a.rel='noopener noreferrer';
+      idcell.append(a);
+    }else{idcell.append(element('span','doc-code',contract.number||contract.id));}
+    const supplier=element('td','beneficiary-cell',contractSupplier(contract));
+    const process=element('td','doc-code',contract.process||'—');
+    const object=element('td','beneficiary-cell',contract.object||'Descrição indisponível');
+    const amount=element('td','align-right',
+      Number.isSafeInteger(contract.amountCents)?fmtMoney(contract.amountCents):'Não informado');
+    row.append(source,idcell,supplier,process,object,amount);
+    tbody.append(row);
+  }
+}
+function renderContractCoverage(){
+  const coverages=procurementData?.coverage||[];
+  if(!coverages.length){
+    $('contract-coverage').className='notice warning';
+    $('contract-coverage').textContent='Nenhuma competência contratual consultada ainda.';
+    return;
+  }
+  const labels=coverages.slice().sort((a,b)=>b.month.localeCompare(a.month)||
+    a.source.localeCompare(b.source)).slice(0,8).map(c=>{
+    const status=c.status==='complete'?'consulta completa':
+      c.status==='partial'?'consulta com registros descartados':'API indisponível';
+    return contractSourceName(c.source)+' '+c.month+': '+status;
+  });
+  const incomplete=coverages.some(c=>c.status!=='complete');
+  $('contract-coverage').className='notice'+(incomplete?' warning':' success');
+  $('contract-coverage').textContent=labels.join(' · ')+
+    '. A abrangência temporal depende das competências já consultadas.';
+}
+async function initProcurement(){
+  $('procurement-section').hidden=false;
+  $('contract-search').addEventListener('input',value=>{
+    contractsState.query=value.target.value.trim().toLowerCase();
+    contractsState.page=0;renderContracts();
+  });
+  $('contract-source').addEventListener('change',value=>{
+    contractsState.source=value.target.value;contractsState.page=0;renderContracts();
+  });
+  $('contract-scope').addEventListener('change',value=>{
+    contractsState.scope=value.target.value;contractsState.page=0;renderContracts();
+  });
+  $('clear-contract-filters').addEventListener('click',()=>{
+    contractsState.query='';contractsState.source='all';contractsState.scope='all';
+    contractsState.page=0;
+    $('contract-search').value='';
+    $('contract-source').value='all';$('contract-scope').value='all';
+    renderContracts();
+  });
+  $('contract-prev').addEventListener('click',()=>{
+    contractsState.page--;renderContracts();
+  });
+  $('contract-next').addEventListener('click',()=>{
+    contractsState.page++;renderContracts();
+  });
+  try{
+    const response=await fetch('./data/procurement/contracts.json',{cache:'no-store'});
+    if(!response.ok)throw Error('Catálogo ainda não publicado');
+    const data=await response.json();
+    if(data.schema_version!==1||data.unit!=='158459'||
+       !Array.isArray(data.contracts)||!Array.isArray(data.coverage))
+      throw Error('Formato de contratos incompatível');
+    procurementData=data;
+    renderContractCoverage();
+    renderContracts();
+  }catch{
+    procurementData={contracts:[],coverage:[]};
+    $('contract-coverage').textContent=
+      'Aguardando primeira sincronização PNCP/Compras.gov; nenhuma contratação foi presumida.';
+    $('contract-coverage').className='notice warning';
+    renderContracts();
+  }
+}
+
 init();
+initProcurement();

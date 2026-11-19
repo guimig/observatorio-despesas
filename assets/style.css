@@ -25,3 +25,13 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 .relation-link:hover{text-decoration:underline}.relation-link:disabled{opacity:.6;cursor:wait}
 .relation-item{display:flex;flex-direction:column;gap:5px}.relation-item strong{font-size:.8rem}
 #dialog-items-section{margin-top:18px;border-top:1px solid var(--border);padding-top:15px}
+
+/* Contratos: separação entre IFC institucional e UG e leitura em telas pequenas. */
+#procurement-section{margin-top:22px}
+#procurement-section .panel-heading{margin-bottom:16px}
+#procurement-section .eyebrow{margin-bottom:6px}
+.contracts-table{min-width:1000px}
+.contracts-table th:nth-child(5),.contracts-table td:nth-child(5){min-width:200px;max-width:360px}
+.contracts-table .beneficiary-cell{white-space:normal;overflow-wrap:anywhere}
+#contract-coverage{font-size:.82rem;margin-bottom:17px}
+#dialog-contracts .relation-item{border-left:3px solid var(--brand)}

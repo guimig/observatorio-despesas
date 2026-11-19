@@ -92,3 +92,19 @@ O adaptador `src/enrich-cgu.mjs` lê apenas duas consultas oficiais: `despesas/e
 **Ponto de atenção:** a ausência de um documento na competência atual não significa que o vínculo não exista: uma NE pode ter sido emitida em outro exercício, ainda não carregado no acervo. A interface busca competências adicionais sob demanda e informa quando a referência não está disponível.
 
 Integração PNCP e Compras.gov.br permanece planejamento subsequente: a ligação precisa de identificadores oficiais do processo/contrato, não apenas coincidência de descrição ou valores.
+
+
+## Catálogo contratual PNCP/Compras.gov — primeiro integrador
+
+- **Unidades:** UG Araquari `158459`, CNPJ filial `10635424000348`, Reitoria `10635424000186`. A publicidade pelo CNPJ da Reitoria não implica competência executora da filial; contratos são identificados como `scope: ifc` ou `scope: campus` somente conforme unidade explicitada nos registros.
+- **Fonte PNCP:** `GET /api/consulta/v1/contratos` com dataInicial/dataFinal, CNPJ de cada órgão e paginação integral. Para evitar atribuição indevida, o sistema valida o CNPJ da resposta e distingue unidade `unidadeOrgao.codigoUnidade`.
+- **Fonte Compras.gov:** `/modulo-uasg/1_consultarUasg` para descobrir `codigoOrgao` e `/modulo-contratos/1_consultarContratos` filtrado pela UG 158459 e intervalo de início da vigência. Consulta exige código do órgão confirmado; nenhum código é inventado a partir da UO.
+- **Retenção:** apenas `data/procurement/contracts.json`, um catálogo de instrumentos com ID estável por fonte, vigência, processo, CNPJ PJ, CPF mascarado PF, objeto sanitizado e valores em centavos. Não se armazenam snapshots brutos nem documentos SIAFI duplicados.
+- **Cobertura:** fonte e competência com `complete`, `partial` ou `unavailable`; HTTP 404 não equivale a zero. Falhas nunca substituem cobertura antes completa. Resultados novos só entram no catálogo com paginação consistente e validação de esquema.
+- **Vínculo confirmado:** código de NE coincidente com o instrumento de unidade Araquari. **Vínculo contextual:** processo formal e CNPJ PJ coincidindo com os do documento CGU. Associação contextual não prova execução nem é usada em somatórios financeiros.
+- **Privacidade:** identificação de PF exclusivamente `***.123.456-**`; nenhum nome de PF ou descrição que contenha potencialmente CPF, contatos, e-mails ou dados bancários é persistido. CNPJs PJ permanecem públicos; fontes e documentos brutos não são versionados.
+- **Deploy:** o workflow de coleta de contratos não usa credencial, compartilha o grupo de concorrência das demais coletas para evitar conflito de push e chama `publicar-pages.yml` depois de alterações efetivas nos JSONs. O Pages publica apenas o catálogo validado e não o código ou arquivos temporários.
+
+O primeiro diagnóstico da PNCP não encontrou contratos em outubro/novembro de 2026 sob o CNPJ exclusivo da filial. As consultas institucionais devem ser tratadas como escopo IFC, sujeitas à confirmação de unidade, processo e fornecedor; a consulta de cadastro UASG no Compras.gov retornou HTTP 404 e é considerada indisponibilidade da fonte, não ausência de contratos.
+
+A expansão seguinte poderá consultar contratações PNCP específicas referenciadas por `numeroControlePNCPCompra`, seus itens e atos, além de integrar a base Compras quando a consulta da UASG estiver operacional.
