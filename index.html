@@ -156,7 +156,7 @@
       <div class="table-scroll">
         <table class="contracts-table">
           <thead>
-            <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th><th scope="col">Contratos vinculados</th>
+            <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th><th scope="col">Instrumentos decorrentes</th>
               <th scope="col">Processo SIPAC</th><th scope="col">Objeto</th>
               <th scope="col">Evidência de Araquari</th><th scope="col" class="align-right">Valor estimado</th></tr>
           </thead>
@@ -170,19 +170,20 @@
           <button class="button button-secondary" id="notices-next" type="button">Próxima</button>
         </div>
       </div>
-      <p class="helper">A publicação centralizada é feita pela Reitoria, sem identificar automaticamente o campus atendido. O processo iniciado por 23349 é um indício secundário e não substitui a NE oficial emitida pela UG 158459. A ausência de contrato ou empenho no acervo não significa ausência de licitação.</p>
+      <p class="helper">A publicação centralizada é feita pela Reitoria. Uma contratação pode gerar vários contratos formais, empenhos substitutivos ou nenhum instrumento publicado até o momento; atas de registro de preços são instrumentos próprios. A NE substitutiva não é contada como contrato formal e não é somada novamente à execução financeira. O processo 23349 é somente indício de Araquari.</p>
     </section>
 
     <section id="procurement-section" class="panel explorer" hidden aria-labelledby="procurement-title">
       <div class="panel-heading">
         <div>
           <div class="eyebrow">PNCP · COMPRAS.GOV.BR</div>
-          <h2 id="procurement-title">Contratações e contratos públicos</h2>
-          <p class="small-muted">Contratos publicados centralmente pela Reitoria/UASG 158125. Identificamos possíveis vínculos de Araquari pela NE da UG 158459 ou, subsidiariamente, pelo processo 23349.</p>
+          <h2 id="procurement-title">Contratos formais</h2>
+          <p class="small-muted">Somente instrumentos contratuais em sentido estrito. As notas de empenho substitutivas, mesmo publicadas na seção de contratos do PNCP, não aparecem novamente aqui. Vínculo de Araquari: NE da UG 158459, subsidiariamente processo 23349.</p>
         </div>
         <span class="pill pill-outline" id="contract-count">Aguardando coleta</span>
       </div>
       <p id="contract-coverage" class="notice" role="status" aria-live="polite">Consultando catálogo público…</p>
+      <p id="contract-types-summary" class="small-muted" aria-live="polite">Classificando tipos de instrumentos publicados no PNCP…</p>
       <div class="filters">
         <label class="filter"><span>Contrato, processo ou fornecedor</span>
           <input id="contract-search" type="search" placeholder="Número, CNPJ, processo ou objeto" autocomplete="off"></label>
@@ -196,7 +197,7 @@
           <select id="contract-attribution">
             <option value="likely">Com indícios de Araquari</option>
             <option value="confirmed">NE confirmada</option>
-            <option value="all">Todos os contratos do IFC</option>
+            <option value="all">Contratos formais de todo o IFC (investigação)</option>
             <option value="unverified">Sem indicação de campus</option>
           </select>
         </label>
@@ -215,7 +216,7 @@
           <button type="button" class="button button-secondary" id="contract-next">Próxima</button>
         </div>
       </div>
-      <p class="helper">O órgão publicador é a Reitoria do IFC (UASG 158125), não necessariamente o campus beneficiário. A NE emitida pela UG 158459 é a evidência preferencial; o processo SIPAC 23349 é um indício secundário e pode conter erros de digitação. Contratações centralizadas podem atender Araquari sem processo 23349. Valores de contratos não são execução orçamentária; jamais somamos contratos PNCP e Compras.gov.br sem deduplicação entre fontes. O elo contrato–licitação é identificado pelo ID oficial PNCP; isso não comprova execução pela UG 158459.</p>
+      <p class="helper">O PNCP publica contratos e empenhos substitutivos na mesma coleção. Esta tabela contém apenas contratos formais; os outros instrumentos permanecem identificados na fonte e não são somados novamente aos documentos financeiros. O órgão publicador é a Reitoria (UASG 158125), não necessariamente o campus beneficiário. A NE da UG 158459 é evidência prioritária, e o processo SIPAC 23349 é indício secundário sujeito a erro manual. Nenhum vínculo PNCP, isoladamente, comprova a execução financeira por Araquari.</p>
     </section>
 
     <section id="empty-state" class="panel empty-state" hidden>
@@ -246,9 +247,9 @@
       <div id="dialog-relations" class="relations"></div>
       <p class="helper">Relações confirmadas pelos empenhos impactados da CGU. A ausência de vínculo não comprova inexistência de relação. Vínculos em outras competências podem exigir carregamento adicional.</p>
       <section aria-label="Contratações associadas">
-        <h3>Contratações relacionadas</h3>
+        <h3>Contratos formais relacionados</h3>
         <div id="dialog-contracts" class="relations"></div>
-        <p class="helper">A publicação pela Reitoria não define o campus. Somente a NE oficial da UG 158459 vinculada ao contrato, ou a NE do mesmo documento conferida na CGU, autoriza atribuição confirmada. O processo SIPAC 23349 é evidência subsidiária e não prova, isoladamente, a execução do contrato.</p>
+        <p class="helper">Somente contratos formais, sem notas de empenho substitutivas. A publicação pela Reitoria não define o campus. O vínculo financeiro confirmado requer identificação oficial da NE da UG 158459; o processo SIPAC 23349 é apenas indício.</p>
       </section>
       <section id="dialog-items-section" hidden aria-label="Itens do empenho">
         <h3>Itens do empenho</h3>
