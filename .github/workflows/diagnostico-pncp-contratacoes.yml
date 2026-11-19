@@ -1,0 +1,26 @@
+name: Diagnosticar contratacoes PNCP por modalidade - Reitoria
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnostico-pncp-contratacoes.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar sintaxe e privacidade
+        run: |
+          node --check src/inspect-pncp-publications.mjs
+          npm test
+      - name: Consultar somente formato das publicacoes da Reitoria
+        run: node src/inspect-pncp-publications.mjs
