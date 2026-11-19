@@ -1,6 +1,6 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
@@ -80,7 +80,9 @@ async function main(){
     items+' item(ns) de empenho. Respostas brutas e dados pessoais não persistidos.');
   if(!successes&&errors)throw Error('Não foi possível completar nenhuma consulta');
 }
-main().catch(()=>{
-  console.error('Enriquecimento não concluído; checkpoints anteriores permanecem preservados.');
-  process.exitCode=1;
-});
+if(process.argv[1] && import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
+  main().catch(()=>{
+    console.error('Enriquecimento não concluído; checkpoints anteriores permanecem preservados.');
+    process.exitCode=1;
+  });
+}
