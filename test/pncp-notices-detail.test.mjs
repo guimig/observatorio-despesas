@@ -1,12 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  noticeDetailUrl,normalizeNoticeDetail,fetchNoticeDetail,planMissingNotices
+  noticeDetailUrl,normalizeNoticeDetail,fetchNoticeDetail,fetchNoticeDetailWithRetry,planMissingNotices
 } from '../src/pncp-notices-detail.mjs';
 import {
   blankNotices,mergeNotices,validateNotices,applyDirectNotice
 } from '../src/pncp-notices-store.mjs';
 import {assessNoticeAttribution} from '../assets/procurement-links.js';
+import {HttpFailure} from '../src/procurement.mjs';
 
 const pncpId='10635424000186-1-000263/2025';
 const secondId='10635424000186-1-000264/2025';
@@ -122,4 +123,38 @@ test('objeto com dado pessoal é suprimido na recuperação direta',()=>{
  },pncpId);
  assert.equal(unsafe.object,undefined);
  assert.equal(JSON.stringify(unsafe).includes('000.123.456-78'),false);
+});
+
+test('HTTP 429 gera pausa crescente e nova tentativa sem vazar resposta',async()=>{
+  const pauses=[];let called=0;
+  const notice=await fetchNoticeDetailWithRetry(pncpId,{
+    fetcher:async()=>{called++;
+      if(called<=2)throw new HttpFailure(429);
+      return sample();
+    },wait:async ms=>pauses.push(ms)
+  });
+  assert.equal(notice.id,'pncp:'+pncpId);
+  assert.deepEqual(pauses,[15000,30000]);
+  assert.equal(called,3);
+});
+test('limite de tentativas para HTTP 429, sem classificar como ausência',async()=>{
+  const pauses=[];let called=0;
+  await assert.rejects(fetchNoticeDetailWithRetry(pncpId,{
+    fetcher:async()=>{called++;throw new HttpFailure(429);},
+    wait:async ms=>pauses.push(ms)
+  }),error=>error.status===429);
+  assert.equal(called,3);
+  assert.deepEqual(pauses,[15000,30000]);
+});
+test('erro não 429 ou esquema inválido não gera retry desnecessário',async()=>{
+  let called=0;
+  await assert.rejects(fetchNoticeDetailWithRetry(pncpId,{
+    fetcher:async()=>{called++;throw new HttpFailure(404);},
+    wait:async()=>{throw Error('Retry indevido');}
+  }));
+  assert.equal(called,1);
+  await assert.rejects(fetchNoticeDetailWithRetry(pncpId,{
+    fetcher:async()=>{throw Error('ID PNCP divergente');},
+    wait:async()=>{throw Error('Retry indevido');}
+  }),/divergente/);
 });
