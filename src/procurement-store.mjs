@@ -184,7 +184,9 @@ export function applyCommitmentResult(existing,id,result,now=new Date()){
   const original=validateProcurement(structuredClone(existing));
   const contract=original.contracts.find(entry=>entry.id===id);
   if(!contract || contract.source!=='pncp')throw Error('Instrumento PNCP não encontrado');
-  if(!['complete','unavailable'].includes(result?.status))throw Error('Estado PNCP inválido');
+  if(!['complete','unavailable'].includes(result?.status) ||
+     (result.status==='complete'&&(!Array.isArray(result.refs) ||
+       result.refs.length>500))) throw Error('Estado PNCP inválido');
   const next=structuredClone(original);
   const updated=next.contracts.find(entry=>entry.id===id);
   if(result.status==='unavailable'&&updated.commitmentStatus==='complete'){
