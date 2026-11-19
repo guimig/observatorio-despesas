@@ -1,0 +1,66 @@
+name: Coletar contratos PNCP e Compras.gov - Observatorio
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        type: string
+        description: 'Competência AAAA-MM (vazio = mês corrente)'
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/coleta-contratos.yml'
+  schedule:
+    - cron: '35 11 * * 1,4'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  atualizar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar coletor e privacidade
+        run: |
+          npm test
+          npm run check:data
+      - name: Consultar fontes públicas (sem token)
+        env:
+          PROC_MONTH: ${{ inputs.month }}
+        run: npm run collect:contracts
+      - name: Validar arquivo contratual normalizado
+        run: npm run check:data
+      - name: Versionar somente contrato JSON modificado
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Sem novos dados: nenhum commit.'
+            exit 0
+          fi
+          git commit -m 'data: atualizar contratos públicos IFC sem dados pessoais'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: atualizar
+    if: needs.atualizar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
