@@ -48,7 +48,7 @@ test('UG 158459 e sufixo NE exigem documento CGU para confirmar',()=>{
  assert.equal(assessContractAttribution(contract,[doc()]).level,'confirmed');
  assert.equal(matchDocumentContract(doc(),contract).level,'confirmed');
  assert.equal(assessContractAttribution({...contract,number:'2026NE000267'},[doc()]).level,
-   'unverified');
+   'ne_indication'); // A UG indicada é indício, mas não coincide com a NE da CGU.
 });
 test('PNCP vincula NE integral da UG 158459, mesmo cadastrado na Reitoria',()=>{
  const record={...base(),process:'23350.004018/2026-92',number:'00190',
