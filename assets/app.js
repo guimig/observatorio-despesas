@@ -254,6 +254,14 @@ function showContractAssociations(doc){
     block.append(element('span','small-muted',contractBadge(contract)));
     block.append(element('span','small-muted',evidence.reason));
     if(contract.object)block.append(element('span','small-muted',contract.object));
+    if(contract.procurementId){
+      const official=publicNoticeUrl({pncpId:contract.procurementId});
+      if(official){
+        const anchor=element('a','inline-link','Licitação de origem no PNCP');
+        anchor.href=official;anchor.target='_blank';anchor.rel='noopener noreferrer';
+        block.append(anchor);
+      }
+    }
     const url=publicPncpUrl(contract);
     if(url){
       const link=element('a','inline-link','Ver registro oficial no PNCP');
@@ -526,7 +534,7 @@ function renderContracts(){
   if(!rows.length){
     const row=element('tr'),cell=element('td','',
       'Nenhum contrato disponível para os filtros e períodos já consultados.');
-    cell.colSpan=7;row.append(cell);tbody.append(row);return;
+    cell.colSpan=8;row.append(cell);tbody.append(row);return;
   }
   for(const contract of rows){
     const row=element('tr');
@@ -547,7 +555,25 @@ function renderContracts(){
     const object=element('td','beneficiary-cell',contract.object||'Descrição indisponível');
     const amount=element('td','align-right',
       Number.isSafeInteger(contract.amountCents)?fmtMoney(contract.amountCents):'Não informado');
-    row.append(source,proof,idcell,supplier,process,object,amount);
+    const purchaseCell=element('td','');
+    if(contract.procurementId){
+      const notice=noticesData?.notices?.find(n=>n.pncpId===contract.procurementId);
+      const page=publicNoticeUrl({pncpId:contract.procurementId});
+      if(page){
+        const link=element('a','inline-link',
+          notice ? (MODALITIES[notice.modality]||'Licitação')+' · '+(notice.number||'PNCP'):
+            'Contratação de origem · PNCP');
+        link.href=page;link.target='_blank';link.rel='noopener noreferrer';
+        link.title='Identificador oficial de contratação fornecido pelo detalhe deste contrato';
+        purchaseCell.append(link);
+      }
+    } else {
+      purchaseCell.append(element('span','small-muted',
+        contract.procurementLinkStatus==='unavailable'?'Consulta indisponível':
+        contract.procurementLinkStatus==='not_reported'?'Sem referência informada':
+        'Aguardando consulta'));
+    }
+    row.append(source,proof,idcell,purchaseCell,supplier,process,object,amount);
     tbody.append(row);
   }
 }
@@ -656,7 +682,7 @@ function renderNotices() {
   if(!all.length){
     const row=element('tr'),cell=element('td','',
       'Nenhuma publicação correspondente aos filtros ou competências já consultadas.');
-    cell.colSpan=6;row.append(cell);tbody.append(row);
+    cell.colSpan=7;row.append(cell);tbody.append(row);
     return;
   }
   for(const notice of all.slice(noticesState.page*20,(noticesState.page+1)*20)){
@@ -669,6 +695,28 @@ function renderNotices() {
       link.href=url;link.rel='noopener noreferrer';link.target='_blank';
       docCell.append(link);
     }else docCell.append(element('span','doc-code',notice.number||notice.pncpId));
+    const linked=(procurementData?.contracts||[])
+      .filter(contract=>contract.procurementId===notice.pncpId);
+    const related=element('td','');
+    if(linked.length) {
+      const button=element('button','relation-link',
+        linked.length+' contrato(s) · vínculo PNCP');
+      button.type='button';
+      button.title='Relação entre contratação e contrato pelo identificador oficial do PNCP; não comprova execução por Araquari';
+      button.addEventListener('click',()=>{
+        contractsState.query=notice.pncpId.toLowerCase();
+        contractsState.attribution='all';
+        contractsState.page=0;
+        $('contract-search').value=notice.pncpId;
+        $('contract-attribution').value='all';
+        renderContracts();
+        $('procurement-section').scrollIntoView({behavior:'smooth',block:'start'});
+      });
+      related.append(button);
+    }else {
+      related.append(element('span','small-muted',
+        'Sem contrato vinculado no catálogo consultado'));
+    }
     const process=element('td','doc-code',notice.process||'—');
     const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
     const evidence=noticeEvidence(notice);
@@ -677,7 +725,7 @@ function renderNotices() {
     const value=element('td','align-right',
       Number.isSafeInteger(notice.estimatedCents)?
         fmtMoney(notice.estimatedCents):'Não informado');
-    row.append(modality,docCell,process,object,status,value);
+    row.append(modality,docCell,related,process,object,status,value);
     tbody.append(row);
   }
 }
