@@ -3,7 +3,7 @@ import {fileURLToPath} from 'node:url';
 import {readProcurement} from './procurement-store.mjs';
 import {HttpFailure} from './procurement.mjs';
 import {readNotices,writeDirectNotice} from './pncp-notices-store.mjs';
-import {planMissingNotices,fetchNoticeDetail} from './pncp-notices-detail.mjs';
+import {planMissingNotices,fetchNoticeDetailWithRetry} from './pncp-notices-detail.mjs';
 
 async function main(){
   const [contracts,notices]=await Promise.all([
@@ -14,7 +14,7 @@ async function main(){
     return;
   }
   const selected=planMissingNotices(contracts,notices,{
-    count:process.env.PNCP_NOTICES_DETAIL_BATCH||18
+    count:process.env.PNCP_NOTICES_DETAIL_BATCH||30
   });
   console.log('Recuperação histórica por ID PNCP: '+selected.length+
     ' contratação(ões) ausentes do catálogo de editais.');
@@ -23,11 +23,16 @@ async function main(){
     return;
   }
   let recovered=0,unavailable=0;
+  const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const failures={};
   const byYear={};
-  for(const id of selected){
+  for(let i=0;i<selected.length;i++){
+    const id=selected[i];
+    // Limite conservador de ~10 chamadas/minuto; a própria API também aplica
+    // backoff e, em 429 persistente, a consulta não é considerada ausente.
+    if(i>0)await pause(5500);
     try{
-      const result=await fetchNoticeDetail(id);
+      const result=await fetchNoticeDetailWithRetry(id);
       await writeDirectNotice(process.cwd(),result);
       recovered++;
       byYear[result.published.slice(0,4)]=(byYear[result.published.slice(0,4)]||0)+1;
