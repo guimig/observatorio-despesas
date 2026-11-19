@@ -2,6 +2,7 @@
 import { parseMoneyCents } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
 import { assertPublicSafe, maskCpf } from './privacy.mjs';
+export { matchDocumentContract } from '../assets/procurement-links.js';
 
 export const CAMPUS_UG='158459';
 export const CAMPUS_CNPJ='10635424000348';
@@ -9,7 +10,6 @@ export const REITORIA_CNPJ='10635424000186';
 const PNCP='https://pncp.gov.br/api/consulta/v1/contratos';
 const COMPRAS='https://dadosabertos.compras.gov.br';
 const PNCP_ID=/^\d{14}-[1-9]-\d{6}\/20\d{2}$/;
-const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const VALID_MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
 const PROCESS=/^\d{5}\.\d{6}\/20\d{2}-\d{2}$/;
 
@@ -233,22 +233,4 @@ export async function scanCompras(month,{fetcher=requestPublicJSON,maxPages=15}=
 }
 export function normalizeProcess(value){
   return processo(value);
-}
-export function matchDocumentContract(document,contract){
-  if(!document||!contract)return null;
-  const id=String(document.id??'');
-  if(document.phase===1 && NE.test(id) && contract.scope==='campus'){
-    const number=String(contract.number??'').replace(/\s/g,'').toUpperCase();
-    const short=id.slice(-12); // AAAANE000001 com 12 caracteres
-    if(number===id || number===short) {
-      return {level:'confirmed',reason:'NE SIAFI coincidente em contrato da unidade'};
-    }
-  }
-  // Vínculo contextual não comprova que o contrato originou o documento.
-  if(document.partyRef && contract.supplierCnpj &&
-     document.partyRef===contract.supplierCnpj &&
-     processo(document.process) && processo(document.process)===contract.process) {
-    return {level:'context',reason:'Mesmo processo e CNPJ do fornecedor'};
-  }
-  return null;
 }
