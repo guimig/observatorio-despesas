@@ -30,15 +30,47 @@ function validId(id) { return typeof id === 'string' && DOCUMENT_RE.test(id); }
 export function validateMonth(data) {
   assertPublicSafe(data);
   assertAllowedKeys(data, ['schema_version', 'unit', 'month', 'source',
-    'documents', 'relations', 'coverage', 'updated_at']);
+    'documents', 'relations', 'coverage', 'beneficiaries', 'updated_at']);
   if (data.schema_version !== VERSION || data.unit !== UG || !MONTH_RE.test(data.month) ||
     data.source !== 'CGU' || !Array.isArray(data.documents) ||
     !Array.isArray(data.relations) || !Array.isArray(data.coverage)) {
     throw Error('Esquema mensal inválido');
   }
+  if (data.beneficiaries !== undefined) {
+    assertAllowedKeys(data.beneficiaries, Object.keys(data.beneficiaries));
+    for (const [id, name] of Object.entries(data.beneficiaries)) {
+      if (!/^\d{14}$/.test(id) || typeof name !== 'string' || name.length > 160) {
+        throw Error('Cadastro público de pessoa jurídica inválido');
+      }
+    }
+  }
   const ids = new Set();
   for (const doc of data.documents) {
-    assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents']);
+    assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
+      'partyRef', 'cpfMasked', 'process', 'nature']);
+    if (doc.partyRef !== undefined &&
+        (!/^\d{14}$/.test(doc.partyRef) ||
+          !Object.hasOwn(data.beneficiaries || {}, doc.partyRef))) {
+      throw Error('CNPJ não encontrado no catálogo mensal');
+    }
+    if (doc.cpfMasked !== undefined &&
+        (!/^\*\*\*\.\d{3}\.\d{3}-\*\*$/.test(doc.cpfMasked) ||
+          doc.partyRef !== undefined)) {
+      throw Error('CPF em formato diferente do mascaramento obrigatório');
+    }
+    if (doc.process !== undefined &&
+        (typeof doc.process !== 'string' || doc.process.length > 90 ||
+          !/^[A-Za-z0-9./\- ]+$/.test(doc.process))) {
+      throw Error('Número de processo inválido');
+    }
+    if (doc.nature !== undefined) {
+      assertAllowedKeys(doc.nature, ['group', 'element', 'program', 'action']);
+      for (const value of Object.values(doc.nature)) {
+        if (typeof value !== 'string' || !value || value.length > 120) {
+          throw Error('Classificação de despesa inválida');
+        }
+      }
+    }
     if (!validId(doc.id) || !DATE_RE.test(doc.date) ||
       !doc.date.startsWith(data.month) || !phases.has(doc.phase) || ids.has(doc.id)) {
       throw Error('Documento público inválido ou duplicado');
@@ -113,9 +145,28 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       !(doc.date === coverage.date && doc.phase === coverage.phase));
     next.relations = next.relations.filter(link => !removedIds.has(link.from));
     next.coverage = next.coverage.filter(c => c.date + '/' + c.phase !== key);
-    next.documents.push(...structuredClone(documents));
+    const normalized = structuredClone(documents).map(doc => {
+      if (!doc.beneficiary) return doc;
+      if (doc.beneficiary.type === 'pj') {
+        if (!next.beneficiaries) next.beneficiaries = {};
+        const { id, name } = doc.beneficiary;
+        if (!/^\d{14}$/.test(id)) throw Error('CNPJ público inválido');
+        next.beneficiaries[id] = name || next.beneficiaries[id] || '';
+        doc.partyRef = id;
+      } else if (doc.beneficiary.type === 'pf') {
+        doc.cpfMasked = doc.beneficiary.id;
+      } else throw Error('Natureza de favorecido desconhecida');
+      delete doc.beneficiary;
+      return doc;
+    });
+    next.documents.push(...normalized);
     next.relations.push(...structuredClone(links));
     next.coverage.push(structuredClone(coverage));
+  }
+  if (next.beneficiaries) {
+    const used = new Set(next.documents.map(doc => doc.partyRef).filter(Boolean));
+    next.beneficiaries = Object.fromEntries(Object.entries(next.beneficiaries)
+      .filter(([id]) => used.has(id)).sort(([a], [b]) => a.localeCompare(b)));
   }
   next.documents.sort((a, b) => a.date.localeCompare(b.date) ||
     a.phase - b.phase || a.id.localeCompare(b.id));
