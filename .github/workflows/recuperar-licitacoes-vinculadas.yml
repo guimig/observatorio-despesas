@@ -1,0 +1,68 @@
+name: Recuperar licitações históricas vinculadas a contratos PNCP
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'IDs de contratações por lote'
+        type: choice
+        required: false
+        default: '18'
+        options: ['6','12','18','30']
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/recuperar-licitacoes-vinculadas.yml'
+  schedule:
+    - cron: '13 13 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  historico:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 23
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar integridade do acervo
+        run: |
+          npm test
+          npm run check:data
+      - name: Recuperar compras PNCP por identificador oficial
+        env:
+          PNCP_NOTICES_DETAIL_BATCH: ${{ inputs.batch || '18' }}
+        run: npm run backfill:pncp-related-notices
+      - name: Validar dados públicos antes da publicação
+        run: npm run check:data
+      - name: Versionar somente catálogo de publicações alterado
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/notices.json
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: recuperar licitacoes de origem por IDs PNCP'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: historico
+    if: needs.historico.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
