@@ -1,0 +1,16 @@
+{
+  "name": "observatorio-despesas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Observatório de despesas públicas do IFC - coleta pública minimizada",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check:data": "node src/validate-data.mjs",
+    "collect:cgu": "node src/collect-cgu.mjs",
+    "check:syntax": "node --check src/privacy.mjs && node --check src/cgu.mjs && node --check src/store.mjs && node --check src/collect-cgu.mjs && node --check assets/app.js"
+  }
+}
