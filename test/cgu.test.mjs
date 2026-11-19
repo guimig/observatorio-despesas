@@ -115,3 +115,27 @@ test('janela agrupa por fases sem confundir UG 158459 com UO 26422', async () =>
   assert.equal(result[1].coverage.count, 0);
   assert.equal(JSON.stringify(result).includes('NÃO PUBLICAR'), false);
 });
+
+
+test('coleta histórica permite selecionar dias explícitos sem consultar outros dias', async () => {
+  const calls = [];
+  const result = await collectWindow({
+    token: 'fake', dates: ['03/10/2026'], now: new Date('2026-11-19T14:00:00Z'),
+    getDocuments: async (date, phase, page) => {
+      calls.push([date, phase, page]);
+      return [];
+    }
+  });
+  assert.equal(result.length, 3);
+  assert.deepEqual(calls, [
+    ['03/10/2026', 1, 1], ['03/10/2026', 2, 1], ['03/10/2026', 3, 1]
+  ]);
+});
+test('coleta por datas explícitas rejeita datas inexistentes e duplicadas', async () => {
+  await assert.rejects(collectWindow({
+    token: 'fake', dates: ['30/02/2026'], getDocuments: async () => []
+  }));
+  await assert.rejects(collectWindow({
+    token: 'fake', dates: ['03/10/2026', '03/10/2026'], getDocuments: async () => []
+  }));
+});

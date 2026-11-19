@@ -25,3 +25,7 @@ jobs:
         run: npm test
       - name: Validar privacidade e esquema dos JSONs versionados
         run: npm run check:data
+      - name: Validar artefato de publicacao (sem secrets e codigo-fonte)
+        run: npm run build:site
+      - name: Validar planejamento de coleta historica
+        run: npm run backfill:plan

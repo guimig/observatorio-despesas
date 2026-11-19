@@ -229,12 +229,15 @@ export async function collectDayPhase(date, phase, {
 }
 
 export async function collectWindow({
-  token, now = new Date(), lookback = 7, maxPages = 30,
+  token, now = new Date(), lookback = 7, dates = undefined, maxPages = 30,
   maxImpactPages = 8, getDocuments = requestDocuments, getImpacts = requestImpacts
 } = {}) {
   if (!token) throw Error('CGU_API_KEY ausente');
-  const dates = datesBeforeToday(now, lookback);
-  const queries = dates.flatMap(date => PHASES.map(phase => ({ date, phase })));
+  const selected = dates === undefined ? datesBeforeToday(now, lookback) : dates;
+  if (!Array.isArray(selected) || selected.length < 1 || selected.length > 31 ||
+      new Set(selected).size !== selected.length) throw Error('Janela de datas CGU inválida');
+  selected.forEach(isoDate); // Datas legíveis e existentes, sem receber texto arbitrário.
+  const queries = selected.flatMap(date => PHASES.map(phase => ({ date, phase })));
   // Concorrência baixa para evitar cota CGU. Nenhuma resposta bruta é persistida.
   const output = new Array(queries.length);
   let cursor = 0;

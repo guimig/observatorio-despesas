@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +55,7 @@ jobs:
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
       - name: Publicar apenas JSONs do observatorio
+        id: commit
         if: steps.credential.outputs.enabled == 'true'
         run: |
           git config user.name 'github-actions[bot]'
@@ -60,7 +63,18 @@ jobs:
           git add -- data/manifest.json data/months/
           if git diff --cached --quiet; then
             echo "JSONs inalterados: nenhum commit necessario."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m 'data: atualizar documentos CGU normalizados'
           git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  publicar:
+    needs: atualizar
+    if: needs.atualizar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
