@@ -132,7 +132,7 @@
         <div>
           <div class="eyebrow">PNCP · COMPRAS.GOV.BR</div>
           <h2 id="procurement-title">Contratações e contratos públicos</h2>
-          <p class="small-muted">Contratos do IFC e da UG Araquari. Publicação institucional não significa despesa executada pelo campus.</p>
+          <p class="small-muted">Contratos publicados centralmente pela Reitoria/UASG 158125. Identificamos possíveis vínculos de Araquari pela NE da UG 158459 ou, subsidiariamente, pelo processo 23349.</p>
         </div>
         <span class="pill pill-outline" id="contract-count">Aguardando coleta</span>
       </div>
@@ -143,14 +143,22 @@
         <label class="filter"><span>Origem</span>
           <select id="contract-source"><option value="all">Todas as fontes</option><option value="pncp">PNCP</option><option value="compras">Compras.gov.br</option></select>
         </label>
-        <label class="filter"><span>Abrangência</span>
-          <select id="contract-scope"><option value="all">IFC e Campus</option><option value="campus">Campus Araquari</option><option value="ifc">IFC institucional</option></select>
+        <label class="filter"><span>Órgão publicador</span>
+          <select id="contract-scope"><option value="all">Todos os publicadores</option><option value="campus">CNPJ campus</option><option value="ifc">CNPJ Reitoria/IFC</option></select>
+        </label>
+        <label class="filter"><span>Evidência de Araquari</span>
+          <select id="contract-attribution">
+            <option value="likely">Com indícios de Araquari</option>
+            <option value="confirmed">NE confirmada</option>
+            <option value="all">Todos os contratos do IFC</option>
+            <option value="unverified">Sem indicação de campus</option>
+          </select>
         </label>
         <button type="button" class="button button-ghost" id="clear-contract-filters">Limpar</button>
       </div>
       <div class="table-scroll">
         <table class="contracts-table">
-          <thead><tr><th scope="col">Fonte / abrangência</th><th scope="col">Instrumento</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col">Objeto</th><th scope="col" class="align-right">Valor contratual</th></tr></thead>
+          <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col">Objeto</th><th scope="col" class="align-right">Valor contratual</th></tr></thead>
           <tbody id="contract-rows"></tbody>
         </table>
       </div>
@@ -161,7 +169,7 @@
           <button type="button" class="button button-secondary" id="contract-next">Próxima</button>
         </div>
       </div>
-      <p class="helper">Valores de contratos não são valores empenhados, liquidados ou pagos. Registros do PNCP e Compras.gov.br podem representar o mesmo instrumento; por isso, não são somados entre fontes. Vínculos com documentos CGU exigem chave oficial coincidente ou são identificados como contexto, nunca como conciliação.</p>
+      <p class="helper">O órgão publicador é a Reitoria do IFC (UASG 158125), não necessariamente o campus beneficiário. A NE emitida pela UG 158459 é a evidência preferencial; o processo SIPAC 23349 é um indício secundário e pode conter erros de digitação. Contratações centralizadas podem atender Araquari sem processo 23349. Valores de contratos não são execução orçamentária; jamais somamos contratos PNCP e Compras.gov.br sem deduplicação entre fontes.</p>
     </section>
 
     <section id="empty-state" class="panel empty-state" hidden>
@@ -194,7 +202,7 @@
       <section aria-label="Contratações associadas">
         <h3>Contratações relacionadas</h3>
         <div id="dialog-contracts" class="relations"></div>
-        <p class="helper">Associação contextual por processo e CNPJ não demonstra execução contratual. Não equivale a vínculo documental confirmado.</p>
+        <p class="helper">A publicação pela Reitoria não define o campus. Somente a NE oficial da UG 158459 vinculada ao contrato, ou a NE do mesmo documento conferida na CGU, autoriza atribuição confirmada. O processo SIPAC 23349 é evidência subsidiária e não prova, isoladamente, a execução do contrato.</p>
       </section>
       <section id="dialog-items-section" hidden aria-label="Itens do empenho">
         <h3>Itens do empenho</h3>

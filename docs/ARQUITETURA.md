@@ -108,3 +108,15 @@ Integração PNCP e Compras.gov.br permanece planejamento subsequente: a ligaç�
 O primeiro diagnóstico da PNCP não encontrou contratos em outubro/novembro de 2026 sob o CNPJ exclusivo da filial. As consultas institucionais devem ser tratadas como escopo IFC, sujeitas à confirmação de unidade, processo e fornecedor; a consulta de cadastro UASG no Compras.gov retornou HTTP 404 e é considerada indisponibilidade da fonte, não ausência de contratos.
 
 A expansão seguinte poderá consultar contratações PNCP específicas referenciadas por `numeroControlePNCPCompra`, seus itens e atos, além de integrar a base Compras quando a consulta da UASG estiver operacional.
+
+## Regra de atribuição de campus sob publicação centralizada
+
+A Reitoria do IFC concentra a publicação de licitações e contratos sob a **UASG 158125**. O campo PNCP `unidadeOrgao.codigoUnidade` descreve uma unidade informada na publicação; não se pode usar a UASG publicadora como unidade financeira que empenhou a despesa. As NEs financeiras de Araquari têm prefixo `158459`, seguido de código de gestão e número de documento SIAFI; a CGU apresenta essas referências em forma integral. Exemplo de formato: `158459264222026NE000011`. Não converter `2026NE000011` em NE integral sem a UG/gestão efetivamente identificadas.
+
+A partir de agora, o campo contratual `scope` representa o **cadastro de publicação** (`ifc` para CNPJ Reitoria, `campus` apenas para CNPJ próprio do campus), não o destinatário do gasto. O frontend calcula a atribuição separadamente, com regras auditáveis compartilhadas em `assets/procurement-links.js`. A tela padrão mostra somente candidatos; o acervo completo está disponível pelo filtro `Todos os contratos do IFC`.
+
+A API de integração PNCP `/api/pncp/v1/orgaos/{cnpj}/contratos/{ano}/{sequencial}/empenhos` contém `numeroEmpenho`. A rotina `src/collect-pncp-commitments.mjs` verifica um lote limitado de contratos por execução (preferindo indícios de Araquari), sem dados pessoais, sem chaves, em `data/procurement/contracts.json`. Guarda somente `commitmentStatus`, `commitmentAt` e `commitmentRefs` da UG 158459. Estado `unavailable` não é o mesmo que ausência de empenhos; consultas incompletas nunca são marcadas como concluídas. Contratos retificados têm checkpoints invalidados para reconsulta.
+
+O processo SIPAC iniciado por `23349` é forte **indício** de origem local, mas não é comprovação de execução de contrato e não deve ser único filtro. Há contratações centralizadas excepcionais que podem atender Araquari com processos de outros prefixos; essas surgirão por NE integral, mesmo sem `23349`.
+
+Licitações e contratações diretas têm coleção própria no PNCP: `/api/consulta/v1/contratacoes/publicacao`. Isso deverá ser integrado por modalidade (pregão eletrônico/presencial, concorrência, concurso, diálogo competitivo, dispensa, inexigibilidade, etc.), com filtro de Reitoria para obtenção e atribuição individual por NE/processo, jamais pelo publicador.
