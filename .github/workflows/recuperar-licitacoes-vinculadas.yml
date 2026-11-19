@@ -6,7 +6,7 @@ on:
         description: 'IDs de contratações por lote'
         type: choice
         required: false
-        default: '18'
+        default: '30'
         options: ['6','12','18','30']
   push:
     branches: [main]
@@ -43,7 +43,7 @@ jobs:
           npm run check:data
       - name: Recuperar compras PNCP por identificador oficial
         env:
-          PNCP_NOTICES_DETAIL_BATCH: ${{ inputs.batch || '18' }}
+          PNCP_NOTICES_DETAIL_BATCH: ${{ inputs.batch || '30' }}
         run: npm run backfill:pncp-related-notices
       - name: Validar dados públicos antes da publicação
         run: npm run check:data
