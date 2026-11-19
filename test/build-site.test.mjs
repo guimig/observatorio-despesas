@@ -15,6 +15,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, '.nojekyll'), '');
     await writeFile(join(root, 'assets', 'app.js'), 'console.log("ok");');
     await writeFile(join(root, 'assets', 'procurement-links.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'pncp-modalities.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'style.css'), 'body{}');
     await writeFile(join(root, 'data', 'manifest.json'), JSON.stringify({
       schema_version: 1, unit: '158459', status: 'aguardando_primeira_coleta', months: []
@@ -56,6 +57,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'.nojekyll'),'');
     await writeFile(join(root,'assets','app.js'),'');
     await writeFile(join(root,'assets','procurement-links.js'),'');
+    await writeFile(join(root,'assets','pncp-modalities.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
     await mkdir(join(root,'data','months'),{recursive:true});
     await writeFile(join(root,'data','manifest.json'),JSON.stringify({
@@ -73,4 +75,30 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'data','procurement','contracts.json'),JSON.stringify(invalid));
     await assert.rejects(buildSite(root));
   }finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'observatorio-notices-'));
+ try{
+   await mkdir(join(root,'assets'),{recursive:true});
+   await mkdir(join(root,'data','procurement'),{recursive:true});
+   await mkdir(join(root,'data','months'),{recursive:true});
+   for(const filename of ['app.js','style.css','procurement-links.js','pncp-modalities.js']){
+     await writeFile(join(root,'assets',filename),'');
+   }
+   await writeFile(join(root,'index.html'),'<title>Teste</title>');
+   await writeFile(join(root,'.nojekyll'),'');
+   await writeFile(join(root,'data','manifest.json'),JSON.stringify({
+     schema_version:1,unit:'158459',status:'aguardando_primeira_coleta',months:[]
+   }));
+   await writeFile(join(root,'data','procurement','notices.json'),JSON.stringify({
+     schema_version:1,publicationUasg:'158125',notices:[],coverage:[]
+   }));
+   await writeFile(join(root,'data','procurement','resposta-pncp.json'),
+     '{"cpf":"000.123.456-78"}');
+   const result=await buildSite(root);
+   assert.equal(result.notices,0);
+   await stat(join(root,'dist','data','procurement','notices.json'));
+   await assert.rejects(stat(join(root,'dist','data','procurement','resposta-pncp.json')));
+ }finally{await rm(root,{recursive:true,force:true});}
 });
