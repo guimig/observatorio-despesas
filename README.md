@@ -27,6 +27,7 @@ Requer **Node.js 22 ou superior**. Nenhuma dependência de terceiros é necessá
 npm test
 npm run check:data
 npm run build:site        # gera dist/ com interface e JSONs publicos
+npm run enrich:plan       # simula itens e vínculos de pagamentos pendentes
 npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
 npm run collect:cgu
@@ -78,3 +79,20 @@ BACKFILL_MONTH=2026-10 BACKFILL_DAYS=3 npm run backfill:plan
 A vinculação de fontes só deve ser exibida como confirmada quando houver chave documental verificável. Valores em centavos inteiros; ausência de dados é `null`, nunca zero presumido.
 
 > Projeto experimental, independente de publicação ou decisão oficial do IFC.
+
+
+## Relações de pagamentos e itens de empenho
+
+A API pública da CGU disponibiliza `/despesas/empenhos-impactados` para **fase 3 (pagamentos)**, incluindo `valorPago` e `valorRestoPago`; esses valores são somados por NE relacionada apenas quando a paginação e todos os registros são válidos. Nenhuma relação é presumida por proximidade de datas, valores ou favorecidos. Um pagamento pode impactar várias NEs, inclusive de exercícios anteriores.
+
+A consulta `/despesas/itens-de-empenho` traz sequência, código, descrição, subelemento e valor atual. O sistema grava apenas campos mínimos sanitizados e suprime descrições com risco identificável de conter dados pessoais ou bancários. Isso não substitui a descrição da nota fiscal nem do contrato.
+
+A rotina independente `Enriquecer pagamentos e itens CGU` executa lotes pequenos no GitHub Actions, em agenda e manualmente. Um documento já consultado não será consultado novamente enquanto não houver indicação de mudança em seu valor documental. As informações são agregadas **no mesmo JSON mensal**, sem duplicar os registros da CGU; itens são referenciados pela NE e vínculos de pagamento são marcados como consultados para permitir retomada.
+
+```bash
+npm run enrich:plan
+# executa com CGU_API_KEY somente em ambiente autenticado:
+npm run enrich:cgu
+```
+
+Os resultados devem ser interpretados como **relações documentais da CGU**, não conciliação contábil, situação de pagamento bancário ou medida de saldo. A interface informa quando itens ou vínculos ainda aguardam consulta e permite localizar documentos relacionados em outras competências já coletadas.
