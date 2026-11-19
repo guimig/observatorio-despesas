@@ -1,0 +1,74 @@
+name: Vincular contratos às licitações pelo ID oficial PNCP
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Contratos por lote (sem valores ou nomes nos logs)'
+        type: choice
+        required: false
+        default: '12'
+        options: ['6','12','20','30']
+      recheck:
+        description: 'Conferir inclusive contratos com ID já vinculado'
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vinculos-contratacoes-pncp.yml'
+      - 'src/pncp-contract-link.mjs'
+  schedule:
+    - cron: '56 11 * * 1,3,5'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  relacionar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 23
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testar e verificar dados antes da consulta
+        run: |
+          npm test
+          npm run check:data
+      - name: Consultar detalhes de contratos no PNCP (sem credenciais)
+        env:
+          PNCP_PURCHASE_BATCH: ${{ inputs.batch || '12' }}
+          PNCP_PURCHASE_RECHECK: ${{ inputs.recheck || 'false' }}
+        run: npm run collect:pncp-purchase-links
+      - name: Validar catálogo após enriquecimento
+        run: npm run check:data
+      - name: Salvar somente JSON normalizado
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/contracts.json
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: relacionar contratos a licitacoes pelo PNCP'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: relacionar
+    if: needs.relacionar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
