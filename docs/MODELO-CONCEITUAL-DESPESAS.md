@@ -98,3 +98,27 @@ Um **contrato formal** de Araquari pode não constar da janela CGU disponível, 
 ## Inspeção autenticada do esquema CGU (etapa experimental somente leitura)
 
 Criados `src/inspect-cgu-siafi.mjs` e `.github/workflows/diagnosticar-cgu-siafi.yml`. Selecionam uma amostra local de NE com item, NS com múltiplos vínculos confirmados e documentos OB/DF para consultar a **API CGU de despesas com `secrets.CGU_API_KEY`**, somente no runner do GitHub Actions. A saída contém **somente nomes/tipos de campos e contagens agregadas**; não publica identificadores, valores, documentos brutos nem resultados pessoais. A inspeção deve determinar se o esquema disponibiliza semântica suficiente para estorno/anulação/reversão e qual vínculo é retornado por `documentos-relacionados`. **Nenhuma classificação de cancelamento é adicionada aos JSONs antes dessa verificação.**
+
+
+## Incremento: vínculos de liquidações com empenhos (CGU)
+
+O enriquecimento incremental autenticado (`src/enrich-month.mjs` e
+`.github/workflows/enriquecer-cgu.yml`) passa a consultar
+`/despesas/empenhos-impactados?fase=2` para cada documento de liquidação ainda
+pendente, **mesmo quando o valor nominal já foi obtido**. A relação documental é
+N:M: uma NS pode impactar várias NEs e seus subitens, e cada NE pode ser
+impactada por várias NS.
+
+Os vínculos são agrupados pela chave SIAFI completa do empenho e podem ter
+valores negativos. O valor documental não é substituído automaticamente pela
+soma dos impactos. Só após paginação integral e válida a NS recebe
+`liquidationLinksChecked: true`. Uma resposta vazia significa consulta
+concluída sem impactos retornados — não prova inexistência da obrigação.
+Respostas repetidas, truncadas ou inconsistentes não alteram o acervo.
+
+Uma recaptura com valor inalterado preserva o estado e os vínculos; a retificação
+de valor reabre a necessidade de consulta. Vínculos preexistentes não podem ser
+apagados somente porque uma nova consulta retornou vazia. O lote é limitado por
+`ENRICH_LIQUIDATIONS` (padrão 12) e usa exclusivamente a secret
+`CGU_API_KEY` no ambiente do GitHub Actions. A interface exibe se a consulta de
+vínculos foi concluída, distinguindo-a da presença de relações financeiras.
