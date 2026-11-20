@@ -49,3 +49,10 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 #notices-section .contracts-table td:nth-child(3) span{display:block;margin-top:6px;max-width:260px}
 #contract-types-summary{margin:0 0 14px;line-height:1.55}
 #procurement-section .contracts-table td:nth-child(3){white-space:nowrap}
+
+/* Trajetória por empenho: relações de todas as competências em uma ficha única. */
+#trajectory-section{margin-top:22px}
+#trajectory-section .table-scroll{margin-top:14px}
+#dialog-trajectory-section{margin-top:18px;border-top:1px solid var(--border);padding-top:15px}
+#dialog-liquidations,#dialog-payments{margin:10px 0 16px}
+#dialog-trajectory-note{border-left:3px solid var(--brand);padding-left:12px}
