@@ -25,6 +25,17 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     .slice(0,bounded(maxItems,7,20)).map(doc=>doc.id);
   return {liquidations,payments,items};
 }
+export function summarizeFailures(failures){
+  const counts={};
+  for(const reason of failures){
+    const key=['consulta_indisponivel','resposta_invalida','pagina_repetida',
+      'limite_paginacao','impacto_nao_identificado','valor_fora_limite',
+      'item_invalido','sequencial_duplicado_divergente','persistencia_invalida'].includes(reason)
+      ?reason:'outro';
+    counts[key]=(counts[key]||0)+1;
+  }
+  return counts;
+}
 async function readMonth(root,month){
   const path=join(root,'data','months',month+'.json');
   return validateMonth(JSON.parse(await readFile(path,'utf8')));
@@ -66,12 +77,14 @@ async function main(){
   const token=process.env.CGU_API_KEY;
   if(!token)throw Error('CGU_API_KEY não disponível');
   let successes=0,errors=0,links=0,items=0;
+  const failures=[];
   for(const [kind,docs] of [['liquidation',chosen.plan.liquidations],
     ['payment',chosen.plan.payments],['items',chosen.plan.items]]){
     for(const id of docs){
       const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token}):
         kind==='payment'?await resolvePaymentLinks(id,{token}):await resolveItems(id,{token});
       if(!outcome.ok){
+        failures.push(outcome.reason||'outro');
         errors++;
         continue;
       }
@@ -80,6 +93,7 @@ async function main(){
       try{
         await persistEnrichment(root,chosen.monthName,id,result,new Date());
       }catch{
+        failures.push('persistencia_invalida');
         errors++;
         continue;
       }
@@ -89,6 +103,8 @@ async function main(){
     }
   }
   await validatePublishedData(root);
+  console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+
+    JSON.stringify(summarizeFailures(failures)));
   console.log('Enriquecimento CGU (liquidações, pagamentos e itens): '+successes+' documento(s) concluído(s), '+
     errors+' sem conclusão; '+links+' vínculo(s) de liquidação/pagamento e '+
     items+' item(ns) de empenho. Respostas brutas e dados pessoais não persistidos.');
