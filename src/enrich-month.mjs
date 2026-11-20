@@ -39,7 +39,11 @@ async function main(){
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7
   };
-  const alternatives=selected?[selected]:[...manifest.months].sort().reverse();
+  const priority=process.env.ENRICH_PRIORITY==='oldest'?'oldest':'newest';
+  // A agenda alterna o mês mais recente e o mais antigo para impedir que
+  // novos documentos deixem competências históricas sempre aguardando.
+  const alternatives=selected?[selected]:[...manifest.months].sort();
+  if(priority==='newest'&&!selected)alternatives.reverse();
   let chosen=null;
   for(const monthName of alternatives){
     const data=await readMonth(root,monthName);
@@ -86,7 +90,7 @@ async function main(){
   }
   await validatePublishedData(root);
   console.log('Enriquecimento CGU (liquidações, pagamentos e itens): '+successes+' documento(s) concluído(s), '+
-    errors+' sem conclusão; '+links+' vínculo(s) de pagamento e '+
+    errors+' sem conclusão; '+links+' vínculo(s) de liquidação/pagamento e '+
     items+' item(ns) de empenho. Respostas brutas e dados pessoais não persistidos.');
   if(!successes&&errors)throw Error('Não foi possível completar nenhuma consulta');
 }

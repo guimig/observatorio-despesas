@@ -27,7 +27,7 @@ Requer **Node.js 22 ou superior**. Nenhuma dependência de terceiros é necessá
 npm test
 npm run check:data
 npm run build:site        # gera dist/ com interface e JSONs publicos
-npm run enrich:plan       # simula itens e vínculos de pagamentos pendentes
+npm run enrich:plan       # simula vínculos de liquidações, pagamentos e itens de NE
 npm run contracts:plan    # simula consulta PNCP/Compras sem requisicoes
 npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
@@ -48,7 +48,7 @@ Sem `CGU_API_KEY`, a coleta é ignorada, sem publicar informações artificiais.
 
 ## Coleta histórica incremental
 
-O workflow `.github/workflows/backfill-cgu.yml` faz a recuperação em **lotes pequenos** (padrão três dias, máximo sete dias por execução). O mês padrão é o **mês anterior em America/Sao_Paulo**; é possível escolher qualquer competência como `2026-10` usando **Actions → Recuperar histórico CGU → Run workflow**. Ele também executa lotes agendados às segundas e quintas.
+O workflow `.github/workflows/backfill-cgu.yml` faz a recuperação em **lotes pequenos** (padrão três dias, máximo sete dias por execução). A seleção automática começa pelo **mês anterior em America/Sao_Paulo** e retrocede entre as competências incompletas; é possível escolher qualquer competência como `2026-10` usando **Actions → Recuperar histórico CGU → Run workflow**. Ele também executa lotes agendados diariamente.
 
 Ao iniciar, o planejador examina `data/months/AAAA-MM.json` e seleciona somente dias sem três fases completas e válidas; a cobertura existente atua como **checkpoint**. Repetir a ação avança nos próximos dias, sem duplicar documentos. `start_day` permite retomar uma faixa específica, e `recheck` força uma nova consulta de período já considerado completo. O histórico precisa de sucessivos lotes e só será tratado como íntegro se todos os dias elegíveis forem consultados com sucesso.
 
@@ -88,7 +88,7 @@ A API pública da CGU disponibiliza `/despesas/empenhos-impactados` para **fase 
 
 A consulta `/despesas/itens-de-empenho` traz sequência, código, descrição, subelemento e valor atual. O sistema grava apenas campos mínimos sanitizados e suprime descrições com risco identificável de conter dados pessoais ou bancários. Isso não substitui a descrição da nota fiscal nem do contrato.
 
-A rotina independente `Enriquecer pagamentos e itens CGU` executa lotes pequenos no GitHub Actions, em agenda e manualmente. Um documento já consultado não será consultado novamente enquanto não houver indicação de mudança em seu valor documental. As informações são agregadas **no mesmo JSON mensal**, sem duplicar os registros da CGU; itens são referenciados pela NE e vínculos de pagamento são marcados como consultados para permitir retomada.
+A rotina independente `Enriquecer liquidações, pagamentos e itens CGU` executa lotes pequenos no GitHub Actions, em agenda e manualmente. Um documento já consultado não será consultado novamente enquanto não houver indicação de mudança em seu valor documental. As informações são agregadas **no mesmo JSON mensal**, sem duplicar os registros da CGU; itens são referenciados pela NE e vínculos de pagamento são marcados como consultados para permitir retomada.
 
 ```bash
 npm run enrich:plan
@@ -203,3 +203,49 @@ A execução independente `Diagnosticar documentos e historicos SIAFI pela API C
 O diagnóstico não cria arquivos, não altera `data/`, não publica novos documentos e **nunca expõe token, identificador completo, valor, CPF, favorecido ou resposta bruta nos logs**. Dados pessoais da API são tratados exclusivamente em memória, sem serialização. O objetivo é validar o esquema que embasará futuro controle auditável de movimentos e anulações; ausência de campo ou HTTP de falha é **incerteza**, nunca movimento inexistente.
 
 As etapas completas da despesa, hipóteses de instrumento contratual substitutivo e relações N:M estão documentadas em `docs/MODELO-CONCEITUAL-DESPESAS.md`. A fonte autenticada em uso é a **CGU**, não AGU.
+
+## Auditoria de qualidade e cobertura (UG 158459)
+
+O painel apresenta separadamente **cobertura documental diária** (NE, NS e pagamento nas
+três fases, por data encerrada em America/Sao_Paulo), **enriquecimento CGU** (quantas NS,
+pagamentos e NE tiveram suas consultas complementares concluídas), e **alertas de revisão**.
+O estado de cobertura completa **não** afirma que os vínculos tenham sido todos
+enriquecidos. A ausência de registros publicados não equivale a despesa zero.
+
+A auditoria em `assets/quality.js`, utilizada pelo painel e por `npm run check:data`,
+contabiliza múltiplas NEs por documento, valores negativos (que podem representar anulação),
+empenhos de exercícios anteriores e diferenças entre a soma dos vínculos consultados e
+o valor da NS. Divergências de soma são **sinalizadas para revisão**, sem substituir valores
+da fonte ou declarar ilegalidade. A auditoria não calcula saldo de contrato, restos a pagar
+ou reconciliação contábil; tampouco combina valores de empenho, liquidação e pagamento
+num único total. Duplicidades e vínculos estruturalmente inválidos bloqueiam a validação.
+
+### Ampliação histórica e priorização
+
+A rotina de recuperação histórica agora seleciona automaticamente a competência mais
+recente com dias encerrados pendentes, depois retrocede até `BACKFILL_EARLIEST_MONTH`
+(padrão inicial `2026-01`). Executa **três dias por lote, diariamente**, preservando
+checkpoints, as três fases e limites de paginação. Não presume que o período anterior ao
+limite configurado tenha sido coletado. Para períodos anteriores a 2026, ajuste o limite
+na execução manual; a cobertura de todo o histórico disponível deve ser feita de forma
+progressiva e verificada por mês.
+
+A rotina de enriquecimento permanece em dois lotes diários: às 12h17 UTC prioriza
+o mês mais antigo com pendências; às 22h17 UTC prioriza o mais recente. Isso evita
+que novas despesas impeçam o avanço dos períodos anteriores. A execução manual
+permite escolher competência e limites, sem publicar credenciais.
+
+Após o deploy, `npm run verify:pages` compara o HTML, os módulos públicos,
+o manifesto e até oito JSONs mensais recentemente atualizados com o que o endereço
+informado por `SITE_BASE` realmente entrega. O workflow aguarda a atualização do
+CDN com tentativas limitadas e informa falha se não conseguir comprovar a publicação.
+Uma falha nessa verificação **não** implica que o deploy anterior tenha sido revertido.
+
+```bash
+npm run check:syntax
+npm test
+npm run check:data
+npm run build:site
+# no GitHub Actions, SITE_BASE vem da URL retornada pelo deploy:
+SITE_BASE=https://guimig.github.io/observatorio-despesas/ npm run verify:pages
+```

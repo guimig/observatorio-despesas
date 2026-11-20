@@ -58,3 +58,7 @@ jobs:
       - name: Publicar nova versao
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Confirmar arquivos efetivamente servidos pelo Pages
+        env:
+          SITE_BASE: ${{ steps.deployment.outputs.page_url }}
+        run: npm run verify:pages

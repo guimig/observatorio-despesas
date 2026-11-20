@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { currentDateInBrazil, previousMonthInBrazil, planHistoricalDays } from '../src/backfill.mjs';
+import { currentDateInBrazil, previousMonthInBrazil, planHistoricalDays, chooseHistoricalMonth } from '../src/backfill.mjs';
 
 const now = new Date('2026-11-19T20:00:00Z');
 const full = (date, count = 0, invalid = 0) => [1, 2, 3].map(phase => ({
@@ -62,4 +62,22 @@ test('parâmetros e competências inválidos são recusados sem consultas', () =
   assert.throws(() => planHistoricalDays({ month: '2026-10', now, startDay: 0 }));
   assert.throws(() => planHistoricalDays({ month: '2026-10', now,
     existing: { month: '2026-09', coverage: [] } }));
+});
+
+test('varredura histórica escolhe mês recente ainda não completo e avança ao anterior',async()=>{
+  const recent=await chooseHistoricalMonth({now,earliestMonth:'2026-09',
+    loadExisting:async()=>null});
+  assert.equal(recent,'2026-10');
+  const completeOctober={month:'2026-10',coverage:Array.from({length:31},(_,day)=>
+    full('2026-10-'+String(day+1).padStart(2,'0'))).flat()};
+  const next=await chooseHistoricalMonth({now,earliestMonth:'2026-09',
+    loadExisting:async month=>month==='2026-10'?completeOctober:null});
+  assert.equal(next,'2026-09');
+});
+test('limite inicial, ausência de pendências e seleção explícita são respeitados',async()=>{
+  assert.equal(await chooseHistoricalMonth({now,earliestMonth:'2026-11'}),null);
+  assert.equal(await chooseHistoricalMonth({now,requestedMonth:'2024-02',
+    earliestMonth:'2026-01'}),'2024-02');
+  await assert.rejects(chooseHistoricalMonth({now,earliestMonth:'2026-13'}));
+  await assert.rejects(chooseHistoricalMonth({now,requestedMonth:'../data'}));
 });
