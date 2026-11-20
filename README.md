@@ -249,3 +249,16 @@ npm run build:site
 # no GitHub Actions, SITE_BASE vem da URL retornada pelo deploy:
 SITE_BASE=https://guimig.github.io/observatorio-despesas/ npm run verify:pages
 ```
+
+
+## Trajetória documental por nota de empenho
+
+A seção **Trajetória por nota de empenho** reúne, a partir de todos os JSONs mensais publicados, as NEs e os vínculos CGU de liquidação (fase 2) e pagamento (fase 3). A NE é o eixo de consulta: uma mesma NE pode reunir várias NS e vários documentos da fase de pagamento, inclusive em exercícios posteriores ou anteriores. A ficha também apresenta os itens de empenho quando a consulta correspondente foi concluída.
+
+A interface distingue:
+- documento NE localizado no acervo e vínculo que aponta para NE ainda não coletada;
+- documentos de liquidação e documentos de pagamento, em listas independentes;
+- valor documental original de cada documento e valor do vínculo retornado pela CGU;
+- consulta concluída, pendente e documento relacionado não localizado.
+
+**Limite essencial:** a relação CGU disponível vincula NS e documentos de pagamento às NEs impactadas. Ela não comprova, por si só, que uma OB/DF específica quitou uma NS específica. Portanto a ficha não cria arestas diretas NS→OB/DF, não deduz quitação integral e não calcula saldo contábil. Valores negativos são mantidos como publicados, sem classificá-los automaticamente como anulação. Os somatórios exibidos são apenas somas dos vínculos de cada fase, não total líquido da despesa.
