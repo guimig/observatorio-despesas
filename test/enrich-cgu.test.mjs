@@ -4,7 +4,7 @@ import {
  liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
  resolveLiquidationLinks,resolvePaymentLinks,resolveItems
 } from '../src/enrich-cgu.mjs';
-import { planEnrichment } from '../src/enrich-month.mjs';
+import { planEnrichment, summarizeFailures } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
 
 const ne='158459000012026NE000001', ne2='158459000012026NE000002';
@@ -193,4 +193,10 @@ test('planejamento só seleciona documentos pendentes, respeita limites',()=>{
  d=applyDocumentEnrichment(d,ne,{kind:'items',items:[]}).data;
  assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[],items:[]});
  assert.throws(()=>planEnrichment(d,{maxPayments:1000}));
+});
+
+test('diagnóstico de falhas agrega motivos sem publicar documentos ou respostas',()=>{
+ assert.deepEqual(summarizeFailures(['consulta_indisponivel','consulta_indisponivel',
+ 'pagina_repetida','erro remoto com documento sensível']),{
+ consulta_indisponivel:2,pagina_repetida:1,outro:1});
 });
