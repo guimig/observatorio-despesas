@@ -8,10 +8,10 @@ on:
         type: string
         required: false
       earliest_month:
-        description: 'Competencia mais antiga da varredura automatica AAAA-MM (padrao 2026-01)'
+        description: 'Competencia mais antiga da varredura automatica AAAA-MM (padrao 2025-01)'
         type: string
         required: false
-        default: '2026-01'
+        default: '2025-01'
       days:
         description: 'Dias por lote (maximo 7)'
         type: choice
@@ -83,10 +83,11 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           BACKFILL_MONTH: ${{ inputs.month }}
-          BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2026-01' }}
+          BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2025-01' }}
           BACKFILL_DAYS: ${{ inputs.days || '3' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
+          BACKFILL_PRIORITY_REFERENCES: 'true'
           CGU_MAX_PAGES: '30'
           CGU_MAX_IMPACT_PAGES: '8'
         run: npm run backfill:cgu
