@@ -81,6 +81,20 @@ export function impactUrl(document, page) {
 }
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+/** Exponential backoff capped at 8s; Retry-After is honored up to 30s. */
+export function retryDelay(attempt,{retryAfter=null,now=Date.now()}={}){
+  if(!Number.isSafeInteger(attempt)||attempt<0||attempt>3)throw Error('Tentativa inválida');
+  const exponential=Math.min(8000,1000*(2**attempt));
+  if(retryAfter===null||retryAfter===undefined)return exponential;
+  const raw=String(retryAfter).trim();
+  let requested;
+  if(/^\d+$/.test(raw))requested=Number(raw)*1000;
+  else {
+    const date=Date.parse(raw);
+    requested=Number.isFinite(date)?date-now:NaN;
+  }
+  return Number.isFinite(requested)?Math.min(30000,Math.max(exponential,requested)):exponential;
+}
 
 export async function getCguArray(url, { token, fetcher = fetch, wait = pause } = {}) {
   if (!token || typeof token !== 'string') throw Error('CGU_API_KEY ausente');
@@ -96,11 +110,11 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause } 
       });
     } catch {
       if (attempt === 3) throw Error('CGU indisponível após novas tentativas');
-      await wait(750 * (attempt + 1));
+      await wait(retryDelay(attempt));
       continue;
     } finally { clearTimeout(timeout); }
     if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3) {
-      await wait(750 * (attempt + 1)); continue;
+      await wait(retryDelay(attempt,{retryAfter:response.headers?.get?.('retry-after')})); continue;
     }
     if (!response.ok) throw Error('CGU HTTP ' + response.status);
     let body;
