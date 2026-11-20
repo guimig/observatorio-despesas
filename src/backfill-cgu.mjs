@@ -15,7 +15,7 @@ async function readExisting(month) {
 }
 async function referencedYears() {
   const folder=join(process.cwd(),'data','months');
-  const names=(await readdir(folder)).filter(name=>/^20\\d{2}-(0[1-9]|1[0-2])\\.json$/.test(name));
+  const names=(await readdir(folder)).filter(name=>/^20\d{2}-(0[1-9]|1[0-2])\.json$/.test(name));
   const months=[];
   for(const name of names) months.push(await readExisting(name.slice(0,7)));
   return missingCommitmentYears(months.filter(Boolean));
