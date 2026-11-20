@@ -23,6 +23,12 @@ on:
         type: string
         required: false
         default: '1'
+      priority_references:
+        description: 'Priorizar anos das NEs referenciadas ausentes (auto, true ou false)'
+        type: choice
+        required: false
+        default: 'auto'
+        options: ['auto', 'true', 'false']
       recheck:
         description: 'Reconsultar inclusive dias ja completos?'
         type: boolean
@@ -87,10 +93,13 @@ jobs:
           BACKFILL_DAYS: ${{ inputs.days || '3' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
-          BACKFILL_PRIORITY_REFERENCES: 'true'
+          BACKFILL_PRIORITY_REFERENCES: ${{ inputs.priority_references || 'auto' }}
           CGU_MAX_PAGES: '30'
           CGU_MAX_IMPACT_PAGES: '8'
         run: npm run backfill:cgu
+      - name: Diagnosticar cobertura após o lote
+        if: steps.credential.outputs.enabled == 'true'
+        run: npm run diagnose:coverage
       - name: Validar checkpoint antes de publicar
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
