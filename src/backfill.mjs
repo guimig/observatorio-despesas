@@ -67,7 +67,7 @@ export function missingCommitmentYears(months) {
   if (!Array.isArray(months)) throw Error('Acervo inválido');
   const known = new Set(months.flatMap(m => m.documents.filter(d => d.phase === 1).map(d => d.id)));
   const missing = new Set(months.flatMap(m => m.relations.map(r => r.to))
-    .filter(id => /^158459\\d{5}20\\d{2}NE\\d{6}$/.test(id) && !known.has(id)));
+    .filter(id => /^158459\d{5}20\d{2}NE\d{6}$/.test(id) && !known.has(id)));
   return [...new Set([...missing].map(id => id.slice(11, 15)))].sort();
 }
 
@@ -85,7 +85,7 @@ export async function chooseHistoricalMonth({
   const [year,month]=previous.split('-').map(Number);
   if (prioritize) {
     for (const targetYear of [...new Set(priorityYears)].sort()) {
-      if (!/^20\\d{2}$/.test(targetYear)) continue;
+      if (!/^20\d{2}$/.test(targetYear)) continue;
       for (let monthNumber=12;monthNumber>=1;monthNumber--) {
         const candidate=targetYear+'-'+String(monthNumber).padStart(2,'0');
         if (candidate<earliestMonth || candidate>previous) continue;
