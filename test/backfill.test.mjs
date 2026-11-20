@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { currentDateInBrazil, previousMonthInBrazil, planHistoricalDays, chooseHistoricalMonth } from '../src/backfill.mjs';
+import { currentDateInBrazil, previousMonthInBrazil, planHistoricalDays, chooseHistoricalMonth, missingCommitmentYears } from '../src/backfill.mjs';
 
 const now = new Date('2026-11-19T20:00:00Z');
 const full = (date, count = 0, invalid = 0) => [1, 2, 3].map(phase => ({
@@ -80,4 +80,19 @@ test('limite inicial, ausência de pendências e seleção explícita são respe
     earliestMonth:'2026-01'}),'2024-02');
   await assert.rejects(chooseHistoricalMonth({now,earliestMonth:'2026-13'}));
   await assert.rejects(chooseHistoricalMonth({now,requestedMonth:'../data'}));
+});
+
+test('prioriza exercícios de NEs referenciadas sem documento e preserva modo normal',async()=>{
+ const ne2025='158459264222025NE000216';
+ assert.deepEqual(missingCommitmentYears([{documents:[],relations:[{from:'158459264222026DF800004',to:ne2025,cents:100}]}]),['2025']);
+ const selected=await chooseHistoricalMonth({now,earliestMonth:'2025-01',priorityYears:['2025'],prioritize:true,loadExisting:async()=>null});
+ assert.equal(selected,'2025-12');
+ const regular=await chooseHistoricalMonth({now,earliestMonth:'2025-01',priorityYears:['2025'],prioritize:false,loadExisting:async()=>null});
+ assert.equal(regular,'2026-10');
+});
+test('não classifica NE já coletada como lacuna nem extrapola limite histórico',async()=>{
+ const ne2025='158459264222025NE000216';
+ assert.deepEqual(missingCommitmentYears([{documents:[{id:ne2025,phase:1}],relations:[{from:'x',to:ne2025,cents:100}]}]),[]);
+ const selected=await chooseHistoricalMonth({now,earliestMonth:'2026-01',priorityYears:['2025'],prioritize:true,loadExisting:async()=>null});
+ assert.equal(selected,'2026-10');
 });
