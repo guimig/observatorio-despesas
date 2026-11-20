@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       month:
-        description: 'Competencia AAAA-MM (vazio = mes anterior)'
+        description: 'Competencia AAAA-MM (vazio = ultima competencia incompleta)'
         type: string
         required: false
       earliest_month:
@@ -33,7 +33,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/backfill-cgu.yml'
-  # Lotes pequenos, duas vezes por semana, para completar o mes anterior.
+  # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
   schedule:
     - cron: '13 11 * * *'
 
