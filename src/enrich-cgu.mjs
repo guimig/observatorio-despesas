@@ -46,12 +46,26 @@ export function requestItemsPage(document,page,options){
 function recordFingerprint(rows,keys){
   return JSON.stringify(rows.map(row=>keys.map(key=>row?.[key]??null)));
 }
+export function classifyCguFailure(error){
+  const message=String(error?.message||'');
+  const status=/^CGU HTTP (\d{3})$/.exec(message);
+  if(status){
+    const code=Number(status[1]);
+    if(code===429||code>=500)return 'consulta_indisponivel';
+    if(code===401||code===403)return 'acesso_negado';
+    if(code===404)return 'recurso_nao_encontrado';
+    return 'erro_http';
+  }
+  if(message.includes('JSON inesperado')||message.includes('formato diferente de lista'))
+    return 'resposta_invalida';
+  return 'consulta_indisponivel';
+}
 async function collectPages(document,{token,limit=8,request,keys}){
   const max=bounded(limit,8,20), pages=new Set(),result=[];
   for(let page=1;page<=max;page++){
     let rows;
     try{rows=await request(document,page,{token});}
-    catch{return {ok:false,reason:'consulta_indisponivel'};}
+    catch(error){return {ok:false,reason:classifyCguFailure(error)};}
     if(!Array.isArray(rows))return {ok:false,reason:'resposta_invalida'};
     if(!rows.length)return {ok:true,rows:result};
     const signature=recordFingerprint(rows,keys);

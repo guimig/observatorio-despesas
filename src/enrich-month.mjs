@@ -30,7 +30,8 @@ export function summarizeFailures(failures){
   for(const reason of failures){
     const key=['consulta_indisponivel','resposta_invalida','pagina_repetida',
       'limite_paginacao','impacto_nao_identificado','valor_fora_limite',
-      'item_invalido','sequencial_duplicado_divergente','persistencia_invalida'].includes(reason)
+      'item_invalido','sequencial_duplicado_divergente','persistencia_invalida',
+      'acesso_negado','recurso_nao_encontrado','erro_http'].includes(reason)
       ?reason:'outro';
     counts[key]=(counts[key]||0)+1;
   }
