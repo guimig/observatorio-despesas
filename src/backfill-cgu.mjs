@@ -23,8 +23,10 @@ async function referencedYears() {
 async function main() {
   const now = new Date();
   const priorityYears=await referencedYears();
-  const prioritize=process.env.BACKFILL_PRIORITY_REFERENCES !== 'false' &&
-    Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1;
+  const preference=process.env.BACKFILL_PRIORITY_REFERENCES || 'auto';
+  if(!['auto','true','false'].includes(preference)) throw Error('Preferência de prioridade inválida');
+  const prioritize=preference==='true'||(preference==='auto' &&
+    Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
   const month = await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
     earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||'2025-01',
