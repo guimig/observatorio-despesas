@@ -63,9 +63,17 @@ export function planHistoricalDays({
 
 /** Seleciona a competência mais recente ainda incompleta, retrocedendo até o
  * limite configurado. Não presume que um mês sem arquivo tenha zero despesas. */
+export function missingCommitmentYears(months) {
+  if (!Array.isArray(months)) throw Error('Acervo inválido');
+  const known = new Set(months.flatMap(m => m.documents.filter(d => d.phase === 1).map(d => d.id)));
+  const missing = new Set(months.flatMap(m => m.relations.map(r => r.to))
+    .filter(id => /^158459\\d{5}20\\d{2}NE\\d{6}$/.test(id) && !known.has(id)));
+  return [...new Set([...missing].map(id => id.slice(11, 15)))].sort();
+}
+
 export async function chooseHistoricalMonth({
   requestedMonth='',earliestMonth='2026-01',now=new Date(),
-  loadExisting=async()=>null
+  loadExisting=async()=>null, priorityYears=[], prioritize=false
 }={}){
   if(requestedMonth){
     if(!MONTH.test(requestedMonth))throw Error('Competência manual inválida');
@@ -75,6 +83,17 @@ export async function chooseHistoricalMonth({
   const previous=previousMonthInBrazil(now);
   if(earliestMonth>previous)return null;
   const [year,month]=previous.split('-').map(Number);
+  if (prioritize) {
+    for (const targetYear of [...new Set(priorityYears)].sort()) {
+      if (!/^20\\d{2}$/.test(targetYear)) continue;
+      for (let monthNumber=12;monthNumber>=1;monthNumber--) {
+        const candidate=targetYear+'-'+String(monthNumber).padStart(2,'0');
+        if (candidate<earliestMonth || candidate>previous) continue;
+        const existing=await loadExisting(candidate);
+        if (planHistoricalDays({month:candidate,existing,now,batchDays:1}).length) return candidate;
+      }
+    }
+  }
   for(let cursor=new Date(Date.UTC(year,month-1,1));
     cursor.toISOString().slice(0,7)>=earliestMonth;
     cursor.setUTCMonth(cursor.getUTCMonth()-1)){
