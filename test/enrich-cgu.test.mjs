@@ -4,7 +4,7 @@ import {
  liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
  resolveLiquidationLinks,resolvePaymentLinks,resolveItems,classifyCguFailure
 } from '../src/enrich-cgu.mjs';
-import { planEnrichment, summarizeFailures, rotatePending } from '../src/enrich-month.mjs';
+import { planEnrichment, summarizeFailures, rotatePending, orderMonths } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
 
 const ne='158459000012026NE000001', ne2='158459000012026NE000002';
@@ -216,4 +216,13 @@ test('rodadas rotativas distribuem tentativas sem excluir pendências',()=>{
  assert.deepEqual(rotatePending(docs,2,2),['e','a']);
  assert.deepEqual(rotatePending([],2,1),[]);
  assert.throws(()=>rotatePending(docs,2,-1));
+});
+
+test('competências são distribuídas por rodada, sem monopolização da mais antiga',()=>{
+ const months=['2026-11','2025-12','2026-10'];
+ assert.deepEqual(orderMonths(months,{priority:'round_robin',slot:0}),['2025-12','2026-10','2026-11']);
+ assert.deepEqual(orderMonths(months,{priority:'round_robin',slot:1}),['2026-10','2026-11','2025-12']);
+ assert.deepEqual(orderMonths(months,{priority:'round_robin',slot:2}),['2026-11','2025-12','2026-10']);
+ assert.deepEqual(orderMonths(months,{priority:'newest'}),['2026-11','2026-10','2025-12']);
+ assert.deepEqual(orderMonths([], {priority:'round_robin',slot:0}),[]);
 });

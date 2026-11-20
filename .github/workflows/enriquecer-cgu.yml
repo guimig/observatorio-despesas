@@ -80,7 +80,7 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           ENRICH_MONTH: ${{ inputs.month }}
-          ENRICH_PRIORITY: ${{ github.event.schedule == '17 12 * * *' && 'oldest' || github.event.schedule == '17 17 * * *' && 'oldest' || 'newest' }}
+          ENRICH_PRIORITY: ${{ github.event_name == 'schedule' && 'round_robin' || 'newest' }}
           ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '12' }}
           ENRICH_PAYMENTS: ${{ inputs.payments || '15' }}
           ENRICH_ITEMS: ${{ inputs.items || '7' }}
