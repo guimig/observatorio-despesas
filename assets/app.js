@@ -293,7 +293,8 @@ function showDocument(doc, monthData = state.data) {
     ['Ação orçamentária', doc.nature?.action || 'Não informada'],
     ['Consulta de vínculos',doc.phase===3
       ?(doc.paymentLinksChecked?'Concluída nesta base':'Aguardando enriquecimento')
-      :doc.phase===2?'Vínculos de liquidação conforme dados publicados':'Conforme documentos disponíveis'],
+      :doc.phase===2?(doc.liquidationLinksChecked?'Concluída nesta base':
+        'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis'],
     ['Fonte', 'CGU / Portal da Transparência']
   ];
   for(const [label,value] of entries) {
