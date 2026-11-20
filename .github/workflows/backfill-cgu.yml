@@ -7,6 +7,11 @@ on:
         description: 'Competencia AAAA-MM (vazio = mes anterior)'
         type: string
         required: false
+      earliest_month:
+        description: 'Competencia mais antiga da varredura automatica AAAA-MM (padrao 2026-01)'
+        type: string
+        required: false
+        default: '2026-01'
       days:
         description: 'Dias por lote (maximo 7)'
         type: choice
@@ -30,7 +35,7 @@ on:
       - '.github/workflows/backfill-cgu.yml'
   # Lotes pequenos, duas vezes por semana, para completar o mes anterior.
   schedule:
-    - cron: '13 11 * * 1,4'
+    - cron: '13 11 * * *'
 
 permissions:
   contents: read
@@ -78,6 +83,7 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           BACKFILL_MONTH: ${{ inputs.month }}
+          BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2026-01' }}
           BACKFILL_DAYS: ${{ inputs.days || '3' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
