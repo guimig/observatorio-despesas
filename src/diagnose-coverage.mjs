@@ -16,7 +16,11 @@ export function diagnoseCoverage(months) {
     const complete=month.coverage.filter(c=>c.complete===true&&c.invalid===0);
     const fullyCovered=[...dates].filter(date=>[1,2,3].every(phase=>
       complete.some(c=>c.date===date&&c.phase===phase)));
-    monthsSummary.push({month:month.month,daysWithCoverage:dates.size,
+    const pendingLiquidations=month.documents.filter(doc=>doc.phase===2&&doc.liquidationLinksChecked!==true).length;
+    const pendingPayments=month.documents.filter(doc=>doc.phase===3&&doc.paymentLinksChecked!==true).length;
+    const pendingItems=month.documents.filter(doc=>doc.phase===1&&!Object.hasOwn(month.itemsByDocument||{},doc.id)).length;
+    monthsSummary.push({month:month.month,pendingLiquidations,pendingPayments,pendingItems,
+      pendingTotal:pendingLiquidations+pendingPayments+pendingItems,daysWithCoverage:dates.size,
       fullyCoveredDays:fullyCovered.length,documents:month.documents.length,
       relations:month.relations.length});
   }
@@ -24,7 +28,8 @@ export function diagnoseCoverage(months) {
   const missing=[...refs].filter(id=>!known.has(id)).sort();
   const missingByYear=Object.fromEntries([...new Set(missing.map(id=>id.slice(11,15)))].sort()
     .map(year=>[year,missing.filter(id=>id.slice(11,15)===year).length]));
-  return {months:monthsSummary,documents:docs.size,relations:months.reduce((n,m)=>n+m.relations.length,0),
+  const pendingEnrichment=monthsSummary.reduce((total,month)=>total+month.pendingTotal,0);
+  return {months:monthsSummary,pendingEnrichment,documents:docs.size,relations:months.reduce((n,m)=>n+m.relations.length,0),
     commitmentsCollected:known.size,commitmentsReferenced:refs.size,
     commitmentsMissing:missing.length,missingByYear,
     missingCommitmentIds:missing,
@@ -38,9 +43,11 @@ async function main(){
   if(process.argv.includes('--json'))console.log(JSON.stringify(report,null,2));
   else{
     console.log('Cobertura UG 158459: '+report.documents+' documentos; '+report.relations+' vínculos; '+
-      report.commitmentsCollected+' NEs coletadas; '+report.commitmentsMissing+' NEs referenciadas sem documento.');
+      report.commitmentsCollected+' NEs coletadas; '+report.commitmentsMissing+' NEs referenciadas sem documento; '+
+      report.pendingEnrichment+' enriquecimentos pendentes.');
     console.log('Pendências por exercício: '+JSON.stringify(report.missingByYear));
-    for(const m of report.months)console.log(m.month+': '+m.fullyCoveredDays+' dia(s) com três fases completas de '+m.daysWithCoverage+' dia(s) consultados');
+    for(const m of report.months)console.log(m.month+': '+m.fullyCoveredDays+' dia(s) com três fases completas de '+m.daysWithCoverage+' dia(s) consultados; '+
+      m.pendingTotal+' enriquecimentos pendentes (NS '+m.pendingLiquidations+', pagamento '+m.pendingPayments+', itens '+m.pendingItems+').');
     console.log(report.note);
   }
 }
