@@ -4,7 +4,7 @@ import {
  liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
  resolveLiquidationLinks,resolvePaymentLinks,resolveItems,classifyCguFailure
 } from '../src/enrich-cgu.mjs';
-import { planEnrichment, summarizeFailures } from '../src/enrich-month.mjs';
+import { planEnrichment, summarizeFailures, rotatePending } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
 
 const ne='158459000012026NE000001', ne2='158459000012026NE000002';
@@ -207,4 +207,13 @@ test('classifica falhas HTTP sem vazar detalhes da resposta',()=>{
  assert.equal(classifyCguFailure(Error('CGU HTTP 403')),'acesso_negado');
  assert.equal(classifyCguFailure(Error('CGU HTTP 404')),'recurso_nao_encontrado');
  assert.equal(classifyCguFailure(Error('CGU retornou JSON inesperado')),'resposta_invalida');
+});
+
+test('rodadas rotativas distribuem tentativas sem excluir pendências',()=>{
+ const docs=['a','b','c','d','e'];
+ assert.deepEqual(rotatePending(docs,2,0),['a','b']);
+ assert.deepEqual(rotatePending(docs,2,1),['c','d']);
+ assert.deepEqual(rotatePending(docs,2,2),['e','a']);
+ assert.deepEqual(rotatePending([],2,1),[]);
+ assert.throws(()=>rotatePending(docs,2,-1));
 });
