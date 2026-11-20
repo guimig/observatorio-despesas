@@ -70,6 +70,21 @@ export function auditMonth(month,{now=new Date()}={}){
     if(relation.cents<0)negative++;
     if(source&&relation.to.slice(11,15)!==source.id.slice(11,15))crossExercise++;
   }
+  // Divergências de soma são apenas alertas para revisão: o valor do documento
+  // não deve ser substituído por impactos nem por pagamentos de restos a pagar.
+  const valuesBySource=new Map();
+  for(const relation of month.relations){
+    const values=valuesBySource.get(relation.from)||[];
+    values.push(relation.cents);
+    valuesBySource.set(relation.from,values);
+  }
+  let liquidationValueReviews=0;
+  for(const doc of month.documents.filter(d=>d.phase===2&&d.liquidationLinksChecked===true)){
+    const values=valuesBySource.get(doc.id);
+    if(!values?.length||!Number.isSafeInteger(doc.cents))continue;
+    const sum=values.reduce((acc,value)=>acc+value,0);
+    if(!Number.isSafeInteger(sum)||sum!==doc.cents)liquidationValueReviews++;
+  }
   const liquidations=byPhase(2),payments=byPhase(3),items=byPhase(1);
   return {
     month:month.month,
@@ -82,7 +97,7 @@ export function auditMonth(month,{now=new Date()}={}){
       pending:liquidations.pending+payments.pending+items.pending},
     links:{total:month.relations.length,
       multipleCommitments:[...bySource.values()].filter(set=>set.size>1).length,
-      negative,crossExercise},
+      negative,crossExercise,liquidationValueReviews},
     issues:[...new Set(issues)].sort()
   };
 }
