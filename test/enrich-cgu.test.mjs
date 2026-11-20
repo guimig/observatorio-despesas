@@ -4,7 +4,7 @@ import {
  liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
  resolveLiquidationLinks,resolvePaymentLinks,resolveItems,classifyCguFailure
 } from '../src/enrich-cgu.mjs';
-import { planEnrichment, summarizeFailures, rotatePending, orderMonths } from '../src/enrich-month.mjs';
+import { planEnrichment, summarizeFailures, rotatePending, orderMonths, scheduledMonthSlot } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
 
 const ne='158459000012026NE000001', ne2='158459000012026NE000002';
@@ -225,4 +225,14 @@ test('competências são distribuídas por rodada, sem monopolização da mais a
  assert.deepEqual(orderMonths(months,{priority:'round_robin',slot:2}),['2026-11','2025-12','2026-10']);
  assert.deepEqual(orderMonths(months,{priority:'newest'}),['2026-11','2026-10','2025-12']);
  assert.deepEqual(orderMonths([], {priority:'round_robin',slot:0}),[]);
+});
+
+test('rodízio por dia não fica preso no mesmo mês em três agendamentos',()=>{
+ const months=['2025-12','2026-10','2026-11'];
+ const first=scheduledMonthSlot('2026-11-20T12:17:00Z');
+ assert.equal(scheduledMonthSlot('2026-11-20T22:17:00Z'),first);
+ assert.equal(scheduledMonthSlot('2026-11-21T12:17:00Z'),first+1);
+ assert.notDeepEqual(orderMonths(months,{priority:'round_robin',slot:first}),
+   orderMonths(months,{priority:'round_robin',slot:first+1}));
+ assert.throws(()=>scheduledMonthSlot('invalid'));
 });
