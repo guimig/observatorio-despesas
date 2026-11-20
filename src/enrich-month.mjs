@@ -34,6 +34,14 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
   const selectedItems=rotatePending(items,bounded(maxItems,7,20),slot);
   return {liquidations:selectedLiquidations,payments:selectedPayments,items:selectedItems};
 }
+export function scheduledMonthSlot(now=new Date()){
+  const date=now instanceof Date?now:new Date(now);
+  if(!Number.isFinite(date.getTime()))throw Error('Data de agendamento inválida');
+  // Um avanço por dia; os três agendamentos do dia usam a mesma competência.
+  // Isso garante alternância diária mesmo quando o slot de seis horas
+  // produziria sempre o mesmo resto para três competências.
+  return Math.floor(date.getTime()/86400000);
+}
 export function orderMonths(months,{priority='newest',slot=0}={}){
   const ordered=[...months].sort();
   if(priority==='round_robin'){
@@ -78,7 +86,8 @@ async function main(){
     ?process.env.ENRICH_PRIORITY:'newest';
   // A agenda alterna o mês mais recente e o mais antigo para impedir que
   // novos documentos deixem competências históricas sempre aguardando.
-  const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot});
+  const monthSlot=scheduledMonthSlot();
+  const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot:monthSlot});
   let chosen=null;
   for(const monthName of alternatives){
     const data=await readMonth(root,monthName);
