@@ -64,3 +64,9 @@ Este inventário prova presença de componentes no código, **não** sua cobertu
 
 ## Não conclusões
 Este documento não afirma que dados históricos estão completos, que RAP já é calculável, que contratos estão conciliados ou que as integrações internas possuem acesso autorizado.
+
+## AUD-01 — Comando implementado
+
+Executar `npm run audit:baseline` no checkout da revisão que se deseja auditar. Para identificar o commit no relatório, usar `GITHUB_SHA=$(git rev-parse HEAD) npm run audit:baseline` em ambiente local com Git, ou o `GITHUB_SHA` do GitHub Actions. A saída é JSON de agregados, por competência, sem IDs individuais de NE ou dados pessoais. **Nenhum arquivo de histórico é gerado automaticamente**.
+
+O relatório permite comparar documentos, vínculos, enriquecimentos pendentes, NEs referenciadas mas ainda não recuperadas e dias com três fases completas. O número de dias consultados não representa necessariamente todos os dias do calendário; a cobertura precisa ser interpretada por fase e competência. AUD-01 está implementada no código, mas o registro e a revisão de uma linha de base operacional continuam necessários.

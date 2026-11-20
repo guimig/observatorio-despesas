@@ -29,6 +29,7 @@
     "pncp-related:plan": "node src/backfill-pncp-linked-notices.mjs --dry-run",
     "inspect:cgu-siafi": "node src/inspect-cgu-siafi.mjs",
     "verify:pages": "node src/verify-pages.mjs",
-    "diagnose:coverage": "node src/diagnose-coverage.mjs"
+    "diagnose:coverage": "node src/diagnose-coverage.mjs",
+    "audit:baseline": "node src/diagnose-coverage.mjs --audit-json"
   }
 }
