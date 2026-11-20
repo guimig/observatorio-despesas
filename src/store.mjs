@@ -49,10 +49,15 @@ export function validateMonth(data) {
   const ids = new Set();
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
-      'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked']);
+      'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
+      'liquidationLinksChecked']);
     if (doc.paymentLinksChecked !== undefined &&
         (doc.phase !== 3 || doc.paymentLinksChecked !== true)) {
       throw Error('Marcador de consulta de pagamento inválido');
+    }
+    if (doc.liquidationLinksChecked !== undefined &&
+        (doc.phase !== 2 || doc.liquidationLinksChecked !== true)) {
+      throw Error('Marcador de consulta de liquidação inválido');
     }
     if (doc.partyRef !== undefined &&
         (!/^\d{14}$/.test(doc.partyRef) ||
@@ -184,6 +189,8 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
     const previousById=new Map(previousDocs.map(doc=>[doc.id,doc]));
     const removedIds=new Set(previousDocs.map(doc=>doc.id));
     const previousLinks=next.relations.filter(link=>removedIds.has(link.from));
+    const incomingOrigins=new Set(links.map(link=>link.from));
+    const carriedOrigins=new Set();
     next.documents = next.documents.filter(doc =>
       !(doc.date === coverage.date && doc.phase === coverage.phase));
     next.relations = next.relations.filter(link => !removedIds.has(link.from));
@@ -209,13 +216,21 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
         if (doc.phase===1 && next.itemsByDocument) delete next.itemsByDocument[doc.id];
         continue;
       }
+      const prior=previousLinks.filter(link=>link.from===doc.id);
+      if (doc.phase===2 &&
+          (before.liquidationLinksChecked===true || !incomingOrigins.has(doc.id))) {
+        if(before.liquidationLinksChecked===true)doc.liquidationLinksChecked=true;
+        next.relations.push(...prior);
+        if(prior.length)carriedOrigins.add(doc.id);
+      }
       if (doc.phase===3 && before.paymentLinksChecked===true) {
         doc.paymentLinksChecked=true;
-        next.relations.push(...previousLinks.filter(link=>link.from===doc.id));
+        next.relations.push(...prior);
+        if(prior.length)carriedOrigins.add(doc.id);
       }
     }
     next.documents.push(...normalized);
-    next.relations.push(...structuredClone(links));
+    next.relations.push(...structuredClone(links.filter(link=>!carriedOrigins.has(link.from))));
     next.coverage.push(structuredClone(coverage));
   }
   if (next.itemsByDocument) {
@@ -251,7 +266,17 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   if(!doc)throw Error('Documento não encontrado no JSON mensal');
   const next=structuredClone(original);
   const target=next.documents.find(item=>item.id===id);
-  if(result.kind==='payment'){
+  if(result.kind==='liquidation'){
+    if(target.phase!==2||!Array.isArray(result.links)||
+       result.links.some(link=>link.from!==id))throw Error('Vínculos de liquidação inválidos');
+    if(!result.links.length&&next.relations.some(link=>link.from===id))
+      throw Error('Consulta vazia não pode apagar vínculos de liquidação anteriores');
+    target.liquidationLinksChecked=true;
+    next.relations=next.relations.filter(link=>link.from!==id);
+    next.relations.push(...structuredClone(result.links));
+    next.relations.sort((a,b)=>a.from.localeCompare(b.from)||
+      a.to.localeCompare(b.to)||a.cents-b.cents);
+  }else if(result.kind==='payment'){
     if(target.phase!==3||!Array.isArray(result.links)||
        result.links.some(link=>link.from!==id))throw Error('Vínculos de pagamento inválidos');
     target.paymentLinksChecked=true;

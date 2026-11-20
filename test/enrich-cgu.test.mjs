@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
- paymentUrl,itemsUrl,publicItemDescription,normalizeItem,resolvePaymentLinks,resolveItems
+ liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
+ resolveLiquidationLinks,resolvePaymentLinks,resolveItems
 } from '../src/enrich-cgu.mjs';
 import { planEnrichment } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
 
 const ne='158459000012026NE000001', ne2='158459000012026NE000002';
 const ob='158459000012026OB000001', ob2='158459000012026OB000002';
+const ns='158459000012026NS000001', ne3='158459000012026NE000003';
 const result=(id,phase,cents=1000)=>({
  documents:[{id,date:'2026-11-18',phase,cents}],
  links:[],coverage:{date:'2026-11-18',phase,count:1,invalid:0,complete:true}
@@ -22,6 +24,45 @@ test('URLs validadas, sem chave ou CPF, para pagamentos fase 3 e itens',()=>{
  assert.equal(new URL(itemsUrl(ne)).pathname,'/api-de-dados/despesas/itens-de-empenho');
  assert.throws(()=>paymentUrl('00012345678'));
  assert.throws(()=>itemsUrl(ob));
+});
+test('URL de liquidação usa fase 2 e valida documento e página',()=>{
+ const url=new URL(liquidationUrl(ns,3));
+ assert.equal(url.searchParams.get('fase'),'2');
+ assert.equal(url.searchParams.get('pagina'),'3');
+ assert.equal(url.searchParams.get('codigoDocumento'),ns);
+ assert.throws(()=>liquidationUrl('2026NS123'));
+ assert.throws(()=>liquidationUrl(ns,0));
+});
+test('NS com três NEs, subitens e anulação preserva vínculos N:M',async()=>{
+ const request=async(_,page)=>page===1?[
+  {empenho:ne,subitem:'01',valorLiquidado:'100,00'},
+  {empenho:ne,subitem:'02',valorLiquidado:'-10,00'},
+  {empenho:ne2,subitem:'01',valorLiquidado:'30,00'},
+  {empenho:ne3,subitem:'01',valorLiquidado:'20,00'}
+ ]:[];
+ const outcome=await resolveLiquidationLinks(ns,{token:'fake',request});
+ assert.deepEqual(outcome,{ok:true,impacts:4,links:[
+  {from:ns,to:ne,cents:9000},{from:ns,to:ne2,cents:3000},
+  {from:ns,to:ne3,cents:2000}
+ ]});
+});
+test('NS com consulta vazia não inventa saldo nem relação',async()=>{
+ assert.deepEqual(await resolveLiquidationLinks(ns,{
+  token:'fake',request:async()=>[]
+ }),{ok:true,links:[],impacts:0});
+});
+test('NS com impacto ilegível, resposta repetida ou truncada não é concluída',async()=>{
+ const row={empenho:ne,subitem:'01',valorLiquidado:'10,00'};
+ assert.equal((await resolveLiquidationLinks(ns,{token:'fake',
+  request:async()=>[row]})).reason,'pagina_repetida');
+ assert.equal((await resolveLiquidationLinks(ns,{token:'fake',limit:1,
+  request:async()=>[row]})).reason,'limite_paginacao');
+ assert.equal((await resolveLiquidationLinks(ns,{token:'fake',
+  request:async(_,page)=>page===1?[{...row,empenho:'2026NE000001'}]:[]
+ })).reason,'impacto_nao_identificado');
+ assert.equal((await resolveLiquidationLinks(ns,{token:'fake',
+  request:async(_,page)=>page===1?[{...row,valorLiquidado:'invalid'}]:[]
+ })).ok,false);
 });
 test('vínculos de pagamento somam normal + restos a pagar, subitens e sinais',async()=>{
  const request=async(_,page)=>page===1?[
@@ -118,11 +159,38 @@ test('retificação de valor invalida detalhes para reconsulta, sem conservar v�
  assert.equal(fresh.data.relations.length,0);
  assert.equal(fresh.data.itemsByDocument,undefined);
 });
+test('enriquecimento NS não altera valor documental nem pagamento e é idempotente',()=>{
+ let month=wrap([result(ne,1),result(ns,2,30000),result(ob,3)]);
+ month=applyDocumentEnrichment(month,ob,{kind:'payment',
+  links:[{from:ob,to:ne,cents:1000}]}).data;
+ const links=[{from:ns,to:ne,cents:10000},{from:ns,to:ne2,cents:2000}];
+ const enriched=applyDocumentEnrichment(month,ns,{kind:'liquidation',links});
+ assert.equal(enriched.data.documents.find(d=>d.id===ns).cents,30000);
+ assert.equal(enriched.data.documents.find(d=>d.id===ns).liquidationLinksChecked,true);
+ assert.equal(enriched.data.relations.length,3);
+ assert.equal(applyDocumentEnrichment(enriched.data,ns,{kind:'liquidation',links}).changed,false);
+ assert.throws(()=>applyDocumentEnrichment(enriched.data,ns,{kind:'liquidation',links:[]}));
+ assert.throws(()=>applyDocumentEnrichment(enriched.data,ob,{kind:'liquidation',links:[]}));
+ const invalid=structuredClone(enriched.data);
+ invalid.documents.find(d=>d.id===ns).liquidationLinksChecked=false;
+ assert.throws(()=>validateMonth(invalid));
+});
+test('recoleta preserva NS e invalida seus vínculos na retificação',()=>{
+ let month=wrap([result(ne,1),result(ns,2)]);
+ month=applyDocumentEnrichment(month,ns,{kind:'liquidation',
+  links:[{from:ns,to:ne,cents:1000}]}).data;
+ const same=mergeMonth(month,'2026-11',[result(ns,2)]);
+ assert.equal(same.changed,false);
+ assert.equal(same.data.relations.length,1);
+ const changed=mergeMonth(month,'2026-11',[result(ns,2,9999)]);
+ assert.equal(changed.data.documents.find(d=>d.id===ns).liquidationLinksChecked,undefined);
+ assert.equal(changed.data.relations.length,0);
+});
 test('planejamento só seleciona documentos pendentes, respeita limites',()=>{
  let d=wrap([result(ne,1),result(ob,3)]);
- assert.deepEqual(planEnrichment(d),{payments:[ob],items:[ne]});
+ assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[ob],items:[ne]});
  d=applyDocumentEnrichment(d,ob,{kind:'payment',links:[]}).data;
  d=applyDocumentEnrichment(d,ne,{kind:'items',items:[]}).data;
- assert.deepEqual(planEnrichment(d),{payments:[],items:[]});
+ assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[],items:[]});
  assert.throws(()=>planEnrichment(d,{maxPayments:1000}));
 });
