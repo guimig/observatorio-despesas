@@ -3,6 +3,26 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+export function auditBaseline(report,{revision='unknown'}={}){
+  return {
+    schemaVersion:1,
+    unit:'158459',
+    revision,
+    documents:report.documents,
+    relations:report.relations,
+    commitmentsCollected:report.commitmentsCollected,
+    commitmentsReferenced:report.commitmentsReferenced,
+    commitmentsMissing:report.commitmentsMissing,
+    missingByYear:report.missingByYear,
+    pendingEnrichment:report.pendingEnrichment,
+    months:report.months.map(({month,daysWithCoverage,fullyCoveredDays,documents,relations,
+      pendingLiquidations,pendingPayments,pendingItems,pendingTotal})=>({
+      month,daysWithCoverage,fullyCoveredDays,documents,relations,
+      pendingLiquidations,pendingPayments,pendingItems,pendingTotal
+    })),
+    caveat:report.note
+  };
+}
 export function diagnoseCoverage(months) {
   const docs=new Map(), refs=new Set(), phaseCount={1:0,2:0,3:0};
   const monthsSummary=[];
@@ -40,7 +60,9 @@ async function main(){
   const names=(await readdir(folder)).filter(n=>/^20\d{2}-(0[1-9]|1[0-2])\.json$/.test(n)).sort();
   const months=await Promise.all(names.map(async n=>JSON.parse(await readFile(join(folder,n),'utf8'))));
   const report=diagnoseCoverage(months);
-  if(process.argv.includes('--json'))console.log(JSON.stringify(report,null,2));
+  if(process.argv.includes('--audit-json')){
+    console.log(JSON.stringify(auditBaseline(report,{revision:process.env.GITHUB_SHA||'unknown'}),null,2));
+  }else if(process.argv.includes('--json'))console.log(JSON.stringify(report,null,2));
   else{
     console.log('Cobertura UG 158459: '+report.documents+' documentos; '+report.relations+' vínculos; '+
       report.commitmentsCollected+' NEs coletadas; '+report.commitmentsMissing+' NEs referenciadas sem documento; '+
