@@ -70,3 +70,7 @@ Este documento não afirma que dados históricos estão completos, que RAP já �
 Executar `npm run audit:baseline` no checkout da revisão que se deseja auditar. Para identificar o commit no relatório, usar `GITHUB_SHA=$(git rev-parse HEAD) npm run audit:baseline` em ambiente local com Git, ou o `GITHUB_SHA` do GitHub Actions. A saída é JSON de agregados, por competência, sem IDs individuais de NE ou dados pessoais. **Nenhum arquivo de histórico é gerado automaticamente**.
 
 O relatório permite comparar documentos, vínculos, enriquecimentos pendentes, NEs referenciadas mas ainda não recuperadas e dias com três fases completas. O número de dias consultados não representa necessariamente todos os dias do calendário; a cobertura precisa ser interpretada por fase e competência. AUD-01 está implementada no código, mas o registro e a revisão de uma linha de base operacional continuam necessários.
+
+## AUD-02 e AUD-03 — Implementação inicial
+
+AUD-02: adicionados testes de regressão da classificação de contratos formais, notas de empenho substitutivas e outros instrumentos, sem inferência pelo número ou processo. AUD-03: criado [dicionário preliminar de indicadores](DICIONARIO-INDICADORES.md), com fontes, limitações e exemplos de dupla contagem. **A conciliação contábil real com SIAFI/Tesouro permanece pendente de dados e homologação.**
