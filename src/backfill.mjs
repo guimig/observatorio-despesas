@@ -60,3 +60,28 @@ export function planHistoricalDays({
   }
   return candidates;
 }
+
+/** Seleciona a competência mais recente ainda incompleta, retrocedendo até o
+ * limite configurado. Não presume que um mês sem arquivo tenha zero despesas. */
+export async function chooseHistoricalMonth({
+  requestedMonth='',earliestMonth='2026-01',now=new Date(),
+  loadExisting=async()=>null
+}={}){
+  if(requestedMonth){
+    if(!MONTH.test(requestedMonth))throw Error('Competência manual inválida');
+    return requestedMonth;
+  }
+  if(!MONTH.test(earliestMonth))throw Error('Início histórico inválido');
+  const previous=previousMonthInBrazil(now);
+  if(earliestMonth>previous)return null;
+  const [year,month]=previous.split('-').map(Number);
+  for(let cursor=new Date(Date.UTC(year,month-1,1));
+    cursor.toISOString().slice(0,7)>=earliestMonth;
+    cursor.setUTCMonth(cursor.getUTCMonth()-1)){
+    const candidate=cursor.toISOString().slice(0,7);
+    const existing=await loadExisting(candidate);
+    if(planHistoricalDays({month:candidate,existing,now,batchDays:1}).length)
+      return candidate;
+  }
+  return null;
+}
