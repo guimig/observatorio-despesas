@@ -1,4 +1,4 @@
-name: Enriquecer pagamentos e itens CGU
+name: Enriquecer liquidações, pagamentos e itens CGU
 
 on:
   workflow_dispatch:
@@ -7,6 +7,12 @@ on:
         description: 'Competencia AAAA-MM (vazio = mais recente com pendencias)'
         required: false
         type: string
+      liquidations:
+        description: 'Liquidacoes por lote'
+        required: false
+        type: choice
+        default: '12'
+        options: ['5','10','12','20']
       payments:
         description: 'Pagamentos por lote'
         required: false
@@ -72,6 +78,7 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           ENRICH_MONTH: ${{ inputs.month }}
+          ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '12' }}
           ENRICH_PAYMENTS: ${{ inputs.payments || '15' }}
           ENRICH_ITEMS: ${{ inputs.items || '7' }}
         run: npm run enrich:cgu
@@ -90,7 +97,7 @@ jobs:
             echo 'Nenhum enriquecimento novo para versionar.'
             exit 0
           fi
-          git commit -m 'data: enriquecer vinculos de pagamentos e itens da CGU'
+          git commit -m 'data: enriquecer vinculos de liquidacoes, pagamentos e itens CGU'
           git push origin HEAD:main
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
