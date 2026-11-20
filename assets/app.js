@@ -3,6 +3,7 @@ import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import { auditMonth } from './quality.js';
+import { buildCommitmentTrajectories, filterCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -17,6 +18,8 @@ const noticesState={query:'',modality:'all',attribution:'likely',page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',page:0};
 const contractsPerPage=20;
 const cache = new Map();
+let commitmentTrajectories=[];
+let trajectoryReady=false;
 const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0 };
 
 function element(tag, className, content) {
@@ -389,6 +392,125 @@ function renderAll() {
     ? 'Arquivo atualizado em ' + new Date(state.data.updated_at).toLocaleString('pt-BR')
     : 'Sem registro de atualização';
 }
+
+async function loadAllTrajectoryMonths(){
+  if(trajectoryReady)return;
+  status('Carregando competências para reconstruir as trajetórias…');
+  const months=[...state.manifest.months].sort();
+  const loaded=[];
+  for(const month of months){
+    if(!cache.has(month)){
+      const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
+      if(!response.ok)throw Error('Não foi possível carregar '+month);
+      const data=await response.json();
+      if(data?.schema_version!==1||data.unit!=='158459'||data.month!==month||
+        !Array.isArray(data.documents)||!Array.isArray(data.relations))
+        throw Error('Dados incompatíveis em '+month);
+      cache.set(month,data);
+    }
+    loaded.push(cache.get(month));
+  }
+  commitmentTrajectories=buildCommitmentTrajectories(loaded);
+  trajectoryReady=true;
+  renderCommitmentTrajectories();
+  $('trajectory-status').textContent=months.length+' competência(s) analisadas. As relações são documentais e não equivalem a conciliação contábil.';
+}
+function renderCommitmentTrajectories(){
+  const query=$('trajectory-search').value;
+  const all=filterCommitmentTrajectories(commitmentTrajectories,query);
+  const tbody=$('trajectory-rows');tbody.replaceChildren();
+  $('trajectory-count').textContent=fmtCount(all.length)+' empenho(s) com registro ou vínculo';
+  if(!all.length){
+    const row=element('tr'),cell=element('td','','Nenhum empenho corresponde à pesquisa.');
+    cell.colSpan=7;row.append(cell);tbody.append(row);return;
+  }
+  for(const entry of all){
+    const row=element('tr');
+    const ne=element('td','doc-code',entry.id);
+    const date=element('td','',entry.document?.date?localDate(entry.document.date):'Não coletada');
+    const process=element('td','doc-code',entry.document?.process||'—');
+    const object=element('td','beneficiary-cell',entry.document?.nature?.element||'Não informado');
+    const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
+    const pg=element('td','align-right',fmtMoney(entry.paymentCents));
+    const action=element('td','');
+    const button=element('button','details-button','Abrir trajetória');
+    button.type='button';button.addEventListener('click',()=>showCommitmentTrajectory(entry));
+    action.append(button);row.append(ne,date,process,object,lq,pg,action);tbody.append(row);
+  }
+}
+function renderTrajectoryLinks(target,links,emptyText){
+  target.replaceChildren();
+  if(!links.length){target.append(element('p','small-muted',emptyText));return;}
+  for(const link of links){
+    const item=element('div','relation-item');
+    const caption=(link.document?.id||link.id)+' · '+(link.date?localDate(link.date):'Data indisponível');
+    item.append(element('strong','',caption));
+    item.append(element('span','small-muted','Valor vinculado: '+fmtMoney(link.cents)));
+    item.append(element('span','small-muted',link.checked===true?'Consulta de vínculos concluída':
+      link.checked===false?'Consulta de vínculos pendente':'Documento relacionado não localizado no acervo carregado'));
+    if(link.document){
+      const open=element('button','relation-link doc-code','Abrir documento');
+      open.type='button';open.addEventListener('click',()=>showDocument(link.document,cache.get(link.month)||state.data));
+      item.append(open);
+    }
+    target.append(item);
+  }
+}
+function showCommitmentTrajectory(entry){
+  $('dialog-title').textContent='Trajetória da NE · '+entry.id;
+  const fields=$('dialog-fields');fields.replaceChildren();
+  const doc=entry.document;
+  const entries=[
+    ['Documento de empenho',entry.id],
+    ['Data',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
+    ['Processo',doc?.process||'Não informado'],
+    ['Valor documental da NE',fmtMoney(doc?.cents)],
+    ['UG','158459 · IFC Araquari'],
+    ['Natureza da despesa',doc?.nature?.element||'Não informada'],
+    ['Exercício da NE',entry.id.slice(11,15)],
+    ['Itens do empenho',entry.itemsChecked?'Consulta concluída':'Aguardando consulta']
+  ];
+  for(const [label,value] of entries){const group=element('div');group.append(element('dt','',label),element('dd','',value));fields.append(group);}
+  $('dialog-relations').replaceChildren();
+  $('dialog-items-section').hidden=!entry.itemsChecked;
+  const items=$('dialog-items');items.replaceChildren();
+  for(const item of entry.items||[]){
+    const block=element('div','relation-item');
+    block.append(element('strong','','Item '+item.seq+' · '+(item.description||item.subdesc||item.code||'Descrição não divulgada')));
+    block.append(element('span','small-muted','Valor atual do item: '+fmtMoney(item.cents)));
+    items.append(block);
+  }
+  renderTrajectoryLinks($('dialog-liquidations'),entry.liquidations,
+    'Nenhuma liquidação vinculada identificada no acervo consultado.');
+  renderTrajectoryLinks($('dialog-payments'),entry.payments,
+    'Nenhum documento da fase de pagamento vinculado identificado no acervo consultado.');
+  $('dialog-trajectory-note').textContent=
+    'Liquidações e pagamentos são apresentados em grupos independentes. A CGU vincula ambos às NEs; isso não comprova relação direta entre uma NS e uma OB/DF, nem quitação integral do empenho. Valores negativos são preservados como retornados pela fonte. Os totais abaixo são somas dos vínculos documentais disponíveis, não saldo contábil.';
+  $('dialog-trajectory-summary').textContent=
+    'Vínculos de liquidação: '+fmtCount(entry.liquidations.length)+' documento(s), '+fmtMoney(entry.liquidationCents)+
+    '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+fmtMoney(entry.paymentCents)+
+    '. Pendências de consulta: '+(entry.pendingLiquidations||entry.pendingPayments?'sim':'não identificado nos documentos vinculados carregados')+'.';
+  $('dialog-contracts').replaceChildren(element('p','small-muted',
+    'A associação com contrato formal permanece na seção de contratações e depende de evidência oficial; empenho substitutivo não é classificado como contrato formal.'));
+  const dialog=$('document-dialog');if(!dialog.open)dialog.showModal();
+}
+async function initTrajectories(){
+  $('trajectory-section').hidden=false;
+  $('trajectory-search').addEventListener('input',renderCommitmentTrajectories);
+  $('trajectory-reload').addEventListener('click',async()=>{
+    $('trajectory-reload').disabled=true;
+    try{trajectoryReady=false;await loadAllTrajectoryMonths();}
+    catch{$('trajectory-status').textContent='Falha ao carregar uma ou mais competências. Os dados originais foram preservados.';}
+    finally{$('trajectory-reload').disabled=false;}
+  });
+  $('trajectory-load').addEventListener('click',async()=>{
+    $('trajectory-load').disabled=true;
+    try{await loadAllTrajectoryMonths();}
+    catch{$('trajectory-status').textContent='Não foi possível reconstruir as trajetórias. Verifique a disponibilidade dos JSONs mensais.';}
+    finally{$('trajectory-load').disabled=false;}
+  });
+}
+
 async function loadMonth(month) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
     !state.manifest.months.includes(month)) throw Error('Competência não disponível');
@@ -812,5 +934,6 @@ async function initNotices() {
 }
 
 init();
+initTrajectories();
 initProcurement().then(()=>{if(noticesData)renderNotices();});
 initNotices();
