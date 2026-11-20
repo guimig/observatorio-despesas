@@ -74,3 +74,7 @@ O relatório permite comparar documentos, vínculos, enriquecimentos pendentes, 
 ## AUD-02 e AUD-03 — Implementação inicial
 
 AUD-02: adicionados testes de regressão da classificação de contratos formais, notas de empenho substitutivas e outros instrumentos, sem inferência pelo número ou processo. AUD-03: criado [dicionário preliminar de indicadores](DICIONARIO-INDICADORES.md), com fontes, limitações e exemplos de dupla contagem. **A conciliação contábil real com SIAFI/Tesouro permanece pendente de dados e homologação.**
+
+## AUD-05 — Auditoria inicial de chaves e escopo
+
+Documentadas as [regras de atribuição](AUDITORIA-ATRIBUICAO.md) e adicionados testes de regressão para vínculos oficiais versus indícios contextuais. **AUD-05 permanece parcialmente concluída**: faltam amostragem dos registros reais, métricas de cobertura e homologação de casos ambíguos.
