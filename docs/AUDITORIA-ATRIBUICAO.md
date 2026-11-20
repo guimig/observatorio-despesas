@@ -1,0 +1,38 @@
+# AUD-05 — Atribuição de contratos e licitações ao IFC Araquari
+
+Status: regras inspecionadas e cobertas por testes de regressão; **não é conciliação completa dos registros reais**.
+
+## Identificadores e limites
+
+| Identificador | Significado | Prova de despesa da UG 158459? |
+| --- | --- | --- |
+| UG SIAFI 158459 | Unidade executora Araquari | Sim, quando vinculada a documento oficial de execução |
+| UASG 158125 / CNPJ da Reitoria | Publicadora centralizada do IFC | Não |
+| CNPJ 10635424000348 | Publicação pelo campus | Não prova execução orçamentária |
+| Processo SIPAC prefixo 23349 | Processo associado a Araquari | Indício, sujeito a conferência |
+| ID PNCP do contrato (sufixo -2-) | Identificador do instrumento | Não |
+| ID PNCP da contratação (sufixo -1-) | Identificador da licitação/compra | Não |
+| Campo oficial numeroControlePncpCompra | Vínculo expresso contrato → contratação | Comprova relação entre registros, não beneficiário |
+| NE completa da UG 158459 no vínculo PNCP | Referência documental à execução da UG | Evidência confirmada de atribuição, ainda sujeita à integridade da fonte |
+| Processo + CNPJ de fornecedor coincidentes | Correlação contextual | Não |
+
+## Níveis da atribuição
+
+- **confirmed**: NE integral da UG declarada em vínculo oficial, ou coincidência verificável com documento CGU conforme regras implementadas.
+- **ne_indication**: UG e número curto da NE informados, sem documento CGU suficiente para confirmar.
+- **context / process_indication**: processo e/ou fornecedor coincidentes, sem prova documental de execução.
+- **unverified**: nenhuma evidência suficiente.
+
+A categoria `confirmed` comprova **atribuição documental à UG**, não o valor efetivamente executado, a vigência ou a existência de saldo contratual. Uma licitação centralizada só herda atribuição confirmada quando existe vínculo oficial ao contrato que, por sua vez, tem NE confirmada.
+
+## Testes adicionados
+
+`test/audit-attribution.test.mjs` cobre publicação centralizada, processo 23349, correspondência contextual, NE completa e abreviada, contratos vinculados a outra contratação, normalização de escopo PNCP/Compras e leitura do campo oficial de contratação.
+
+## Limites e próximos passos
+
+1. Auditar amostras reais de PNCP, Compras.gov e CGU, inclusive contratos da Reitoria que beneficiam outros campi.
+2. Quantificar registros em cada nível de evidência e expor cobertura por fonte/período.
+3. Inspecionar a cardinalidade: contratação → múltiplos instrumentos; contrato → múltiplas NEs; NE → liquidações e pagamentos.
+4. Não somar valores PNCP e CGU para produzir despesa executada.
+5. Homologar casos ambíguos com Contratos/CEOF antes de considerar AUD-05 encerrada.
