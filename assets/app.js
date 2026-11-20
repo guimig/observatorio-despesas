@@ -273,6 +273,7 @@ function showContractAssociations(doc){
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
 function showDocument(doc, monthData = state.data) {
+  $('dialog-trajectory-section').hidden=true;
   $('dialog-title').textContent = doc.id;
   const fields = $('dialog-fields');
   fields.replaceChildren();
@@ -457,6 +458,7 @@ function renderTrajectoryLinks(target,links,emptyText){
   }
 }
 function showCommitmentTrajectory(entry){
+  $('dialog-trajectory-section').hidden=false;
   $('dialog-title').textContent='Trajetória da NE · '+entry.id;
   const fields=$('dialog-fields');fields.replaceChildren();
   const doc=entry.document;
