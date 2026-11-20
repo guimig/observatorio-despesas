@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 12
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url || steps.deployment_final.outputs.page_url }}
     steps:
       - name: Checkout do ultimo estado da main
         uses: actions/checkout@v4
@@ -55,10 +55,29 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
-      - name: Publicar nova versao
+      # O artefato pode demorar a aparecer na API do GitHub Actions,
+      # mesmo após upload bem-sucedido. Retentativas são apenas de deploy:
+      # não repetem coleta nem alteram os JSONs versionados.
+      - name: Publicar nova versao - primeira tentativa
         id: deployment
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Aguardar propagacao do artefato
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 20
+      - name: Publicar nova versao - segunda tentativa
+        if: steps.deployment.outcome == 'failure'
+        id: deployment_retry
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Aguardar segunda propagacao
+        if: steps.deployment.outcome == 'failure' && steps.deployment_retry.outcome == 'failure'
+        run: sleep 40
+      - name: Publicar nova versao - tentativa final
+        if: steps.deployment.outcome == 'failure' && steps.deployment_retry.outcome == 'failure'
+        id: deployment_final
         uses: actions/deploy-pages@v4
       - name: Confirmar arquivos efetivamente servidos pelo Pages
         env:
-          SITE_BASE: ${{ steps.deployment.outputs.page_url }}
+          SITE_BASE: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url || steps.deployment_final.outputs.page_url }}
         run: npm run verify:pages
