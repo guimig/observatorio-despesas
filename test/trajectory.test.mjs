@@ -64,3 +64,27 @@ test('recusa competências e documentos de outra UG ou formato inválido',()=>{
   unit:'158125',month:'2026-11',documents:[],relations:[]
  }]));
 });
+
+import { auditCommitmentTrajectories } from '../assets/trajectory.js';
+
+test('auditoria distingue NE referenciada de NE coletada e origens ausentes',()=>{
+ const source='158459264222026NS000005';
+ const m=month('2026-11',[],[{from:source,to:oldNe,cents:1200}]);
+ const audit=auditCommitmentTrajectories([m]);
+ assert.equal(audit.commitmentsWithoutDocument,1);
+ assert.equal(audit.commitmentDocuments,0);
+ assert.equal(audit.olderYearReferences,1);
+ assert.equal(audit.missingRelationSources,1);
+ const [entry]=buildCommitmentTrajectories([m]);
+ assert.equal(entry.completeness,'empenho_nao_coletado');
+ assert.equal(entry.hasUnresolvedSources,true);
+});
+test('auditoria detecta divergências sem confundir duplicatas com novas relações',()=>{
+ const first=month('2026-10',[{id:ne,phase:1,cents:1000}],[{from:ns,to:ne,cents:500}]);
+ const second=month('2026-11',[{id:ne,phase:1,cents:2000}],[{from:ns,to:ne,cents:600}]);
+ const audit=auditCommitmentTrajectories([first,second]);
+ assert.equal(audit.duplicateRelations,1);
+ assert.equal(audit.conflictingRelations,1);
+ assert.equal(audit.conflictingDocuments,1);
+ assert.equal(buildCommitmentTrajectories([first,second])[0].links.length,1);
+});
