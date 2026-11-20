@@ -2,6 +2,7 @@ import { matchDocumentContract, assessContractAttribution, assessNoticeAttributi
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
+import { auditMonth } from './quality.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -35,26 +36,6 @@ function localDate(iso) {
 function monthName(month) {
   const date = new Date(month + '-15T12:00:00Z');
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
-}
-function expectedDaysInMonth(month, now = new Date()) {
-  const monthParts = month.split('-').map(Number);
-  const max = new Date(Date.UTC(monthParts[0], monthParts[1], 0)).getUTCDate();
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(now).map(part => [part.type, part.value]));
-  const todayMonth = parts.year + '-' + parts.month;
-  if (month > todayMonth) return 0;
-  if (month === todayMonth) return Math.max(0, Math.min(max, Number(parts.day) - 1));
-  return max;
-}
-function validDayCount() {
-  const byDay = new Map();
-  for (const coverage of state.data.coverage) {
-    if (!byDay.has(coverage.date)) byDay.set(coverage.date, new Map());
-    byDay.get(coverage.date).set(coverage.phase, coverage);
-  }
-  return [...byDay.values()].filter(phases =>
-    [1, 2, 3].every(phase => phases.get(phase)?.complete && phases.get(phase)?.invalid === 0)).length;
 }
 function summarize(phase) {
   const coverage = state.data.coverage.filter(entry => entry.phase === phase);
@@ -95,25 +76,38 @@ function renderStats() {
   });
 }
 function renderQuality() {
-  const coverages = state.data.coverage;
-  const partial = coverages.filter(c => !c.complete);
-  const invalid = coverages.reduce((n, c) => n + c.invalid, 0);
-  const expected = expectedDaysInMonth(state.month);
-  const validDays = validDayCount();
-  const missing = Math.max(0, expected - validDays);
-  $('days-covered').textContent = fmtCount(validDays) + '/' + fmtCount(expected);
-  $('incomplete-count').textContent = fmtCount(partial.length);
-  $('invalid-count').textContent = fmtCount(invalid);
-  $('relations-count').textContent = fmtCount(state.data.relations.length);
-  const hasIssues = partial.length > 0 || invalid > 0 || missing > 0;
-  $('coverage-chip').textContent = hasIssues
-    ? 'Cobertura parcial da competência' : 'Competência integralmente consultada';
-  status(hasIssues
-    ? 'Competência com cobertura parcial: ' + validDays + ' de ' + expected +
-      ' dias encerrados com três fases completas. ' + missing +
-      ' dia(s) ainda precisam de cobertura válida; totais exibidos se referem somente às datas já consultadas.'
-    : 'Todos os dias encerrados da competência têm consulta documental completa. Valores não conciliados com sistemas contábeis.',
-    hasIssues ? 'warning' : 'success');
+  const audit=auditMonth(state.data),coverage=audit.coverage;
+  $('days-covered').textContent=fmtCount(coverage.completeDays)+'/'+fmtCount(coverage.expectedDays);
+  $('incomplete-count').textContent=fmtCount(coverage.partialQueries);
+  $('invalid-count').textContent=fmtCount(coverage.invalidValues);
+  $('relations-count').textContent=fmtCount(audit.links.total);
+  $('liquidation-links').textContent=fmtCount(audit.enrichment.liquidations.checked)+'/'+
+    fmtCount(audit.enrichment.liquidations.total);
+  $('payment-links').textContent=fmtCount(audit.enrichment.payments.checked)+'/'+
+    fmtCount(audit.enrichment.payments.total);
+  $('item-links').textContent=fmtCount(audit.enrichment.items.checked)+'/'+
+    fmtCount(audit.enrichment.items.total);
+  $('multiple-ne-links').textContent=fmtCount(audit.links.multipleCommitments);
+  $('quality-detail').textContent='Consultas complementares pendentes: '+
+    fmtCount(audit.enrichment.pending)+'. Impactos negativos (incluindo anulações): '+
+    fmtCount(audit.links.negative)+'. Relações com NEs de outros exercícios: '+
+    fmtCount(audit.links.crossExercise)+'. Liquidações com valores vinculados diferentes '+
+    'do valor documental, para revisão: '+fmtCount(audit.links.liquidationValueReviews)+
+    '. Esses casos não significam automaticamente erro contábil.';
+  const hasGaps=coverage.status!=='completa',structural=audit.issues.length>0;
+  $('coverage-chip').textContent=structural?'Dados exigem revisão':
+    coverage.status==='completa'?'Dias encerrados consultados':
+    coverage.status==='sem_dias_encerrados'?'Sem dias encerrados':'Cobertura diária parcial';
+  status(structural
+    ?'A auditoria identificou registros que exigem revisão estrutural, sem modificar os dados originais.'
+    :hasGaps
+      ?'Cobertura parcial: '+coverage.completeDays+' de '+coverage.expectedDays+
+        ' dias encerrados com três fases válidas. '+coverage.missingDays+
+        ' dia(s) sem consulta e '+coverage.partialDays+' parcialmente consultado(s). '+
+        'Enriquecimento documental informado separadamente.'
+      :'Todos os dias encerrados possuem três fases válidas. '+
+        'O enriquecimento dos vínculos é medido à parte; não se trata de conciliação contábil.',
+    structural||hasGaps?'warning':'success');
 }
 function formatCnpj(value) {
   return /^\d{14}$/.test(value || '') ? value.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : value;
