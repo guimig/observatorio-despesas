@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseMoneyCents, isoDate, datesBeforeToday, documentUrl, impactUrl,
-  getCguArray, normalizeDocument, resolveLiquidation, collectDayPhase, collectWindow
+  getCguArray, retryDelay, normalizeDocument, resolveLiquidation, collectDayPhase, collectWindow
 } from '../src/cgu.mjs';
 
 const ne = '158459000012026NE000001';
@@ -176,4 +176,17 @@ test('favorecido de código ambíguo não gera falsa identificação', () => {
   }, '18/11/2026', 3);
   assert.equal(doc.beneficiary, undefined);
   assert.equal(JSON.stringify(doc).includes('NOME RESTRITO'), false);
+});
+
+test('backoff exponencial respeita Retry-After e limite de espera',async()=>{
+ assert.deepEqual([0,1,2,3].map(attempt=>retryDelay(attempt)),[1000,2000,4000,8000]);
+ assert.equal(retryDelay(0,{retryAfter:'3'}),3000);
+ assert.equal(retryDelay(0,{retryAfter:'120'}),30000);
+ assert.equal(retryDelay(1,{retryAfter:'invalido'}),2000);
+ const waits=[];let attempts=0;
+ const rows=await getCguArray('https://example.invalid',{token:'fake',wait:async ms=>waits.push(ms),
+ fetcher:async()=>{attempts++;return attempts<3?{status:429,ok:false,headers:{get:()=> '3'}}:
+ {status:200,ok:true,json:async()=>[]};}});
+ assert.deepEqual(rows,[]);
+ assert.deepEqual(waits,[3000,3000]);
 });
