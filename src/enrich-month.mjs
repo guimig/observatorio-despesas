@@ -34,6 +34,17 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
   const selectedItems=rotatePending(items,bounded(maxItems,7,20),slot);
   return {liquidations:selectedLiquidations,payments:selectedPayments,items:selectedItems};
 }
+export function orderMonths(months,{priority='newest',slot=0}={}){
+  const ordered=[...months].sort();
+  if(priority==='round_robin'){
+    if(!Number.isSafeInteger(slot)||slot<0)throw Error('Rodada de competência inválida');
+    if(!ordered.length)return [];
+    const start=slot%ordered.length;
+    return [...ordered.slice(start),...ordered.slice(0,start)];
+  }
+  if(priority==='newest')ordered.reverse();
+  return ordered;
+}
 export function summarizeFailures(failures){
   const counts={};
   for(const reason of failures){
@@ -63,11 +74,11 @@ async function main(){
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7
   };
-  const priority=process.env.ENRICH_PRIORITY==='oldest'?'oldest':'newest';
+  const priority=['oldest','newest','round_robin'].includes(process.env.ENRICH_PRIORITY)
+    ?process.env.ENRICH_PRIORITY:'newest';
   // A agenda alterna o mês mais recente e o mais antigo para impedir que
   // novos documentos deixem competências históricas sempre aguardando.
-  const alternatives=selected?[selected]:[...manifest.months].sort();
-  if(priority==='newest'&&!selected)alternatives.reverse();
+  const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot});
   let chosen=null;
   for(const monthName of alternatives){
     const data=await readMonth(root,monthName);
