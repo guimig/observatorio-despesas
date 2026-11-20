@@ -3,7 +3,7 @@ import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import { auditMonth } from './quality.js';
-import { buildCommitmentTrajectories, filterCommitmentTrajectories } from './trajectory.js';
+import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
 const fmtMoney = cents => Number.isSafeInteger(cents)
@@ -274,6 +274,7 @@ function showContractAssociations(doc){
 }
 function showDocument(doc, monthData = state.data) {
   $('dialog-trajectory-section').hidden=true;
+  $('dialog-relations-title').hidden=false;
   $('dialog-title').textContent = doc.id;
   const fields = $('dialog-fields');
   fields.replaceChildren();
@@ -412,9 +413,15 @@ async function loadAllTrajectoryMonths(){
     loaded.push(cache.get(month));
   }
   commitmentTrajectories=buildCommitmentTrajectories(loaded);
+  const audit=auditCommitmentTrajectories(loaded);
   trajectoryReady=true;
   renderCommitmentTrajectories();
-  $('trajectory-status').textContent=months.length+' competência(s) analisadas. As relações são documentais e não equivalem a conciliação contábil.';
+  $('trajectory-status').textContent=months.length+' competência(s) analisadas · '+
+    fmtCount(audit.commitmentDocuments)+' NEs coletadas · '+
+    fmtCount(audit.commitmentsWithoutDocument)+' NEs referenciadas sem documento · '+
+    fmtCount(audit.missingRelationSources)+' origens não localizadas · '+
+    fmtCount(audit.conflictingRelations+audit.conflictingDocuments)+' divergências de duplicidade. '+
+    'Relações documentais não equivalem a conciliação contábil.';
 }
 function renderCommitmentTrajectories(){
   const query=$('trajectory-search').value;
@@ -428,7 +435,7 @@ function renderCommitmentTrajectories(){
   for(const entry of all){
     const row=element('tr');
     const ne=element('td','doc-code',entry.id);
-    const date=element('td','',entry.document?.date?localDate(entry.document.date):'Não coletada');
+    const date=element('td','',entry.document?.date?localDate(entry.document.date):'NE não coletada');
     const process=element('td','doc-code',entry.document?.process||'—');
     const object=element('td','beneficiary-cell',entry.document?.nature?.element||'Não informado');
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
@@ -459,6 +466,7 @@ function renderTrajectoryLinks(target,links,emptyText){
 }
 function showCommitmentTrajectory(entry){
   $('dialog-trajectory-section').hidden=false;
+  $('dialog-relations-title').hidden=true;
   $('dialog-title').textContent='Trajetória da NE · '+entry.id;
   const fields=$('dialog-fields');fields.replaceChildren();
   const doc=entry.document;
@@ -466,7 +474,10 @@ function showCommitmentTrajectory(entry){
     ['Documento de empenho',entry.id],
     ['Data',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
     ['Processo',doc?.process||'Não informado'],
-    ['Valor documental da NE',fmtMoney(doc?.cents)],
+    ['Valor documental da NE',doc?fmtMoney(doc.cents):'Indisponível: NE não coletada'],
+    ['Cobertura documental',!doc?'NE referenciada, mas não coletada':
+      entry.hasUnresolvedSources?'NE coletada; há documentos relacionados ausentes':
+      'Documentos relacionados disponíveis no acervo (sem garantia de completude)'],
     ['UG','158459 · IFC Araquari'],
     ['Natureza da despesa',doc?.nature?.element||'Não informada'],
     ['Exercício da NE',entry.id.slice(11,15)],
@@ -487,7 +498,7 @@ function showCommitmentTrajectory(entry){
   renderTrajectoryLinks($('dialog-payments'),entry.payments,
     'Nenhum documento da fase de pagamento vinculado identificado no acervo consultado.');
   $('dialog-trajectory-note').textContent=
-    'Liquidações e pagamentos são apresentados em grupos independentes. A CGU vincula ambos às NEs; isso não comprova relação direta entre uma NS e uma OB/DF, nem quitação integral do empenho. Valores negativos são preservados como retornados pela fonte. Os totais abaixo são somas dos vínculos documentais disponíveis, não saldo contábil.';
+    'A ausência de vínculo no acervo não significa ausência de execução. Liquidações e pagamentos são apresentados em grupos independentes. A CGU vincula ambos às NEs; isso não comprova relação direta entre uma NS e uma OB/DF, nem quitação integral do empenho. Valores negativos são preservados como retornados pela fonte. Os totais abaixo são somas dos vínculos documentais disponíveis, não saldo contábil.';
   $('dialog-trajectory-summary').textContent=
     'Vínculos de liquidação: '+fmtCount(entry.liquidations.length)+' documento(s), '+fmtMoney(entry.liquidationCents)+
     '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+fmtMoney(entry.paymentCents)+
