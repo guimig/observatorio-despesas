@@ -10,20 +10,29 @@ function bounded(value,fallback,max){
   if(!Number.isSafeInteger(n)||n<1||n>max)throw Error('Limite de lote inválido');
   return n;
 }
-export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7}={}){
+export function rotatePending(documents,limit,slot=0){
+  if(!Number.isSafeInteger(slot)||slot<0)throw Error('Rodada de enriquecimento inválida');
+  if(!documents.length)return [];
+  const offset=(slot*limit)%documents.length;
+  return [...documents.slice(offset),...documents.slice(0,offset)].slice(0,limit);
+}
+export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,slot=0}={}){
   validateMonth(month);
   const liquidations=month.documents.filter(doc=>doc.phase===2&&
     doc.liquidationLinksChecked!==true)
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
-    .slice(0,bounded(maxLiquidations,12,40)).map(doc=>doc.id);
+    .map(doc=>doc.id);
+  const selectedLiquidations=rotatePending(liquidations,bounded(maxLiquidations,12,40),slot);
   const payments=month.documents.filter(doc=>doc.phase===3&&doc.paymentLinksChecked!==true)
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
-    .slice(0,bounded(maxPayments,15,50)).map(doc=>doc.id);
+    .map(doc=>doc.id);
+  const selectedPayments=rotatePending(payments,bounded(maxPayments,15,50),slot);
   const items=month.documents.filter(doc=>doc.phase===1&&
     !Object.hasOwn(month.itemsByDocument||{},doc.id))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
-    .slice(0,bounded(maxItems,7,20)).map(doc=>doc.id);
-  return {liquidations,payments,items};
+    .map(doc=>doc.id);
+  const selectedItems=rotatePending(items,bounded(maxItems,7,20),slot);
+  return {liquidations:selectedLiquidations,payments:selectedPayments,items:selectedItems};
 }
 export function summarizeFailures(failures){
   const counts={};
@@ -46,7 +55,10 @@ async function main(){
   const manifest=validateManifest(JSON.parse(await readFile(join(root,'data','manifest.json'),'utf8')));
   const selected=process.env.ENRICH_MONTH||'';
   if(selected&&!manifest.months.includes(selected))throw Error('Competência não disponível');
-  const args={
+  // Rodadas de seis horas evitam repetir indefinidamente os primeiros IDs
+  // sem manter histórico adicional de tentativas em arquivos públicos.
+  const slot=Math.floor(Date.now()/21600000);
+  const args={slot,
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7
