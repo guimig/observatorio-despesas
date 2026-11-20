@@ -12,3 +12,13 @@ test('separa documentos NE, referências ausentes e cobertura por dia',()=>{
  assert.deepEqual(report.missingByYear,{'2025':1});
  assert.equal(report.months[0].fullyCoveredDays,1);
 });
+
+test('contabiliza enriquecimentos pendentes por fase e por competência',()=>{
+ const report=diagnoseCoverage([{month:'2026-11',
+ documents:[{id:'ne',phase:1},{id:'ns',phase:2,liquidationLinksChecked:false},{id:'ob',phase:3,paymentLinksChecked:true}],
+ relations:[],itemsByDocument:{},coverage:[]}]);
+ assert.equal(report.pendingEnrichment,2);
+ assert.equal(report.months[0].pendingLiquidations,1);
+ assert.equal(report.months[0].pendingPayments,0);
+ assert.equal(report.months[0].pendingItems,1);
+});
