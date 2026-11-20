@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
  liquidationUrl,paymentUrl,itemsUrl,publicItemDescription,normalizeItem,
- resolveLiquidationLinks,resolvePaymentLinks,resolveItems
+ resolveLiquidationLinks,resolvePaymentLinks,resolveItems,classifyCguFailure
 } from '../src/enrich-cgu.mjs';
 import { planEnrichment, summarizeFailures } from '../src/enrich-month.mjs';
 import { emptyMonth, mergeMonth, applyDocumentEnrichment, validateMonth } from '../src/store.mjs';
@@ -199,4 +199,12 @@ test('diagnóstico de falhas agrega motivos sem publicar documentos ou respostas
  assert.deepEqual(summarizeFailures(['consulta_indisponivel','consulta_indisponivel',
  'pagina_repetida','erro remoto com documento sensível']),{
  consulta_indisponivel:2,pagina_repetida:1,outro:1});
+});
+
+test('classifica falhas HTTP sem vazar detalhes da resposta',()=>{
+ assert.equal(classifyCguFailure(Error('CGU HTTP 429')),'consulta_indisponivel');
+ assert.equal(classifyCguFailure(Error('CGU HTTP 503')),'consulta_indisponivel');
+ assert.equal(classifyCguFailure(Error('CGU HTTP 403')),'acesso_negado');
+ assert.equal(classifyCguFailure(Error('CGU HTTP 404')),'recurso_nao_encontrado');
+ assert.equal(classifyCguFailure(Error('CGU retornou JSON inesperado')),'resposta_invalida');
 });
