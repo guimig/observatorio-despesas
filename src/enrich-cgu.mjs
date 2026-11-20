@@ -14,6 +14,13 @@ function bounded(value,fallback,max){
   if(!Number.isSafeInteger(n)||n<1||n>max) throw Error('Limite CGU inválido');
   return n;
 }
+export function liquidationUrl(document,page=1){
+  if(!DOC.test(document)||!Number.isSafeInteger(page)||page<1)
+    throw Error('Documento de liquidação inválido');
+  return BASE+'/empenhos-impactados?'+new URLSearchParams({
+    codigoDocumento:document,fase:'2',pagina:String(page)
+  });
+}
 export function paymentUrl(document,page=1){
   if(!DOC.test(document)||!Number.isSafeInteger(page)||page<1) throw Error('Documento de pagamento inválido');
   return BASE+'/empenhos-impactados?'+new URLSearchParams({
@@ -25,6 +32,9 @@ export function itemsUrl(document,page=1){
   return BASE+'/itens-de-empenho?'+new URLSearchParams({
     codigoDocumento:document,pagina:String(page)
   });
+}
+export function requestLiquidationPage(document,page,options){
+  return getCguArray(liquidationUrl(document,page),options);
 }
 export function requestPaymentPage(document,page,options){
   return getCguArray(paymentUrl(document,page),options);
@@ -68,6 +78,33 @@ export async function resolvePaymentLinks(document,{token,limit=8,request=reques
     const cents=paymentComponents(row);
     const id=String(row?.empenho??'');
     if(!NE.test(id)||cents===null)return {ok:false,reason:'impacto_nao_identificado'};
+    const next=(sums.get(id)??0)+cents;
+    if(!Number.isSafeInteger(next))return {ok:false,reason:'valor_fora_limite'};
+    sums.set(id,next);
+  }
+  const links=[...sums.entries()].sort(([a],[b])=>a.localeCompare(b))
+    .map(([to,cents])=>({from:document,to,cents}));
+  return {ok:true,links,impacts:response.rows.length};
+}
+
+/**
+ * Relaciona todos os documentos de fase 2 às NEs impactadas, independentemente
+ * do valor documental. Falha fechada se um impacto ou uma página for inválida.
+ * O valor do documento de liquidação nunca é sobrescrito pela soma de impactos.
+ */
+export async function resolveLiquidationLinks(document,{
+  token,limit=8,request=requestLiquidationPage
+}={}){
+  if(!DOC.test(document))throw Error('Documento de liquidação inválido');
+  const response=await collectPages(document,{token,limit,request,
+    keys:['empenho','subitem','valorLiquidado']});
+  if(!response.ok)return {ok:false,reason:response.reason};
+  const sums=new Map();
+  for(const row of response.rows){
+    const id=typeof row?.empenho==='string'?row.empenho:row?.empenho?.documento;
+    const cents=parseMoneyCents(row?.valorLiquidado);
+    if(!NE.test(id??'')||cents===null)
+      return {ok:false,reason:'impacto_nao_identificado'};
     const next=(sums.get(id)??0)+cents;
     if(!Number.isSafeInteger(next))return {ok:false,reason:'valor_fora_limite'};
     sums.set(id,next);
