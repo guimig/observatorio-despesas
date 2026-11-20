@@ -1,8 +1,8 @@
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectWindow } from './cgu.mjs';
-import { planHistoricalDays, chooseHistoricalMonth } from './backfill.mjs';
+import { planHistoricalDays, chooseHistoricalMonth, missingCommitmentYears } from './backfill.mjs';
 import { persistWindow, validateMonth, validatePublishedData } from './store.mjs';
 
 async function readExisting(month) {
@@ -13,12 +13,22 @@ async function readExisting(month) {
     throw error;
   }
 }
+async function referencedYears() {
+  const folder=join(process.cwd(),'data','months');
+  const names=(await readdir(folder)).filter(name=>/^20\\d{2}-(0[1-9]|1[0-2])\\.json$/.test(name));
+  const months=[];
+  for(const name of names) months.push(await readExisting(name.slice(0,7)));
+  return missingCommitmentYears(months.filter(Boolean));
+}
 async function main() {
   const now = new Date();
+  const priorityYears=await referencedYears();
+  const prioritize=process.env.BACKFILL_PRIORITY_REFERENCES !== 'false' &&
+    Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1;
   const month = await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
-    earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||'2026-01',
-    now,loadExisting:readExisting
+    earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||'2025-01',
+    now,loadExisting:readExisting,priorityYears,prioritize
   });
   if (!month) {
     console.log('Nenhuma competência histórica com dias pendentes no intervalo configurado.');
@@ -36,6 +46,7 @@ async function main() {
       '. Cobertura existente preservada.');
     return;
   }
+  console.log('Modo de recuperação: '+(prioritize?'NEs referenciadas sem documento':'cobertura recente')+'. Anos pendentes: '+priorityYears.join(', '));
   console.log('Plano histórico: ' + month + '; ' + days.length +
     ' dia(s) elegível(is) para o lote.');
   if (process.argv.includes('--dry-run')) {
