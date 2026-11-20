@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectWindow } from './cgu.mjs';
-import { planHistoricalDays, previousMonthInBrazil } from './backfill.mjs';
+import { planHistoricalDays, chooseHistoricalMonth } from './backfill.mjs';
 import { persistWindow, validateMonth, validatePublishedData } from './store.mjs';
 
 async function readExisting(month) {
@@ -15,8 +15,15 @@ async function readExisting(month) {
 }
 async function main() {
   const now = new Date();
-  const month = process.env.BACKFILL_MONTH || previousMonthInBrazil(now);
-  if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(month)) throw Error('Competência inválida');
+  const month = await chooseHistoricalMonth({
+    requestedMonth:process.env.BACKFILL_MONTH||'',
+    earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||'2026-01',
+    now,loadExisting:readExisting
+  });
+  if (!month) {
+    console.log('Nenhuma competência histórica com dias pendentes no intervalo configurado.');
+    return;
+  }
   const options = {
     month, now, existing: await readExisting(month),
     batchDays: Number(process.env.BACKFILL_DAYS || 3),
