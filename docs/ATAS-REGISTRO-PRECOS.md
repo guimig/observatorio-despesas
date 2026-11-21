@@ -23,3 +23,7 @@ Verificar amostras reais e eventual diferenca de formatos entre API de integraca
 ## Diagnóstico de cobertura da coleta
 
 A rotina informa quantos procedimentos SRP estão catalogados, quantos foram consultados, quantos ainda não foram consultados e quantos tiveram consulta completa sem ata retornada. Erros são classificados por categoria HTTP/formato, sem registrar resposta bruta. **Consulta vazia não é irregularidade**; falha de consulta não equivale a resposta vazia. A execução real da API deve ser verificada no workflow antes de ampliar a coleta de itens ou fornecedores.
+
+## Cobertura e respostas vazias (novembro de 2026)
+
+A execução real identificou respostas PNCP sem atas com envelope `data: []`, `totalPaginas: 0`, `totalRegistros: 0`. Essa combinação indica consulta completa sem registros, não erro de paginação. Respostas contraditórias ou páginas parciais continuam rejeitadas. Para impedir que os mesmos procedimentos sem atas ocupem todas as vagas de coleta, a seleção diária aplica rotação determinística entre compras elegíveis; consultas completas, inclusive vazias, são revalidadas após 30 dias. A ausência de ata não é irregularidade nem ausência de empenho.
