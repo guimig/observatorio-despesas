@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { validatePublishedData } from './store.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
+import { readAtas } from './pncp-atas-store.mjs';
 
 export async function buildSite(root = process.cwd(), destination = 'dist') {
   const base = resolve(root), output = resolve(base, destination);
@@ -13,6 +14,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   const { manifest, months } = await validatePublishedData(base);
   const procurement = await readProcurement(base);
   const notices = await readNotices(base);
+  const atas = await readAtas(base);
   await rm(output, { recursive: true, force: true });
   await mkdir(join(output, 'assets'), { recursive: true });
   await mkdir(join(output, 'data', 'months'), { recursive: true });
@@ -30,6 +32,11 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
     await mkdir(join(output,'data','procurement'),{recursive:true});
     await copyFile(join(base,'data','procurement','notices.json'),
       join(output,'data','procurement','notices.json'));
+  }
+  if (atas.atas.length || atas.checks.length) {
+    await mkdir(join(output,'data','procurement'),{recursive:true});
+    await copyFile(join(base,'data','procurement','atas.json'),
+      join(output,'data','procurement','atas.json'));
   }
   for (const month of manifest.months) {
     const file = month + '.json';
