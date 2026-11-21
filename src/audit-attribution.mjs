@@ -36,7 +36,7 @@ export function auditAttribution({contracts=[],notices=[],documents=[]}={}){
  }
  const referencedNes=new Set(contracts.flatMap(c=>c.commitmentRefs||[]));
  const knownNes=new Set(commitmentDocs.map(d=>d.id));
- const fullRefs=[...referencedNes].filter(id=>/^158459\\d{5}20\\d{2}NE\\d{6}$/.test(id));
+ const fullRefs=[...referencedNes].filter(id=>/^158459\d{5}20\d{2}NE\d{6}$/.test(id));
  return {
   schemaVersion:1,unit:'158459',
   contracts:{total:contracts.length,attribution:contractCounts,bySource,
@@ -63,7 +63,7 @@ async function main(){
   readFile(join(root,'data/procurement/notices.json'),'utf8').then(JSON.parse),
   readdir(join(root,'data/months'))
  ]);
- const names=files.filter(name=>/^20\\d{2}-(0[1-9]|1[0-2])\\.json$/.test(name)).sort();
+ const names=files.filter(name=>/^20\d{2}-(0[1-9]|1[0-2])\.json$/.test(name)).sort();
  const months=await Promise.all(names.map(name=>readFile(join(root,'data/months',name),'utf8').then(JSON.parse)));
  const result=auditAttribution({
   contracts:catalog.contracts,notices:notices.notices,
