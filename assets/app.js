@@ -850,7 +850,7 @@ function renderNotices() {
     const related=element('td','');
     if(ataCount){
       const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
-      ataLabel.title='Atas vinculadas à licitação do órgão publicador. Não representam atas exclusivas de Araquari, quantidades reservadas ao Campus ou compras/empenhos efetivos.';
+      ataLabel.title='Atas institucionais do órgão publicador. Quantidade licitada, registrada e saldo disponível são indicadores distintos. Não há atribuição automática de quantidades a Araquari nem presunção de compra ou empenho.';
       related.append(ataLabel);
     }else if(notice.srp===true){
       related.append(element('span','small-muted',ataChecked?
