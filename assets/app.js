@@ -831,7 +831,7 @@ function renderNotices() {
   }
   for(const notice of all.slice(noticesState.page*20,(noticesState.page+1)*20)){
     const row=element('tr');
-    const modality=element('td','',MODALITIES[notice.modality]||'Outra modalidade');
+    const modality=element('td','',MODALITIES[notice.modality]||'Outra modalidade');\n    if(notice.srp===true){\n      modality.append(element('span','small-muted',' · Registro de preços'));\n      modality.title='SRP: licitação pode resultar em ata sem empenho ou contratação imediata';\n    }
     const docCell=element('td');
     const url=publicNoticeUrl(notice);
     if(url){
@@ -870,7 +870,7 @@ function renderNotices() {
         fmtCount(linked.other.length+linked.unclassified.length)+' outro(s) instrumento(s) sujeito(s) à classificação'));
     }
     if(!linked.formal.length&&!linked.commitments.length&&!linked.other.length&&!linked.unclassified.length){
-      related.append(element('span','small-muted','Nenhum instrumento registrado na fonte consultada'));
+      related.append(element('span','small-muted',notice.srp===true\n        ?'SRP: nenhum contrato ou empenho decorrente identificado nesta base; contratação futura é facultativa'\n        :'Nenhum instrumento decorrente identificado nesta base; ausência não comprova pendência'));
     }
     const process=element('td','doc-code',notice.process||'—');
     const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
@@ -898,7 +898,7 @@ function renderNoticesCoverage() {
     ' consultas de modalidade completas; '+partial+' parcial(is); '+missing+
     ' indisponível(is). Modalidades e competências são avaliadas separadamente. '+
     'O filtro inicial destaca possíveis publicações relacionadas a Araquari, '+
-    'mas todos os editais da Reitoria continuam acessíveis.';
+    'mas todos os editais da Reitoria continuam acessíveis. '+\n    'Registro de preços não exige contratação nem empenho imediato.';
   $('notices-coverage').className='notice'+(partial||missing?' warning':' success');
 }
 async function initNotices() {
