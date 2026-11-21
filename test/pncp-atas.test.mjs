@@ -63,3 +63,8 @@ test('rotacao permite visitar SRPs posteriores mesmo com falhas persistentes',()
  assert.equal(new Set([...first,...next].map(n=>n.pncpId)).size,4);
  assert.throws(()=>planAtas(notices,[],new Date(),2,-1));
 });
+
+test('HTTP 204 PNCP convertido em envelope dados vazio nao e erro',async()=>{
+ const rows=await scanAtas(notice,{fetcher:async()=>({dados:[],totalPaginas:0})});
+ assert.deepEqual(rows,[]);
+});
