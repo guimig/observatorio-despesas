@@ -12,22 +12,28 @@ export function summarizeAtaCollection({notices,checks,atas},now=new Date()){
   checkedWithoutAtas:srp.filter(n=>checked.has(n.pncpId)&&!byPurchase.has(n.pncpId)).length,
   atas:atas.length,eligible:planAtas(srp,checks,now,50).length};
 }
-export function planAtas(notices,checks,now=new Date(),limit=12){
+export function planAtas(notices,checks,now=new Date(),limit=12,offset=0){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
+ if(!Number.isSafeInteger(offset)||offset<0)throw Error('Deslocamento invalido');
  const last=new Map(checks.map(c=>[c.procurementId,c.checkedAt]));
  const eligible=notices.filter(n=>n.srp===true&&
   (!last.has(n.pncpId)||now.getTime()-Date.parse(last.get(n.pncpId)+'T00:00:00Z')>=30*86400000));
  // Primeiro consultas nunca realizadas; depois revalidacao mensal.
  eligible.sort((a,b)=>Number(last.has(a.pncpId))-Number(last.has(b.pncpId))||
-  String(b.published||'').localeCompare(String(a.published||'')));
- return eligible.slice(0,limit);
+  String(b.published||'').localeCompare(String(a.published||''))||
+  String(a.pncpId).localeCompare(String(b.pncpId)));
+ // Rotacao deterministica: falhas persistentes nao bloqueiam o restante do acervo.
+ if(!eligible.length)return [];
+ const start=offset%eligible.length;
+ return Array.from({length:Math.min(limit,eligible.length)},(_,i)=>eligible[(start+i)%eligible.length]);
 }
 async function main(){
  const root=process.cwd();
  const catalog=JSON.parse(await readFile('data/procurement/notices.json','utf8'));
  const previous=await readAtas(root);
  const limit=Number(process.env.PNCP_ATA_LIMIT||12);
- const plan=planAtas(catalog.notices,previous.checks,new Date(),limit);
+ const day=Math.floor(Date.now()/86400000);
+ const plan=planAtas(catalog.notices,previous.checks,new Date(),limit,day*limit);
  const before=summarizeAtaCollection({notices:catalog.notices,checks:previous.checks,atas:previous.atas});
  console.log('Cobertura ARP: '+JSON.stringify(before));
  console.log('Atas PNCP: '+plan.length+' compras SRP elegiveis; '+previous.atas.length+' atas catalogadas.');
@@ -41,7 +47,7 @@ async function main(){
    failed++;
    const category=error?.status===404?'not_found':error?.status===403?'forbidden':
     error?.status===429?'rate_limited':error?.status>=500?'server_error':
-    error?.status?'http_other':error?.message?.includes('lista completa')?'unexpected_shape':'other';
+    error?.status?'http_other':/lista completa|paginada|incompleta|sequencial valido|duplicada/.test(error?.message||'')?'unexpected_shape':'other';
    errors[category]=(errors[category]||0)+1;
    console.warn('Consulta ARP '+notice.pncpId+' indisponivel ('+category+'); registro anterior preservado.');
   }
