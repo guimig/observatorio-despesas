@@ -1,0 +1,59 @@
+/** Coleta limitada: somente evidencias institucionais de participacao em ARPs. */
+import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {scanParticipants} from './pncp-ata-participants.mjs';
+import {assertPublicSafe} from './privacy.mjs';
+const path='data/procurement/ata-participants.json';
+const empty=()=>({schema_version:1,checks:[]});
+export function validateParticipants(value){
+ assertPublicSafe(value);
+ if(value?.schema_version!==1||!Array.isArray(value.checks)||
+  Object.keys(value).some(k=>!['schema_version','checks'].includes(k)))throw Error('Catalogo de participacao invalido');
+ const ids=new Set();
+ for(const c of value.checks){
+  if(!/^\d{14}-1-\d{6}\/20\d{2}:ata:\d+$/.test(c.ataId)||
+    !/^20\d{2}-\d{2}-\d{2}$/.test(c.checkedAt)||
+    !Array.isArray(c.campusRoles)||c.campusRoles.some(x=>![1,2,3].includes(x))||
+    Object.keys(c).some(k=>!['ataId','checkedAt','campusRoles'].includes(k))||
+    ids.has(c.ataId))throw Error('Evidencia ARP invalida');
+  ids.add(c.ataId);
+ }
+ return value;
+}
+export function planParticipants(atas,checks,now=new Date(),limit=12){
+ if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
+ const last=new Map(checks.map(c=>[c.ataId,c.checkedAt]));
+ return atas.filter(a=>!last.has(a.id)||
+  now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000)
+  .sort((a,b)=>Number(last.has(a.id))-Number(last.has(b.id))||a.id.localeCompare(b.id))
+  .slice(0,limit);
+}
+async function main(){
+ const atas=JSON.parse(await readFile('data/procurement/atas.json','utf8')).atas;
+ let data;try{data=validateParticipants(JSON.parse(await readFile(path,'utf8')))}
+ catch(e){if(e.code==='ENOENT')data=empty();else throw e}
+ const limit=Number(process.env.PNCP_PARTICIPANTS_LIMIT||12);
+ const plan=planParticipants(atas,data.checks,new Date(),limit);
+ console.log('Participacao ARP: '+JSON.stringify({atas:atas.length,checked:data.checks.length,pending:plan.length}));
+ if(process.argv.includes('--dry-run'))return;
+ let success=0,failed=0,confirmed=0;
+ const now=new Date().toISOString().slice(0,10);
+ for(const ata of plan){
+  try{
+   const result=await scanParticipants(ata);
+   data.checks=data.checks.filter(c=>c.ataId!==ata.id);
+   data.checks.push({ataId:ata.id,checkedAt:now,campusRoles:result.campusRoles});
+   success++;if(result.campusRoles.length)confirmed++;
+  }catch(e){failed++;console.warn('Consulta de participantes indisponivel para '+ata.id+' ('+
+   (e.status?'HTTP '+e.status:'formato')+'); sem inferencia de participacao.')}
+ }
+ if(success){
+  data.checks.sort((a,b)=>a.ataId.localeCompare(b.ataId));
+  validateParticipants(data);
+  try{await writeFile(path+'.tmp',JSON.stringify(data)+'\n');await rename(path+'.tmp',path)}
+  catch(e){await unlink(path+'.tmp').catch(()=>{});throw e}
+ }
+ console.log('Participacao ARP: '+JSON.stringify({success,failed,confirmed,checked:data.checks.length}));
+}
+if(process.argv[1]===fileURLToPath(import.meta.url))
+ main().catch(e=>{console.error(e.message);process.exitCode=1});
