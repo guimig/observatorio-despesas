@@ -26,9 +26,9 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
-      - name: Coletar itens de ate tres licitacoes SRP
+      - name: Coletar itens de ate cinco licitacoes SRP
         env:
-          PNCP_TENDER_ITEMS_LIMIT: '3'
+          PNCP_TENDER_ITEMS_LIMIT: '5'
         run: npm run collect:pncp-tender-items
       - run: npm run check:data
       - name: Persistir catalogo publico minimizado

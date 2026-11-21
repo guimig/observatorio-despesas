@@ -22,3 +22,12 @@ test('catalogo so aceita itens associados a licitacao cadastrada',()=>{
  assert.throws(()=>validateTenderCatalog(data,[]));
  assert.equal(planTenderItems([notice],data.procedures).length,0);
 });
+
+test('rotacao diaria evita bloqueio por licitacao indisponivel',()=>{
+ const notices=Array.from({length:6},(_,i)=>({pncpId:'10635424000186-1-'+String(i+1).padStart(6,'0')+'/2026',srp:true}));
+ const a=planTenderItems(notices,[],3,0).map(n=>n.pncpId);
+ const b=planTenderItems(notices,[],3,3).map(n=>n.pncpId);
+ assert.equal(a.length,3);assert.equal(b.length,3);
+ assert.equal(new Set([...a,...b]).size,6);
+ assert.deepEqual(planTenderItems(notices,[],3,0).map(n=>n.pncpId),a);
+});
