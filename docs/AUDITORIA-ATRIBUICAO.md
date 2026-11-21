@@ -36,3 +36,7 @@ A categoria `confirmed` comprova **atribuição documental à UG**, não o valor
 3. Inspecionar a cardinalidade: contratação → múltiplos instrumentos; contrato → múltiplas NEs; NE → liquidações e pagamentos.
 4. Não somar valores PNCP e CGU para produzir despesa executada.
 5. Homologar casos ambíguos com Contratos/CEOF antes de considerar AUD-05 encerrada.
+
+## Diagnóstico quantitativo automatizado
+
+Executar `npm run audit:attribution` na raiz do repositório para obter JSON agregado de classificação de instrumentos, níveis de evidência de contratos e licitações, quantidade de vínculos oficiais, consultas PNCP concluídas e NEs documentadas na CGU. O relatório inclui as competências examinadas e o SHA quando `GITHUB_SHA` estiver disponível. Não grava dados nem expõe IDs individuais. **As contagens dependem exclusivamente dos arquivos presentes no checkout e não demonstram completude histórica.**
