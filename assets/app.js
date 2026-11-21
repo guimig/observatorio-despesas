@@ -560,7 +560,9 @@ function exportCsv() {
       row.cents === null ? '' : row.cents,
       beneficiaryLabel(row), row.process || ''].map(csvCell).join(','));
   }
-  const blob = new Blob(['\uFEFF' + data.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\uFEFF' + data.join('
+') + '
+'], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = element('a');
   link.href = url;
@@ -831,7 +833,11 @@ function renderNotices() {
   }
   for(const notice of all.slice(noticesState.page*20,(noticesState.page+1)*20)){
     const row=element('tr');
-    const modality=element('td','',MODALITIES[notice.modality]||'Outra modalidade');\n    if(notice.srp===true){\n      modality.append(element('span','small-muted',' · Registro de preços'));\n      modality.title='SRP: licitação pode resultar em ata sem empenho ou contratação imediata';\n    }
+    const modality=element('td','',MODALITIES[notice.modality]||'Outra modalidade');
+    if(notice.srp===true){
+      modality.append(element('span','small-muted',' · Registro de preços'));
+      modality.title='SRP: licitação pode resultar em ata sem empenho ou contratação imediata';
+    }
     const docCell=element('td');
     const url=publicNoticeUrl(notice);
     if(url){
@@ -870,7 +876,9 @@ function renderNotices() {
         fmtCount(linked.other.length+linked.unclassified.length)+' outro(s) instrumento(s) sujeito(s) à classificação'));
     }
     if(!linked.formal.length&&!linked.commitments.length&&!linked.other.length&&!linked.unclassified.length){
-      related.append(element('span','small-muted',notice.srp===true\n        ?'SRP: nenhum contrato ou empenho decorrente identificado nesta base; contratação futura é facultativa'\n        :'Nenhum instrumento decorrente identificado nesta base; ausência não comprova pendência'));
+      related.append(element('span','small-muted',notice.srp===true
+        ?'SRP: nenhum contrato ou empenho decorrente identificado nesta base; contratação futura é facultativa'
+        :'Nenhum instrumento decorrente identificado nesta base; ausência não comprova pendência'));
     }
     const process=element('td','doc-code',notice.process||'—');
     const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
@@ -898,7 +906,8 @@ function renderNoticesCoverage() {
     ' consultas de modalidade completas; '+partial+' parcial(is); '+missing+
     ' indisponível(is). Modalidades e competências são avaliadas separadamente. '+
     'O filtro inicial destaca possíveis publicações relacionadas a Araquari, '+
-    'mas todos os editais da Reitoria continuam acessíveis. '+\n    'Registro de preços não exige contratação nem empenho imediato.';
+    'mas todos os editais da Reitoria continuam acessíveis. '+
+    'Registro de preços não exige contratação nem empenho imediato.';
   $('notices-coverage').className='notice'+(partial||missing?' warning':' success');
 }
 async function initNotices() {
