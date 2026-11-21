@@ -38,7 +38,9 @@ export async function scanAtas(notice,{fetcher=requestPublicJSON}={}){
  const url=ataUrl(notice.pncpId);
  const body=await fetcher(url);
  // Aceitar lista direta ou envelope completo, nunca pagina parcial.
- const rows=Array.isArray(body)?body:body&&Array.isArray(body.data)?body.data:null;
+ const rows=Array.isArray(body)?body:
+  body&&Array.isArray(body.data)?body.data:
+  body&&Array.isArray(body.dados)?body.dados:null;
  if(!rows)throw Error('Resposta de atas nao e lista completa');
  if(!Array.isArray(body)){
   const pages=Number(body.totalPaginas??1);
