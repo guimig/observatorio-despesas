@@ -29,3 +29,20 @@ test('consulta incremental e validacao de dados minimizados',()=>{
  assert.equal(validateParticipants(data).checks.length,1);
  assert.equal(planParticipants([ata],data.checks,new Date('2026-11-22')).length,0);
 });
+
+test('cobertura diversificada seleciona compras diferentes antes de repetir atas',()=>{
+ const id='10635424000186-1-000001/2026';
+ const other='10635424000186-1-000002/2026';
+ const atas=[
+  ...Array.from({length:30},(_,i)=>({id:id+':ata:'+(i+1),procurementId:id,sequence:i+1})),
+  {id:other+':ata:1',procurementId:other,sequence:1}
+ ];
+ const planned=planParticipants(atas,[],new Date('2026-11-21'),2);
+ assert.equal(planned.length,2);
+ assert.equal(new Set(planned.map(a=>a.procurementId)).size,2);
+ assert.deepEqual(planned.map(a=>a.sequence),[1,1]);
+ const checks=planned.map(a=>({ataId:a.id,checkedAt:'2026-11-21',campusRoles:[]}));
+ const second=planParticipants(atas,checks,new Date('2026-11-22'),2);
+ assert.equal(second[0].sequence,2);
+ assert.equal(second[0].procurementId,id);
+});
