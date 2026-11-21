@@ -25,7 +25,7 @@ test('SRP sem ata retornada e consulta valida, nao irregularidade',async()=>{
 });
 test('resposta inesperada nao e interpretada como ausencia de ata',async()=>{
  await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[]})}));
- assert.throws(()=>normalizeAta({sequencialAta:0},id),undefined);
+ assert.equal(normalizeAta({sequencialAta:0},id),null);
 });
 test('planejamento incremental prioriza compras nunca consultadas',()=>{
  const other={pncpId:'10635424000186-1-000002/2026',srp:true,published:'2026-11-09'};
