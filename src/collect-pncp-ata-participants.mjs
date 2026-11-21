@@ -20,6 +20,14 @@ export function validateParticipants(value){
  }
  return value;
 }
+export function validateParticipantReferences(value,atas){
+ validateParticipants(value);
+ const ids=new Set(atas.map(a=>a.id));
+ for(const check of value.checks){
+  if(!ids.has(check.ataId))throw Error('Participacao vinculada a ata ausente do catalogo PNCP');
+ }
+ return value;
+}
 export function planParticipants(atas,checks,now=new Date(),limit=12){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
  const last=new Map(checks.map(c=>[c.ataId,c.checkedAt]));
@@ -51,6 +59,7 @@ async function main(){
  const atas=JSON.parse(await readFile('data/procurement/atas.json','utf8')).atas;
  let data;try{data=validateParticipants(JSON.parse(await readFile(path,'utf8')))}
  catch(e){if(e.code==='ENOENT')data=empty();else throw e}
+ validateParticipantReferences(data,atas);
  const limit=Number(process.env.PNCP_PARTICIPANTS_LIMIT||12);
  const plan=planParticipants(atas,data.checks,new Date(),limit);
  console.log('Compras distintas no lote: '+new Set(plan.map(a=>a.procurementId)).size);

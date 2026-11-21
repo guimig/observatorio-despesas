@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {participantsUrl,normalizeParticipants,scanParticipants} from '../src/pncp-ata-participants.mjs';
-import {planParticipants,validateParticipants} from '../src/collect-pncp-ata-participants.mjs';
+import {planParticipants,validateParticipants,validateParticipantReferences} from '../src/collect-pncp-ata-participants.mjs';
 const ata={id:'10635424000186-1-000001/2026:ata:1',procurementId:'10635424000186-1-000001/2026',sequence:1};
 test('consulta lista de partes PNCP sem inferir contratacao',async()=>{
  assert.match(participantsUrl(ata),/\/atas\/1\/partesenvolvidas$/);
@@ -57,4 +57,10 @@ test('diagnostico so revela contagens de campos, nunca valores pessoais',()=>{
  assert.equal(result.shape.recognizedRole,1);
  assert.equal(JSON.stringify(result).includes('Pessoa hipotetica'),false);
  assert.equal(JSON.stringify(result).includes('10635424000348'),false);
+});
+
+test('nao publica participacao vinculada a ata inexistente',()=>{
+ const data={schema_version:1,checks:[{ataId:ata.id,checkedAt:'2026-11-21',campusRoles:[]}]};
+ assert.equal(validateParticipantReferences(data,[ata]),data);
+ assert.throws(()=>validateParticipantReferences(data,[]),/ausente/);
 });
