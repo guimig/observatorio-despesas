@@ -24,7 +24,7 @@ test('SRP sem ata retornada e consulta valida, nao irregularidade',async()=>{
  assert.equal(merged.checks.length,1);
 });
 test('resposta inesperada nao e interpretada como ausencia de ata',async()=>{
- await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[]})}));
+ await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[{sequencialAta:1}],totalPaginas:2,totalRegistros:2})}));
  assert.equal(normalizeAta({sequencialAta:0},id),null);
 });
 test('planejamento incremental prioriza compras nunca consultadas',()=>{
@@ -40,4 +40,11 @@ test('diagnostico separa SRP sem consulta de consultas vazias',()=>{
  assert.deepEqual({srp:summary.srp,checked:summary.checked,unqueried:summary.unqueried,
   checkedWithoutAtas:summary.checkedWithoutAtas,atas:summary.atas},
   {srp:2,checked:1,unqueried:1,checkedWithoutAtas:1,atas:0});
+});
+
+test('aceita envelope PNCP completo, mas nao aceita resposta truncada',async()=>{
+ const row={sequencialAta:7,numeroAtaRegistroPreco:'7/2026'};
+ const atas=await scanAtas(notice,{fetcher:async()=>({data:[row],totalPaginas:1,totalRegistros:1})});
+ assert.equal(atas[0].sequence,7);
+ await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[],totalPaginas:1,totalRegistros:1})}));
 });
