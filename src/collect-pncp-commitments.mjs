@@ -13,23 +13,22 @@ export function planCommitmentChecks(catalog,{
   count=8,now=new Date(),recheck=false
 }={}){
   const limit=integer(count,8,25);
-  const today=now.toISOString().slice(0,10);
   const due=(contract)=>{
     if(recheck)return true;
     if(!contract.commitmentStatus)return true;
-    if(contract.commitmentStatus==='complete')return false;
+    // Uma consulta completa sem NE da UG não comprova ausência definitiva.\n    // Revalidar somente resultados vazios após 30 dias, sem sobrecarregar PNCP.\n    if(contract.commitmentStatus==='complete' &&\n       Array.isArray(contract.commitmentRefs) && contract.commitmentRefs.length>0)return false;
     if(!contract.commitmentAt)return true;
     const time=new Date(contract.commitmentAt+'T00:00:00Z').valueOf();
-    return Number.isFinite(time) && now.getTime()-time>=7*86400000;
+    const interval=contract.commitmentStatus==='complete'?30:7;\n    return Number.isFinite(time) && now.getTime()-time>=interval*86400000;
   };
   return (catalog?.contracts||[])
     .filter(c=>c.source==='pncp'&&due(c))
     .sort((a,b)=>{
       const score=c=>{
         const level=assessContractAttribution(c).level;
-        return level==='ne_indication'?0:level==='process_indication'?1:2;
+        return level==='ne_indication'?0:level==='process_indication'?1:\n          level==='context'?2:3;
       };
-      return score(a)-score(b)||b.publishedMonth.localeCompare(a.publishedMonth)||
+      // Consultas ainda não realizadas precedem revalidações de vazios.\n      const retryRank=c=>c.commitmentStatus==='complete'?2:\n        c.commitmentStatus==='unavailable'?1:0;\n      return score(a)-score(b)||retryRank(a)-retryRank(b)||\n        b.publishedMonth.localeCompare(a.publishedMonth)||
         a.id.localeCompare(b.id);
     })
     .slice(0,limit).map(c=>({id:c.id,pncpId:c.pncpId}));
