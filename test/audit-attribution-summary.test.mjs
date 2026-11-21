@@ -27,3 +27,19 @@ test('AUD-05: contagem por evidencia sem expor IDs ou fornecedores',()=>{
 test('AUD-05: catalogos invalidos nao geram relatorio enganoso',()=>{
  assert.throws(()=>auditAttribution({contracts:{}}));
 });
+
+test('AUD-05: SRP sem instrumento nao equivale a empenho ausente ou irregularidade',()=>{
+ const result=auditAttribution({
+  contracts:[{id:'formal',kind:'Contrato',procurementId:'p2'}],
+  notices:[{pncpId:'p1',srp:true},{pncpId:'p2',srp:true},
+   {pncpId:'p3',srp:false}],
+  documents:[]
+ });
+ assert.deepEqual(result.notices.srp,{
+  published:2,withoutPublishedInstrument:1,withPublishedInstrument:1
+ });
+ assert.equal(result.notices.otherWithoutPublishedInstrument,1);
+ assert.equal(result.documents.collectedCommitments,0);
+ assert.ok(result.cautions.some(x=>x.includes('nao e irregularidade')));
+ assert.ok(result.cautions.some(x=>x.includes('pode nunca gerar contratacao')));
+});

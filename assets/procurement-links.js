@@ -117,8 +117,10 @@ export function assessContractAttribution(contract, documents = []) {
 
 
 /** Uma licitação PNCP centralizada não é do campus por constar UG publicadora.
- * A atribuição é confirmada apenas quando um contrato da própria contratação
- * tem NE comprovada da UG 158459.
+ * A atribuição administrativa independe da emissão de NE: o SRP pode gerar
+ * uma ata sem nenhuma contratação posterior (Lei 14.133/2021, art. 83).
+ * Uma NE oficial confirma vínculo financeiro, não é condição para que o
+ * procedimento licitatório exista nem para que seja de interesse do campus.
  */
 export function assessNoticeAttribution(notice,contracts=[],documents=[]) {
   if(!notice)return {level:'unverified',reason:'Contratação sem identificador PNCP'};
@@ -129,11 +131,11 @@ export function assessNoticeAttribution(notice,contracts=[],documents=[]) {
     return {level:'confirmed',reason:'Contratação ligada a contrato com NE confirmada da UG 158459'};
   }
   if(isAraquariProcess(notice.process)) {
-    return {level:'process_indication',reason:'Processo SIPAC 23349: origem provável, digitada manualmente'};
+    return {level:'process_indication',reason:'Processo SIPAC 23349: indício administrativo de origem em Araquari; não depende de empenho'};
   }
   if(related.some(contract=>
     assessContractAttribution(contract,documents).level!=='unverified')) {
     return {level:'context',reason:'Contratação relacionada a contrato com indícios de Araquari'};
   }
-  return {level:'unverified',reason:'Edital publicado pela Reitoria, campus beneficiário não identificado'};
+  return {level:'unverified',reason:'Campus não identificado na publicação centralizada; ausência de contrato ou empenho não indica irregularidade'};
 }

@@ -28,7 +28,7 @@ Importante: uma contratação pode gerar 0, 1 ou vários termos de contrato; um 
 | Documento da fase de pagamento (OB, DF etc.) | NEs impactadas | 0:N | CGU \`/empenhos-impactados?fase=3\` |
 | Registro da liquidação | Documento de pagamento | N:M **possível**, mas ainda não afirmado documentalmente | só registrar após consulta oficial de \`/documentos-relacionados\`; não inferir por valor/data |
 
-Cardinalidade de cadastro **não** equivale a existência garantida de registros. Uma ata não obriga a Administração a contratar (Lei nº 14.133/2021, art. 83). A ata não é termo de contrato. O processo de aquisição pode gerar vários empenhos, notas de pagamento e operações de correção. Do ponto de vista dos dados, cada nó e vínculo precisa de ID, fonte, data de referência, grau de evidência e cobertura de consulta.
+Cardinalidade de cadastro **não** equivale a existência garantida de registros. Uma ata não obriga a Administração a contratar (Lei nº 14.133/2021, art. 83). Sua vigência é de um ano, prorrogável por igual período se comprovada a vantajosidade (art. 84). A ata não é termo de contrato, NE ou despesa executada. **Uma licitação SRP pode produzir ata sem gerar qualquer empenho**, e não deve ser sinalizada como pendência financeira por isso. O processo de aquisição pode gerar vários empenhos, notas de pagamento e operações de correção. Do ponto de vista dos dados, cada nó e vínculo precisa de ID, fonte, data de referência, grau de evidência e cobertura de consulta.
 
 Representação resumida:
 

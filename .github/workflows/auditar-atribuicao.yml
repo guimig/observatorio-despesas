@@ -47,10 +47,10 @@ jobs:
               "Contratos com ID de compra reportado: "+r.contracts.purchaseIdReported,
               "Contratos com vínculo oficial validado: "+r.contracts.withOfficialPurchaseId,
               "Contratos com referências de NE: "+r.contracts.withCommitmentRefs,
-              "Licitações relacionadas a contratos: "+r.notices.withRelatedContract,
+              "Licitações com instrumento publicado relacionado: "+r.notices.withRelatedContract,\n              "SRP publicados: "+r.notices.srp.published,\n              "SRP sem instrumento decorrente identificado na base: "+r.notices.srp.withoutPublishedInstrument,\n              "SRP com instrumento decorrente identificado: "+r.notices.srp.withPublishedInstrument,
               "NEs integrais referenciadas com documento CGU: "+r.documents.fullNeRefsWithCguDocument+"/"+r.documents.uniqueFullNeRefs,
               "",
-              "> Contagens restritas ao acervo; não são saldos contábeis nem comprovam completude."
+              "> SRP sem instrumento não é pendência: registro de preços não obriga a contratar. A base ainda não inventaria atas.",\n              "> Contagens restritas ao acervo; não são saldos contábeis nem comprovam completude."
             ];
             appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join("\n")+"\n");
             console.log(lines.join("\n"));
