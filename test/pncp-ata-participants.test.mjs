@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {participantsUrl,normalizeParticipants,scanParticipants} from '../src/pncp-ata-participants.mjs';
+import {participantsUrl,normalizeParticipants,scanParticipants,classifyCampusPart} from '../src/pncp-ata-participants.mjs';
 import {planParticipants,validateParticipants,validateParticipantReferences} from '../src/collect-pncp-ata-participants.mjs';
 const ata={id:'10635424000186-1-000001/2026:ata:1',procurementId:'10635424000186-1-000001/2026',sequence:1};
 test('consulta lista de partes PNCP sem inferir contratacao',async()=>{
@@ -9,7 +9,8 @@ test('consulta lista de partes PNCP sem inferir contratacao',async()=>{
   {tipoParteEnvolvida:{id:2},orgao:{cnpj:'10635424000348'},unidade:{codigo:'158459'}},
   {tipoParteEnvolvida:{id:1},orgao:{cnpj:'10635424000186'},unidade:{codigo:'158125'}}
  ],totalPaginas:1,totalRegistros:2})});
- assert.deepEqual(result.campusRoles,[2]);
+ assert.deepEqual(result.campusRoles,[]);
+ assert.deepEqual(result.candidateRoles,[2]);
  assert.equal(result.checkedComplete,true);
 });
 test('sem evidencia dupla de CNPJ e UG nao confirma campus',()=>{
@@ -77,4 +78,10 @@ test('contagens diferenciam Reitoria, Campus e outros sem revelar identificadore
  assert.equal(result.shape.otherCnpj,1);
  assert.equal(result.shape.otherUnit,1);
  assert.equal(JSON.stringify(result).includes('999999'),false);
+});
+
+test('UG SIAFI nao e prova de unidade PNCP; exigir mapeamento documentado',()=>{
+ assert.equal(classifyCampusPart('10635424000348','158459',2),'candidate');
+ assert.equal(classifyCampusPart('10635424000348','PNCP-UNIDADE-VALIDADA',2,['PNCP-UNIDADE-VALIDADA']),'confirmed');
+ assert.equal(classifyCampusPart('10635424000186','158125',1),'not_confirmed');
 });
