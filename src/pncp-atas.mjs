@@ -43,8 +43,10 @@ export async function scanAtas(notice,{fetcher=requestPublicJSON}={}){
  if(!Array.isArray(body)){
   const pages=Number(body.totalPaginas??1);
   const total=Number(body.totalRegistros??rows.length);
-  if(!Number.isSafeInteger(pages)||pages!==1||
-     !Number.isSafeInteger(total)||total!==rows.length)
+  const completeEmpty=pages===0&&total===0&&rows.length===0;
+  const completeSingle=pages===1&&total===rows.length;
+  if(!Number.isSafeInteger(pages)||!Number.isSafeInteger(total)||
+     !(completeEmpty||completeSingle))
    throw Error('Consulta de atas paginada ou incompleta');
  }
  if(rows.length>1000)throw Error('Resposta de atas acima do limite');
