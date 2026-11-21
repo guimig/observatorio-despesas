@@ -27,3 +27,13 @@ A rotina informa quantos procedimentos SRP estão catalogados, quantos foram con
 ## Cobertura e respostas vazias (novembro de 2026)
 
 A execução real identificou respostas PNCP sem atas com envelope `data: []`, `totalPaginas: 0`, `totalRegistros: 0`. Essa combinação indica consulta completa sem registros, não erro de paginação. Respostas contraditórias ou páginas parciais continuam rejeitadas. Para impedir que os mesmos procedimentos sem atas ocupem todas as vagas de coleta, a seleção diária aplica rotação determinística entre compras elegíveis; consultas completas, inclusive vazias, são revalidadas após 30 dias. A ausência de ata não é irregularidade nem ausência de empenho.
+
+## Participacao administrativa em ARP — coleta incremental
+
+A API PNCP de integracao (Manual v2.6, secao 12.16) permite consultar partes envolvidas em uma ata por GET em `/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/atas/{ata}/partesenvolvidas`. Os papeis sao gerenciadora (1), participante (2) e nao participante (3). Esta integracao salva **somente** os papeis em que os dados publicados coincidam simultaneamente com o CNPJ do Campus Araquari (10.635.424/0003-48) e com a unidade 158459. Nao atribui automaticamente ao campus atas publicadas pela Reitoria (CNPJ 10.635.424/0001-86, UG 158125).
+
+O arquivo `data/procurement/ata-participants.json` registra o ID oficial da ata, a data da consulta completa e os papeis institucionais confirmados. Nao armazena nomes, CPFs, dados de fornecedores, documentos ou respostas brutas. A consulta e limitada a 12 atas por execucao, com revalidacao apos 30 dias. **Ausencia de correspondencia nao prova ausencia de participacao**: podem existir divergencias de cadastro, publicacao centralizada ou vinculos nao disponibilizados pela API. Nenhuma participacao significa, por si, compra efetiva, empenho ou pagamento.
+
+O endpoint e o esquema foram documentados, mas a coleta real e a cobertura dependem do workflow automatizado. A publicacao no painel sera feita somente apos verificar os resultados reais e a semantica das unidades retornadas.
+
+Fonte: [Manual PNCP, consultar partes envolvidas em ata](https://pncp.gov.br/manual/pt-br/latest/ata_de_registro_de_preco/consultar_partes_envolvidas_em_ata_de_registro_de_preco.html).
