@@ -37,9 +37,17 @@ export async function scanAtas(notice,{fetcher=requestPublicJSON}={}){
  if(notice?.srp!==true)throw Error('Consulta de atas exige SRP');
  const url=ataUrl(notice.pncpId);
  const body=await fetcher(url);
- // O endpoint por compra retorna uma lista, nao um envelope paginado.
- if(!Array.isArray(body))throw Error('Resposta de atas nao e lista completa');
- if(body.length>1000)throw Error('Resposta de atas acima do limite');
+ // Aceitar lista direta ou envelope completo, nunca pagina parcial.
+ const rows=Array.isArray(body)?body:body&&Array.isArray(body.data)?body.data:null;
+ if(!rows)throw Error('Resposta de atas nao e lista completa');
+ if(!Array.isArray(body)){
+  const pages=Number(body.totalPaginas??1);
+  const total=Number(body.totalRegistros??rows.length);
+  if(!Number.isSafeInteger(pages)||pages!==1||
+     !Number.isSafeInteger(total)||total!==rows.length)
+   throw Error('Consulta de atas paginada ou incompleta');
+ }
+ if(rows.length>1000)throw Error('Resposta de atas acima do limite');
  const records=new Map();
  for(const row of rows){
   const record=normalizeAta(row,notice.pncpId);
