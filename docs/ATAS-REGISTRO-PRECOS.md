@@ -72,3 +72,7 @@ Priorizar fontes estruturadas e dados verificaveis por **item e procedimento**, 
 Os registros quantitativos futuros devem passar por `src/arp-quantity-policy.mjs`, com tipologia, origem e data verificaveis. O modulo nao inventa quantidades e nao coleta dados. O PNCP pode publicar a ata e suas condicoes sem detalhar a distribuicao administrativa interna. Os itens/fornecedores so devem ser incorporados depois de verificar endpoints oficiais e a granularidade efetivamente retornada.
 
 A prioridade de integracao seguinte e cruzar licitacoes e atas institucionais com contratos formais e empenhos de Araquari **somente por vinculos documentais verificaveis**. Uma licitacao SRP pode nao resultar em nenhuma contratacao ou empenho.
+
+## Fonte estruturada de itens das licitacoes PNCP
+
+A consulta oficial de itens da compra PNCP usa `/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens`. Diferentemente do detalhe da **ata**, ela permite investigar itens licitados e seus quantitativos. A auditoria `auditar-itens-pncp.yml` testa ate cinco procedimentos SRP distintos e registra somente contagens de campos, quantidade de linhas e presenca de paginacao. Nao armazena valores, fornecedores ou descricoes. A existencia do campo `quantidade` **nao prova** que a quantidade seja registrada em ata ou esteja disponivel para contratacao; e quantidade do item da licitacao. A coleta completa dependera de validacao de formato, paginacao e regras de atribuicao institucional, sem rateio interno por campus.

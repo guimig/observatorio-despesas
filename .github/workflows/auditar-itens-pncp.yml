@@ -1,0 +1,23 @@
+name: Auditar itens institucionais PNCP
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/auditar-itens-pncp.yml'
+permissions:
+  contents: read
+jobs:
+  auditar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Verificar formato de itens de cinco licitacoes SRP
+        env:
+          PNCP_ITEMS_AUDIT_LIMIT: '5'
+        run: npm run audit:pncp-items
