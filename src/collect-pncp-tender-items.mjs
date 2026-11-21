@@ -26,19 +26,24 @@ export function validateTenderCatalog(data,notices){
  }
  return data;
 }
-export function planTenderItems(notices,procedures,limit=3){
- if(!Number.isSafeInteger(limit)||limit<1||limit>10)throw Error('Limite invalido');
+export function planTenderItems(notices,procedures,limit=5,slot=0){
+ if(!Number.isSafeInteger(limit)||limit<1||limit>10||!Number.isSafeInteger(slot)||slot<0)throw Error('Limite ou rodada invalida');
  const known=new Set(procedures.map(p=>p.pncpId));
- return notices.filter(n=>n.srp===true&&!known.has(n.pncpId))
-  .sort((a,b)=>a.pncpId.localeCompare(b.pncpId)).slice(0,limit);
+ const pending=notices.filter(n=>n.srp===true&&!known.has(n.pncpId))
+  .sort((a,b)=>a.pncpId.localeCompare(b.pncpId));
+ if(!pending.length)return [];
+ // Alternar o ponto inicial a cada dia impede que uma falha persistente bloqueie o acervo.
+ const start=slot%pending.length;
+ return pending.slice(start).concat(pending.slice(0,start)).slice(0,limit);
 }
 async function main(){
  const notices=JSON.parse(await readFile('data/procurement/notices.json','utf8')).notices;
  let data;try{data=JSON.parse(await readFile(path,'utf8'))}
  catch(e){if(e.code==='ENOENT')data={schema_version:1,procedures:[]};else throw e}
  validateTenderCatalog(data,notices);
- const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||3));
- console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,already:data.procedures.length,pending:plan.length}));
+ const slot=Math.floor(Date.now()/86400000);
+ const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||5),slot);
+ console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,srpNotices:notices.filter(n=>n.srp===true).length,already:data.procedures.length,selected:plan.length,remaining:notices.filter(n=>n.srp===true).length-data.procedures.length}));
  if(process.argv.includes('--dry-run'))return;
  let success=0,failed=0;
  for(const notice of plan){
