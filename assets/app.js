@@ -971,6 +971,69 @@ async function initNotices() {
   }
 }
 
+const tenderItemsState={data:null,query:'',procedure:'all',page:0,loading:false};
+function renderTenderItems(){
+ const d=tenderItemsState.data;if(!d)return;
+ const all=d.procedures.flatMap(p=>p.items.map(item=>({...item,checkedAt:p.checkedAt})));
+ const q=tenderItemsState.query;
+ const filtered=all.filter(item=>
+  (tenderItemsState.procedure==='all'||item.pncpId===tenderItemsState.procedure)&&
+  (!q||[item.description,item.pncpId,String(item.number)].some(v=>v.toLowerCase().includes(q))));
+ const pages=Math.max(1,Math.ceil(filtered.length/25));
+ tenderItemsState.page=Math.max(0,Math.min(tenderItemsState.page,pages-1));
+ $('tender-items-page-info').textContent='Página '+(tenderItemsState.page+1)+' de '+pages+' · '+fmtCount(filtered.length)+' itens';
+ $('tender-items-prev').disabled=tenderItemsState.page===0;
+ $('tender-items-next').disabled=tenderItemsState.page>=pages-1;
+ const tbody=$('tender-items-rows');tbody.replaceChildren();
+ if(!filtered.length){const tr=element('tr'),td=element('td','', 'Nenhum item encontrado nos procedimentos coletados.');td.colSpan=5;tr.append(td);tbody.append(tr);return;}
+ for(const item of filtered.slice(tenderItemsState.page*25,(tenderItemsState.page+1)*25)){
+  const tr=element('tr'),link=element('a','doc-code',item.pncpId);
+  link.href='https://pncp.gov.br/app/editais/'+item.pncpId.replace('-1-','/') ;
+  // A URL publica de editais depende do identificador completo do PNCP.
+  const m=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(item.pncpId);
+  if(m)link.href='https://pncp.gov.br/app/editais/'+m[1]+'/'+m[3]+'/'+Number(m[2]);
+  link.target='_blank';link.rel='noopener noreferrer';
+  const first=element('td');first.append(link);tr.append(first);
+  tr.append(element('td','',item.number),element('td','',item.description),
+   element('td','align-right',new Intl.NumberFormat('pt-BR',{maximumFractionDigits:4}).format(item.quantity)),
+   element('td','',item.checkedAt));
+  tbody.append(tr);
+ }
+}
+async function loadTenderItems(){
+ if(tenderItemsState.loading)return;
+ tenderItemsState.loading=true;$('tender-items-load').disabled=true;
+ $('tender-items-coverage').textContent='Carregando itens públicos...';
+ try{
+  const response=await fetch('./data/procurement/tender-items.json',{cache:'no-store'});
+  if(!response.ok)throw Error('Arquivo ainda não publicado');
+  const data=await response.json();
+  if(data?.schema_version!==1||!Array.isArray(data.procedures))throw Error('Formato inválido');
+  tenderItemsState.data=data;
+  const sel=$('tender-items-procedure');
+  sel.replaceChildren();const all=element('option','','Todas as licitações coletadas');all.value='all';sel.append(all);
+  for(const p of data.procedures){
+   const opt=element('option','',p.pncpId);opt.value=p.pncpId;sel.append(opt);
+  }
+  tenderItemsState.procedure='all';tenderItemsState.page=0;
+  const count=data.procedures.reduce((n,p)=>n+p.items.length,0);
+  $('tender-items-coverage').textContent=fmtCount(count)+' itens de '+fmtCount(data.procedures.length)+
+   ' licitações coletadas · '+fmtCount((noticesData?.notices||[]).filter(n=>n.srp===true).length)+
+   ' licitações SRP no catálogo. Cobertura parcial; apenas quantidades licitadas institucionais.';
+  renderTenderItems();
+ }catch{
+  $('tender-items-coverage').textContent='Itens ainda indisponíveis; a coleta incremental pode estar em andamento.';
+ }finally{tenderItemsState.loading=false;$('tender-items-load').disabled=false;}
+}
+function initTenderItems(){
+ $('tender-items-load').addEventListener('click',loadTenderItems);
+ $('tender-items-search').addEventListener('input',e=>{tenderItemsState.query=e.target.value.trim().toLowerCase();tenderItemsState.page=0;renderTenderItems();});
+ $('tender-items-procedure').addEventListener('change',e=>{tenderItemsState.procedure=e.target.value;tenderItemsState.page=0;renderTenderItems();});
+ $('tender-items-prev').addEventListener('click',()=>{tenderItemsState.page--;renderTenderItems();});
+ $('tender-items-next').addEventListener('click',()=>{tenderItemsState.page++;renderTenderItems();});
+}
+
+initTenderItems();
 init();
 initTrajectories();
 initProcurement().then(()=>{if(noticesData)renderNotices();});

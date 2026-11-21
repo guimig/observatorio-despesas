@@ -5,6 +5,7 @@ import { validatePublishedData } from './store.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
+import {validateTenderCatalog} from './collect-pncp-tender-items.mjs';
 
 export async function buildSite(root = process.cwd(), destination = 'dist') {
   const base = resolve(root), output = resolve(base, destination);
@@ -38,6 +39,12 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
     await copyFile(join(base,'data','procurement','atas.json'),
       join(output,'data','procurement','atas.json'));
   }
+  try {
+    const tender=JSON.parse(await readFile(join(base,'data','procurement','tender-items.json'),'utf8'));
+    validateTenderCatalog(tender,notices?.notices||[]);
+    await mkdir(join(output,'data','procurement'),{recursive:true});
+    await copyFile(join(base,'data','procurement','tender-items.json'),join(output,'data','procurement','tender-items.json'));
+  } catch(e) { if(e.code!=='ENOENT')throw e; }
   for (const month of manifest.months) {
     const file = month + '.json';
     await copyFile(join(base, 'data', 'months', file),
