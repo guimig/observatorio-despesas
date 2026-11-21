@@ -4,6 +4,7 @@ import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
 import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
+import {validateTenderCatalog} from './collect-pncp-tender-items.mjs';
 import { summarizeInstrumentTypes } from '../assets/instrument-types.js';
 import { auditMonth } from '../assets/quality.js';
 
@@ -13,6 +14,8 @@ try {
   const notices = await readNotices(process.cwd());
   const atas = await readAtas(process.cwd());
   try{validateParticipantReferences(JSON.parse(await readFile('data/procurement/ata-participants.json','utf8')),atas.atas)}
+  catch(e){if(e.code!=='ENOENT')throw e}
+  try{validateTenderCatalog(JSON.parse(await readFile('data/procurement/tender-items.json','utf8')),notices.notices)}
   catch(e){if(e.code!=='ENOENT')throw e}
   const total = result.months.reduce((n, month) => n + month.documents.length, 0);
   const audits=result.months.map(month=>auditMonth(month));
