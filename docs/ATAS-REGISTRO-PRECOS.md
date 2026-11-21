@@ -19,3 +19,7 @@ O PNCP disponibiliza `GET /v1/orgaos/{cnpj}/compras/{anoCompra}/{sequencialCompr
 ## Proximas etapas
 
 Verificar amostras reais e eventual diferenca de formatos entre API de integracao e API de consulta; integrar itens, resultados, fornecedores PJ e orgaos participantes sem expor dados pessoais; modelar adesoes e contratações decorrentes com evidencia documental. Antes de criar indicador de saldo de ata, obter quantitativos registrados e efetivamente utilizados por item e unidade participante.
+
+## Diagnóstico de cobertura da coleta
+
+A rotina informa quantos procedimentos SRP estão catalogados, quantos foram consultados, quantos ainda não foram consultados e quantos tiveram consulta completa sem ata retornada. Erros são classificados por categoria HTTP/formato, sem registrar resposta bruta. **Consulta vazia não é irregularidade**; falha de consulta não equivale a resposta vazia. A execução real da API deve ser verificada no workflow antes de ampliar a coleta de itens ou fornecedores.

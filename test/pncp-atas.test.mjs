@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ataUrl,normalizeAta,scanAtas} from '../src/pncp-atas.mjs';
 import {mergeAtas,emptyAtas,validateAtas} from '../src/pncp-atas-store.mjs';
-import {planAtas} from '../src/collect-pncp-atas.mjs';
+import {planAtas,summarizeAtaCollection} from '../src/collect-pncp-atas.mjs';
 const id='10635424000186-1-000001/2026';
 const notice={pncpId:id,srp:true,published:'2026-11-10'};
 test('ata vinculada ao ID oficial da compra, sem NE inferida',async()=>{
@@ -32,4 +32,12 @@ test('planejamento incremental prioriza compras nunca consultadas',()=>{
  const checks=[{procurementId:id,status:'complete',checkedAt:'2026-10-01'}];
  assert.deepEqual(planAtas([notice,other],checks,new Date('2026-11-20'),1).map(n=>n.pncpId),[other.pncpId]);
  assert.equal(planAtas([notice],checks,new Date('2026-10-10')).length,0);
+});
+
+test('diagnostico separa SRP sem consulta de consultas vazias',()=>{
+ const summary=summarizeAtaCollection({notices:[notice,{pncpId:'10635424000186-1-000002/2026',srp:true}],
+  checks:[{procurementId:id,checkedAt:'2026-11-20',status:'complete'}],atas:[]},new Date('2026-11-21'));
+ assert.deepEqual({srp:summary.srp,checked:summary.checked,unqueried:summary.unqueried,
+  checkedWithoutAtas:summary.checkedWithoutAtas,atas:summary.atas},
+  {srp:2,checked:1,unqueried:1,checkedWithoutAtas:1,atas:0});
 });
