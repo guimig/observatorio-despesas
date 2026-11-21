@@ -560,9 +560,7 @@ function exportCsv() {
       row.cents === null ? '' : row.cents,
       beneficiaryLabel(row), row.process || ''].map(csvCell).join(','));
   }
-  const blob = new Blob(['\uFEFF' + data.join('
-') + '
-'], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\uFEFF' + data.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = element('a');
   link.href = url;
@@ -888,6 +886,7 @@ function renderNotices() {
     const value=element('td','align-right',
       Number.isSafeInteger(notice.estimatedCents)?
         fmtMoney(notice.estimatedCents):'Não informado');
+    value.title='Estimativa da licitação, não despesa empenhada, contratada ou paga';
     row.append(modality,docCell,related,process,object,status,value);
     tbody.append(row);
   }
