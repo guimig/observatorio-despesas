@@ -1,0 +1,42 @@
+name: Coletar itens licitados PNCP
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 14 * * 1,3,5'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/coletar-itens-pncp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  coletar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Coletar itens de ate tres licitacoes SRP
+        env:
+          PNCP_TENDER_ITEMS_LIMIT: '3'
+        run: npm run collect:pncp-tender-items
+      - run: npm run check:data
+      - name: Persistir catalogo publico minimizado
+        run: |
+          if [ ! -f data/procurement/tender-items.json ]; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/tender-items.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'data: atualizar itens licitados PNCP'
+          git push origin HEAD:main
