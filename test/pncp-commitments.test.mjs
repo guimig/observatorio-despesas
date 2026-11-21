@@ -163,3 +163,34 @@ test('planejador prioriza evidências, evita repetir consultas, retenta após pr
  }).length,1);
  assert.equal(planCommitmentChecks(unavailable,{now,recheck:true,count:2}).length,2);
 });
+
+test('consulta PNCP completa sem NE da UG e revalidada apos 30 dias',()=>{
+ const now=new Date('2026-11-20T12:00:00Z');
+ const original=mergeProcurement(null,[{
+  source:'pncp',month:'2026-11',records:[base()],status:'complete',skipped:0
+ }]).data;
+ const empty=applyCommitmentResult(original,base().id,{
+  status:'complete',refs:[]
+ },new Date('2026-10-15T12:00:00Z')).data;
+ assert.equal(planCommitmentChecks(empty,{now,count:8}).length,1);
+ const recent=applyCommitmentResult(original,base().id,{
+  status:'complete',refs:[]
+ },new Date('2026-11-10T12:00:00Z')).data;
+ assert.equal(planCommitmentChecks(recent,{now,count:8}).length,0);
+ const withNe=applyCommitmentResult(original,base().id,{
+  status:'complete',refs:[ne]
+ },new Date('2026-10-15T12:00:00Z')).data;
+ assert.equal(planCommitmentChecks(withNe,{now,count:8}).length,0);
+});
+test('consultas nunca realizadas tem prioridade sobre vazios a revalidar',()=>{
+ const now=new Date('2026-11-20T12:00:00Z');
+ const a=base(),b={...base(),id:'pncp:10635424000186-2-001686/2026',
+  pncpId:'10635424000186-2-001686/2026'};
+ const catalog=mergeProcurement(null,[{
+  source:'pncp',month:'2026-11',records:[a,b],status:'complete',skipped:0
+ }]).data;
+ const checked=applyCommitmentResult(catalog,a.id,{
+  status:'complete',refs:[]
+ },new Date('2026-10-15T12:00:00Z')).data;
+ assert.equal(planCommitmentChecks(checked,{now,count:1})[0].id,b.id);
+});
