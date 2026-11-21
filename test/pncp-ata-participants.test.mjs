@@ -46,3 +46,15 @@ test('cobertura diversificada seleciona compras diferentes antes de repetir atas
  assert.equal(second[0].sequence,2);
  assert.equal(second[0].procurementId,id);
 });
+
+test('diagnostico so revela contagens de campos, nunca valores pessoais',()=>{
+ const result=normalizeParticipants({data:[{
+  tipoParteEnvolvida:{id:2},orgao:{cnpj:'10635424000348'},
+  unidade:{codigo:'158459'},nome:'Pessoa hipotetica'
+ }],totalPaginas:1,totalRegistros:1});
+ assert.equal(result.shape.rows,1);
+ assert.equal(result.shape.matchedBoth,1);
+ assert.equal(result.shape.recognizedRole,1);
+ assert.equal(JSON.stringify(result).includes('Pessoa hipotetica'),false);
+ assert.equal(JSON.stringify(result).includes('10635424000348'),false);
+});
