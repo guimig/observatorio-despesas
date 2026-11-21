@@ -48,3 +48,18 @@ test('aceita envelope PNCP completo, mas nao aceita resposta truncada',async()=>
  assert.equal(atas[0].sequence,7);
  await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[],totalPaginas:1,totalRegistros:1})}));
 });
+
+test('envelope PNCP vazio com zero paginas e zero registros e resposta completa',async()=>{
+ const result=await scanAtas(notice,{fetcher:async()=>({data:[],totalPaginas:0,totalRegistros:0})});
+ assert.deepEqual(result,[]);
+ await assert.rejects(scanAtas(notice,{fetcher:async()=>({data:[],totalPaginas:2,totalRegistros:0})}));
+});
+test('rotacao permite visitar SRPs posteriores mesmo com falhas persistentes',()=>{
+ const notices=Array.from({length:5},(_,i)=>({pncpId:'10635424000186-1-'+String(i+1).padStart(6,'0')+'/2026',srp:true}));
+ const first=planAtas(notices,[],new Date('2026-11-21'),2,0);
+ const next=planAtas(notices,[],new Date('2026-11-21'),2,2);
+ assert.equal(first.length,2);
+ assert.equal(next.length,2);
+ assert.equal(new Set([...first,...next].map(n=>n.pncpId)).size,4);
+ assert.throws(()=>planAtas(notices,[],new Date(),2,-1));
+});
