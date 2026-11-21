@@ -1,0 +1,23 @@
+name: Auditar granularidade de atas PNCP
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/auditar-detalhes-arp.yml'
+permissions:
+  contents: read
+jobs:
+  auditar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Verificar formato de detalhes de cinco compras distintas
+        env:
+          PNCP_DETAIL_AUDIT_LIMIT: '5'
+        run: npm run audit:pncp-ata-detail
