@@ -80,3 +80,7 @@ A consulta oficial de itens da compra PNCP usa `/api/pncp/v1/orgaos/{cnpj}/compr
 ### Coleta incremental dos itens licitados
 
 O coletor `collect:pncp-tender-items` consulta ate tres licitacoes SRP por execucao, com paginacao completa, validacao dos numeros de item, descricao sanitizada e quantidade numerica. Os dados sao gravados em `data/procurement/tender-items.json` apenas apos completar todas as paginas do procedimento. Falhas descartam a licitacao inteira; nenhuma pagina parcial e publicada. Cada item conserva o ID PNCP de origem e o escopo `ifc_tendered`: **quantidade licitada institucional**, nunca quantidade registrada na ata, saldo disponivel ou reserva de Araquari. O catalogo e validado contra as licitacoes cadastradas e pode ser ampliado sem OCR ou rateio interno. A integracao visual dos itens fica para etapa posterior de verificacao da cobertura e usabilidade.
+
+### Consulta dos itens licitados no painel
+
+O explorador recolhível em Licitações carrega sob demanda o catálogo de itens PNCP validado no build estático. Permite filtrar por descrição, item ou ID PNCP e por procedimento, com paginação de 25 linhas, quantidade licitada institucional e data da coleta. A cobertura informa quantas licitações SRP possuem itens coletados; ausência de item não equivale a quantidade zero nem a ausência de contratação. Não exibe saldo de ata nem reserva de Araquari.
