@@ -3,7 +3,7 @@ import { validatePublishedData } from './store.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
-import {validateParticipants} from './collect-pncp-ata-participants.mjs';
+import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
 import { summarizeInstrumentTypes } from '../assets/instrument-types.js';
 import { auditMonth } from '../assets/quality.js';
 
@@ -12,7 +12,7 @@ try {
   const procurement = await readProcurement(process.cwd());
   const notices = await readNotices(process.cwd());
   const atas = await readAtas(process.cwd());
-  try{validateParticipants(JSON.parse(await readFile('data/procurement/ata-participants.json','utf8')))}
+  try{validateParticipantReferences(JSON.parse(await readFile('data/procurement/ata-participants.json','utf8')),atas.atas)}
   catch(e){if(e.code!=='ENOENT')throw e}
   const total = result.months.reduce((n, month) => n + month.documents.length, 0);
   const audits=result.months.map(month=>auditMonth(month));
