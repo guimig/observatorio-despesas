@@ -1,6 +1,10 @@
 name: Coletar atas de registro de precos PNCP
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/coletar-atas-pncp.yml'
   schedule:
     - cron: '43 12 * * 2,5'
 permissions:
