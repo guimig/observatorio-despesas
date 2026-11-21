@@ -14,6 +14,7 @@ const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
 let procurementData=null;
 let noticesData=null;
+let atasData=null;
 const noticesState={query:'',modality:'all',attribution:'likely',page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',page:0};
 const contractsPerPage=20;
@@ -844,7 +845,16 @@ function renderNotices() {
       docCell.append(link);
     }else docCell.append(element('span','doc-code',notice.number||notice.pncpId));
     const linked=groupPublishedInstruments(procurementData?.contracts||[],notice.pncpId);
+    const ataCount=(atasData?.atas||[]).filter(a=>a.procurementId===notice.pncpId).length;
+    const ataChecked=(atasData?.checks||[]).some(c=>c.procurementId===notice.pncpId);
     const related=element('td','');
+    if(ataCount){
+      related.append(element('span','small-muted',fmtCount(ataCount)+' ata(s) de registro de preços identificada(s)'));
+    }else if(notice.srp===true){
+      related.append(element('span','small-muted',ataChecked?
+        'Nenhuma ata retornada na última consulta PNCP':
+        'Atas ainda não consultadas nesta base'));
+    }
     if(linked.formal.length) {
       const button=element('button','relation-link',
         linked.formal.length+' contrato(s) formal(is)');
@@ -935,6 +945,11 @@ async function initNotices() {
   });
   $('notices-prev').addEventListener('click',()=>{noticesState.page--;renderNotices();});
   $('notices-next').addEventListener('click',()=>{noticesState.page++;renderNotices();});
+  try{
+    const response=await fetch('./data/procurement/atas.json',{cache:'no-store'});
+    if(response.ok){const parsed=await response.json();
+      if(Array.isArray(parsed.atas)&&Array.isArray(parsed.checks))atasData=parsed;}
+  }catch{atasData=null;}
   try{
     const response=await fetch('./data/procurement/notices.json',{cache:'no-store'});
     if(!response.ok)throw Error('Catálogo ainda não publicado');
