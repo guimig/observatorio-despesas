@@ -23,10 +23,29 @@ export function validateParticipants(value){
 export function planParticipants(atas,checks,now=new Date(),limit=12){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
  const last=new Map(checks.map(c=>[c.ataId,c.checkedAt]));
- return atas.filter(a=>!last.has(a.id)||
-  now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000)
-  .sort((a,b)=>Number(last.has(a.id))-Number(last.has(b.id))||a.id.localeCompare(b.id))
-  .slice(0,limit);
+ const eligible=atas.filter(a=>!last.has(a.id)||
+  now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000);
+ // Cobrir compras distintas antes de selecionar a segunda ata da mesma compra.
+ // Sem isso, um pregão com centenas de atas monopoliza as execuções.
+ const groups=new Map();
+ for(const ata of eligible){
+  if(!groups.has(ata.procurementId))groups.set(ata.procurementId,[]);
+  groups.get(ata.procurementId).push(ata);
+ }
+ for(const group of groups.values())
+  group.sort((a,b)=>Number(last.has(a.id))-Number(last.has(b.id))||
+   a.sequence-b.sequence);
+ const order=[...groups.keys()].sort((a,b)=>a.localeCompare(b));
+ const result=[];
+ while(result.length<limit&&order.length){
+  for(let i=0;i<order.length&&result.length<limit;){
+   const key=order[i],group=groups.get(key);
+   result.push(group.shift());
+   if(!group.length)order.splice(i,1);
+   else i++;
+  }
+ }
+ return result;
 }
 async function main(){
  const atas=JSON.parse(await readFile('data/procurement/atas.json','utf8')).atas;
@@ -34,6 +53,7 @@ async function main(){
  catch(e){if(e.code==='ENOENT')data=empty();else throw e}
  const limit=Number(process.env.PNCP_PARTICIPANTS_LIMIT||12);
  const plan=planParticipants(atas,data.checks,new Date(),limit);
+ console.log('Compras distintas no lote: '+new Set(plan.map(a=>a.procurementId)).size);
  console.log('Participacao ARP: '+JSON.stringify({atas:atas.length,checked:data.checks.length,pending:plan.length}));
  if(process.argv.includes('--dry-run'))return;
  let success=0,failed=0,confirmed=0;
