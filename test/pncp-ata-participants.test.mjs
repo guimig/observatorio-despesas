@@ -64,3 +64,17 @@ test('nao publica participacao vinculada a ata inexistente',()=>{
  assert.equal(validateParticipantReferences(data,[ata]),data);
  assert.throws(()=>validateParticipantReferences(data,[]),/ausente/);
 });
+
+test('contagens diferenciam Reitoria, Campus e outros sem revelar identificadores',()=>{
+ const result=normalizeParticipants({data:[
+  {tipoParteEnvolvida:{id:1},orgao:{cnpj:'10635424000186'},unidade:{codigo:'158125'}},
+  {tipoParteEnvolvida:{id:2},orgao:{cnpj:'10635424000348'},unidade:{codigo:'158459'}},
+  {tipoParteEnvolvida:{id:2},orgao:{cnpj:'00000000000000'},unidade:{codigo:'999999'}}
+ ],totalPaginas:1,totalRegistros:3});
+ assert.equal(result.shape.reitoriaCnpj,1);
+ assert.equal(result.shape.reitoriaUnit,1);
+ assert.equal(result.shape.matchedBoth,1);
+ assert.equal(result.shape.otherCnpj,1);
+ assert.equal(result.shape.otherUnit,1);
+ assert.equal(JSON.stringify(result).includes('999999'),false);
+});
