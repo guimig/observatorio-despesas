@@ -27,11 +27,19 @@ export function auditAttribution({contracts=[],notices=[],documents=[]}={}){
   contractEvidence.set(contract.id,level);
  }
  let relatedNotices=0,confirmedNotices=0;
+ const srpCounts={published:0,withoutPublishedInstrument:0,withPublishedInstrument:0};
+ let otherNoticesWithoutInstrument=0;
  const relatedIds=new Set(contracts.map(c=>c.procurementId).filter(Boolean));
  for(const notice of notices){
   const level=assessNoticeAttribution(notice,contracts,commitmentDocs).level;
   count(noticeCounts,level);
-  if(relatedIds.has(notice.pncpId))relatedNotices++;
+  const hasInstrument=relatedIds.has(notice.pncpId);
+  if(hasInstrument)relatedNotices++;
+  if(notice.srp===true){
+   srpCounts.published++;
+   if(hasInstrument)srpCounts.withPublishedInstrument++;
+   else srpCounts.withoutPublishedInstrument++;
+  }else if(!hasInstrument)otherNoticesWithoutInstrument++;
   if(level==='confirmed')confirmedNotices++;
  }
  const referencedNes=new Set(contracts.flatMap(c=>c.commitmentRefs||[]));
@@ -44,14 +52,18 @@ export function auditAttribution({contracts=[],notices=[],documents=[]}={}){
    purchaseIdReported:contracts.filter(c=>Boolean(c.procurementId)).length,
    withCommitmentRefs:contracts.filter(c=>Array.isArray(c.commitmentRefs)&&c.commitmentRefs.length>0).length,
    completeCommitmentQueries:contracts.filter(c=>c.commitmentStatus==='complete').length},
-  notices:{total:notices.length,attribution:noticeCounts,withRelatedContract:relatedNotices,confirmedWithEvidence:confirmedNotices},
+  notices:{total:notices.length,attribution:noticeCounts,withRelatedContract:relatedNotices,confirmedWithEvidence:confirmedNotices,
+   srp:srpCounts,otherWithoutPublishedInstrument:otherNoticesWithoutInstrument},
   documents:{collectedCommitments:knownNes.size,uniqueFullNeRefs:fullRefs.length,
    fullNeRefsWithCguDocument:fullRefs.filter(id=>knownNes.has(id)).length},
   cautions:[
    'Atribuicao confirmada nao representa valor pago nem cobertura integral da contratacao.',
    'Publicacao centralizada da Reitoria nao identifica automaticamente o campus beneficiario.',
    'Processo e fornecedor coincidentes nao comprovam vinculacao contratual.',
-   'Amostra corresponde exclusivamente aos registros atualmente armazenados; ausencia nao significa zero.'
+   'Amostra corresponde exclusivamente aos registros atualmente armazenados; ausencia nao significa zero.',
+   'Licitacao e ata de registro de precos nao exigem empenho imediato; ausencia de NE nao e irregularidade.',
+   'SRP sem instrumento publicado nao e pendencia: a ata pode nunca gerar contratacao; ARPs ainda nao estao inventariadas.',
+   'Contratos PNCP ausentes no acervo nao demonstram inexistencia de contratos, atas ou empenhos na origem.'
   ]
  };
 }
