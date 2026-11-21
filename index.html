@@ -166,6 +166,21 @@
         </div>
         <span class="pill pill-outline" id="notices-count">Aguardando consulta</span>
       </div>
+      <details id="tender-items-panel" class="panel" style="margin:1rem 0">
+        <summary><strong>Itens licitados · quantitativos institucionais do IFC</strong></summary>
+        <p class="helper">Quantidades previstas na licitação, não registradas na ata, não disponíveis para contratação e não reservadas a Araquari. Cobertura incremental; ausência de itens não significa ausência na licitação.</p>
+        <p id="tender-items-coverage" role="status" aria-live="polite">Carregue os itens para consultar a cobertura.</p>
+        <div class="filters">
+          <label class="filter"><span>Buscar item ou licitação</span><input id="tender-items-search" type="search" placeholder="Descrição, número do item ou ID PNCP"></label>
+          <label class="filter"><span>Licitação</span><select id="tender-items-procedure"><option value="all">Todas as licitações coletadas</option></select></label>
+          <button id="tender-items-load" type="button" class="button button-secondary">Carregar itens</button>
+        </div>
+        <div class="table-scroll"><table class="contracts-table">
+          <thead><tr><th>Licitação PNCP</th><th>Item</th><th>Descrição</th><th class="align-right">Quantidade licitada · IFC</th><th>Coleta</th></tr></thead>
+          <tbody id="tender-items-rows"><tr><td colspan="5">Clique em Carregar itens.</td></tr></tbody>
+        </table></div>
+        <div class="pagination"><span id="tender-items-page-info">—</span><button id="tender-items-prev" type="button" class="button button-ghost" disabled>Anterior</button><button id="tender-items-next" type="button" class="button button-ghost" disabled>Próxima</button></div>
+      </details>
       <p id="notices-coverage" role="status" aria-live="polite" class="notice">Verificando publicações oficiais…</p>
       <div class="filters">
         <label class="filter"><span>Objeto, número ou processo</span>
