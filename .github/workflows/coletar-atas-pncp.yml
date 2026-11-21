@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/coletar-atas-pncp.yml'
+      - 'src/pncp-atas.mjs'
+      - 'src/collect-pncp-atas.mjs'
   schedule:
     - cron: '43 12 * * 2,5'
 permissions:
