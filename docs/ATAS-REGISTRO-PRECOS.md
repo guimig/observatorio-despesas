@@ -37,3 +37,7 @@ O arquivo `data/procurement/ata-participants.json` registra o ID oficial da ata,
 O endpoint e o esquema foram documentados, mas a coleta real e a cobertura dependem do workflow automatizado. A publicacao no painel sera feita somente apos verificar os resultados reais e a semantica das unidades retornadas.
 
 Fonte: [Manual PNCP, consultar partes envolvidas em ata](https://pncp.gov.br/manual/pt-br/latest/ata_de_registro_de_preco/consultar_partes_envolvidas_em_ata_de_registro_de_preco.html).
+
+### Cobertura distribuída das partes envolvidas
+
+A primeira execução consultou 12 atas de uma única licitação, sem encontrar correspondência simultânea de CNPJ e UG. Para evitar que uma compra com muitas atas monopolize a verificação, o planejamento agora intercala atas de compras diferentes (uma por compra a cada rodada), sem deixar de revalidar as já consultadas após 30 dias. O agendamento executa até 30 consultas por dia útil, respeitando a serialização das coletas. Resultados sem correspondência são evidência insuficiente para atribuição, **não prova de ausência de participação**. O catálogo de participações permanece separado dos dados públicos do painel até validação semântica da API.
