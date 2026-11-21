@@ -1,0 +1,57 @@
+name: Coletar atas de registro de precos PNCP
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 12 * * 2,5'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  coletar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testar integridade
+        run: |
+          npm test
+          npm run check:data
+      - name: Consultar atas de compras SRP publicadas
+        env:
+          PNCP_ATA_LIMIT: '12'
+        run: npm run collect:pncp-atas
+      - name: Validar catalogo minimo
+        run: npm run check:data
+      - name: Salvar catalogo sem respostas brutas
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/atas.json
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: atualizar atas PNCP'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: coletar
+    if: needs.coletar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
