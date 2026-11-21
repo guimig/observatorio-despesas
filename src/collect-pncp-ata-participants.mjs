@@ -65,7 +65,7 @@ async function main(){
  console.log('Compras distintas no lote: '+new Set(plan.map(a=>a.procurementId)).size);
  console.log('Participacao ARP: '+JSON.stringify({atas:atas.length,checked:data.checks.length,pending:plan.length}));
  if(process.argv.includes('--dry-run'))return;
- let success=0,failed=0,confirmed=0;
+ let success=0,failed=0,confirmed=0,candidate=0;
  const shapeTotals={};
  const now=new Date().toISOString().slice(0,10);
  for(const ata of plan){
@@ -74,6 +74,7 @@ async function main(){
    data.checks=data.checks.filter(c=>c.ataId!==ata.id);
    data.checks.push({ataId:ata.id,checkedAt:now,campusRoles:result.campusRoles});
    success++;if(result.campusRoles.length)confirmed++;
+   if(result.candidateRoles.length)candidate++;
    for(const [key,value] of Object.entries(result.shape))shapeTotals[key]=(shapeTotals[key]||0)+value;
   }catch(e){failed++;console.warn('Consulta de participantes indisponivel para '+ata.id+' ('+
    (e.status?'HTTP '+e.status:'formato')+'); sem inferencia de participacao.')}
@@ -85,7 +86,7 @@ async function main(){
   catch(e){await unlink(path+'.tmp').catch(()=>{});throw e}
  }
  console.log('Formato PNCP (contagens agregadas, sem registros): '+JSON.stringify(shapeTotals));
- console.log('Participacao ARP: '+JSON.stringify({success,failed,confirmed,checked:data.checks.length}));
+ console.log('Participacao ARP: '+JSON.stringify({success,failed,confirmed,candidate,checked:data.checks.length}));
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))
  main().catch(e=>{console.error(e.message);process.exitCode=1});

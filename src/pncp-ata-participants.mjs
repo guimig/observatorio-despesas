@@ -4,6 +4,15 @@ import {requestPublicJSON,CAMPUS_CNPJ,CAMPUS_UG,REITORIA_CNPJ} from './procureme
 import {assertPublicSafe} from './privacy.mjs';
 const REITORIA_UG='158125';
 const validRole=new Set([1,2,3]);
+// PNCP identifica unidade administrativa; o codigo nao e necessariamente UG SIAFI.
+// Apenas pares documentados na fonte podem confirmar vinculo institucional.
+export const VERIFIED_CAMPUS_PNCP_UNITS=Object.freeze([]);
+export function classifyCampusPart(cnpj,unit,role,verifiedUnits=VERIFIED_CAMPUS_PNCP_UNITS){
+ if(!validRole.has(role))return 'unknown';
+ if(cnpj===CAMPUS_CNPJ&&verifiedUnits.includes(unit))return 'confirmed';
+ if(cnpj===CAMPUS_CNPJ)return 'candidate';
+ return 'not_confirmed';
+}
 const cNPJUnknown=cnpj=>cnpj!==CAMPUS_CNPJ&&cnpj!==REITORIA_CNPJ;
 export function participantsUrl(ata){
  if(!Number.isSafeInteger(ata?.sequence)||ata.sequence<1)throw Error('Ata invalida');
@@ -20,6 +29,7 @@ export function normalizeParticipants(body){
  }
  if(rows.length>1000)throw Error('Limite de partes excedido');
  const roles=new Set();
+ const candidates=new Set();
  const shape={rows:rows.length,roleObject:0,roleScalar:0,orgaoObject:0,cnpjTop:0,
   unidadeObject:0,unidadeCode:0,unitTop:0,matchedCnpj:0,matchedUnit:0,
   matchedBoth:0,recognizedRole:0,nonemptyCnpj:0,nonemptyUnit:0,
@@ -46,9 +56,12 @@ export function normalizeParticipants(body){
   if(cnpj===CAMPUS_CNPJ&&unit===CAMPUS_UG)shape.matchedBoth++;
   if(validRole.has(role))shape.recognizedRole++;
   // Evidencia somente quando CNPJ do campus E codigo da unidade coincidem.
-  if(cnpj===CAMPUS_CNPJ&&unit===CAMPUS_UG&&validRole.has(role))roles.add(role);
+  const attribution=classifyCampusPart(cnpj,unit,role);
+  if(attribution==='confirmed')roles.add(role);
+  if(attribution==='candidate')candidates.add(role);
  }
  return assertPublicSafe({campusRoles:[...roles].sort((a,b)=>a-b),
+  candidateRoles:[...candidates].sort((a,b)=>a-b),
   checkedComplete:true,shape});
 }
 export async function scanParticipants(ata,{fetcher=requestPublicJSON}={}){
