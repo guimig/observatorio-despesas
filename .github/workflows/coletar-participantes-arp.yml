@@ -1,0 +1,44 @@
+name: Verificar participacao do Campus em atas PNCP
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '21 13 * * 1,4'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/coletar-participantes-arp.yml'
+      - 'src/pncp-ata-participants.mjs'
+      - 'src/collect-pncp-ata-participants.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  coletar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Consultar partes de atas PNCP
+        env:
+          PNCP_PARTICIPANTS_LIMIT: '12'
+        run: npm run collect:pncp-ata-participants
+      - run: npm run check:data
+      - name: Persistir apenas evidencias institucionais
+        run: |
+          if [ ! -f data/procurement/ata-participants.json ]; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/ata-participants.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'data: atualizar participacao em atas PNCP'
+          git push origin HEAD:main
