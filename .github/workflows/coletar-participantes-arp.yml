@@ -2,7 +2,7 @@ name: Verificar participacao do Campus em atas PNCP
 on:
   workflow_dispatch:
   schedule:
-    - cron: '21 13 * * 1,4'
+    - cron: '21 13 * * 1-5'
   push:
     branches: [main]
     paths:
@@ -30,7 +30,7 @@ jobs:
       - run: npm test
       - name: Consultar partes de atas PNCP
         env:
-          PNCP_PARTICIPANTS_LIMIT: '12'
+          PNCP_PARTICIPANTS_LIMIT: '30'
         run: npm run collect:pncp-ata-participants
       - run: npm run check:data
       - name: Persistir apenas evidencias institucionais
