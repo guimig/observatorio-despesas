@@ -1,8 +1,10 @@
 /** Evidencias de participacao em ARP: nao implicam empenho nem compra. */
 import {ataUrl} from './pncp-atas.mjs';
-import {requestPublicJSON,CAMPUS_CNPJ,CAMPUS_UG} from './procurement.mjs';
+import {requestPublicJSON,CAMPUS_CNPJ,CAMPUS_UG,REITORIA_CNPJ} from './procurement.mjs';
 import {assertPublicSafe} from './privacy.mjs';
+const REITORIA_UG='158125';
 const validRole=new Set([1,2,3]);
+const cNPJUnknown=cnpj=>cnpj!==CAMPUS_CNPJ&&cnpj!==REITORIA_CNPJ;
 export function participantsUrl(ata){
  if(!Number.isSafeInteger(ata?.sequence)||ata.sequence<1)throw Error('Ata invalida');
  return ataUrl(ata.procurementId)+'/'+ata.sequence+'/partesenvolvidas';
@@ -20,7 +22,8 @@ export function normalizeParticipants(body){
  const roles=new Set();
  const shape={rows:rows.length,roleObject:0,roleScalar:0,orgaoObject:0,cnpjTop:0,
   unidadeObject:0,unidadeCode:0,unitTop:0,matchedCnpj:0,matchedUnit:0,
-  matchedBoth:0,recognizedRole:0};
+  matchedBoth:0,recognizedRole:0,nonemptyCnpj:0,nonemptyUnit:0,
+  reitoriaCnpj:0,reitoriaUnit:0,otherCnpj:0,otherUnit:0};
  for(const row of rows){
   const role=Number(row?.tipoParteEnvolvida?.id??row?.tipoParteEnvolvidaId);
   const cnpj=String(row?.orgao?.cnpj??row?.cnpj??'').replace(/\D/g,'');
@@ -32,6 +35,12 @@ export function normalizeParticipants(body){
   if(row?.unidade&&typeof row.unidade==='object')shape.unidadeObject++;
   if(row?.unidade?.codigo!==undefined)shape.unidadeCode++;
   if(row?.codigoUnidadeCompradora!==undefined)shape.unitTop++;
+  if(cnpj)shape.nonemptyCnpj++;
+  if(unit)shape.nonemptyUnit++;
+  if(cnpj===REITORIA_CNPJ)shape.reitoriaCnpj++;
+  if(unit===REITORIA_UG)shape.reitoriaUnit++;
+  if(cnpj&&cNPJUnknown(cnpj))shape.otherCnpj++;
+  if(unit&&unit!==CAMPUS_UG&&unit!==REITORIA_UG)shape.otherUnit++;
   if(cnpj===CAMPUS_CNPJ)shape.matchedCnpj++;
   if(unit===CAMPUS_UG)shape.matchedUnit++;
   if(cnpj===CAMPUS_CNPJ&&unit===CAMPUS_UG)shape.matchedBoth++;
