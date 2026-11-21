@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import { validatePublishedData } from './store.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
