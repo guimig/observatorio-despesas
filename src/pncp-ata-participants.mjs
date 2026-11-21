@@ -1,7 +1,8 @@
 /** Evidencias de participacao em ARP: nao implicam empenho nem compra. */
 import {ataUrl} from './pncp-atas.mjs';
-import {requestPublicJSON,CAMPUS_CNPJ,CAMPUS_UG,REITORIA_CNPJ,REITORIA_UG} from './procurement.mjs';
+import {requestPublicJSON,CAMPUS_CNPJ,CAMPUS_UG,REITORIA_CNPJ} from './procurement.mjs';
 import {assertPublicSafe} from './privacy.mjs';
+const REITORIA_UG='158125';
 const validRole=new Set([1,2,3]);
 const cNPJUnknown=cnpj=>cnpj!==CAMPUS_CNPJ&&cnpj!==REITORIA_CNPJ;
 export function participantsUrl(ata){
