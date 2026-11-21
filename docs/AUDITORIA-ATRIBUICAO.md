@@ -40,3 +40,9 @@ A categoria `confirmed` comprova **atribuição documental à UG**, não o valor
 ## Diagnóstico quantitativo automatizado
 
 Executar `npm run audit:attribution` na raiz do repositório para obter JSON agregado de classificação de instrumentos, níveis de evidência de contratos e licitações, quantidade de vínculos oficiais, consultas PNCP concluídas e NEs documentadas na CGU. O relatório inclui as competências examinadas e o SHA quando `GITHUB_SHA` estiver disponível. Não grava dados nem expõe IDs individuais. **As contagens dependem exclusivamente dos arquivos presentes no checkout e não demonstram completude histórica.**
+
+## Execução operacional automatizada
+
+O workflow `.github/workflows/auditar-atribuicao.yml` executa a auditoria sobre os **arquivos reais da revisão** em eventos de alteração de dados na `main` e sob acionamento manual (`workflow_dispatch`). Publica os agregados no **resumo da execução do GitHub Actions**, com SHA e competências, sem versionar um novo JSON de resultados. Antes de emitir contagens, executa `npm run check:data`.
+
+O relatório é uma fotografia do acervo versionado e não atesta completude histórica, atualização das APIs, saldo de contrato ou execução financeira. A análise de lacunas deve priorizar: (1) contratos sem consulta de NE concluída; (2) contratos sem ID de contratação; (3) NEs integrais referenciadas sem documento CGU; (4) licitações sem contrato relacionado; (5) contratos atribuídos apenas por processo/fornecedor. É necessário conferir amostras reais antes de alterar critérios de classificação.

@@ -1,0 +1,57 @@
+name: Auditar atribuicao documental
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'data/months/**'
+      - 'data/procurement/**'
+      - 'src/audit-attribution.mjs'
+      - '.github/workflows/auditar-atribuicao.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar dados e executar auditoria quantitativa
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          npm run check:data
+          npm run audit:attribution > "$RUNNER_TEMP/atribuicao.json"
+          node --input-type=module -e '
+            import {readFileSync,appendFileSync} from "node:fs";
+            const r=JSON.parse(readFileSync(process.argv[1],"utf8"));
+            const row=(title,values)=>"| "+title+" | "+Object.entries(values).map(([k,v])=>k+": "+v).join("; ")+" |";
+            const lines=[
+              "## AUD-05 — Diagnóstico do acervo versionado",
+              "",
+              "Revisão: "+r.revision+"; competências examinadas: "+r.monthsExamined.join(", "),
+              "",
+              "| Dimensão | Contagem |","| --- | --- |",
+              row("Contratos por evidência",r.contracts.attribution),
+              row("Instrumentos por tipo",r.contracts.instrumentTypes),
+              row("Licitações por evidência",r.notices.attribution),
+              "",
+              "Contratos com ID de compra reportado: "+r.contracts.purchaseIdReported,
+              "Contratos com vínculo oficial validado: "+r.contracts.withOfficialPurchaseId,
+              "Contratos com referências de NE: "+r.contracts.withCommitmentRefs,
+              "Licitações relacionadas a contratos: "+r.notices.withRelatedContract,
+              "NEs integrais referenciadas com documento CGU: "+r.documents.fullNeRefsWithCguDocument+"/"+r.documents.uniqueFullNeRefs,
+              "",
+              "> Contagens restritas ao acervo; não são saldos contábeis nem comprovam completude."
+            ];
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join("\n")+"\n");
+            console.log(lines.join("\n"));
+          ' "$RUNNER_TEMP/atribuicao.json"
