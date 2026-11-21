@@ -57,3 +57,18 @@ As quantidades globais da ata, quando publicadas, representam o escopo do regist
 ## Auditoria de itens e quantitativos por participante
 
 Antes de coletar valores ou quantitativos, o workflow `auditar-detalhes-arp.yml` consulta amostra pequena de detalhes de atas em compras distintas, sem armazenar nem imprimir respostas brutas. O resultado registra somente presença de campos estruturais, sucesso e falhas. **Presença de quantidade total, itens ou fornecedores no detalhe não comprova distribuição por participante**. Se a API não disponibilizar a distribuição de quantitativos por órgão/unidade e item, ela será tratada como informação indisponível; não atribuir os quantitativos globais ao Campus nem estimar a partir de empenhos. O endpoint de detalhe precisa ser validado na execução real antes de qualquer expansão.
+
+## Decisao de escopo: quantitativos institucionais, nao distribuicao interna
+
+**Decisao metodologica de 21/11/2026.** Suspender a investigacao automatizada da distribuicao interna de quantidades por campus em editais, anexos, imagens e PDFs. A informacao podera existir apenas em documentos administrativos nao estruturados e demandara verificacao humana. Nao automatizar OCR, extracao de tabelas ou interpretacao de imagens nesta fase.
+
+Priorizar fontes estruturadas e dados verificaveis por **item e procedimento**, com origem, data e escopo:
+- **Quantidade licitada:** prevista no procedimento; nao implica contratacao.
+- **Quantidade registrada:** efetivamente consignada na ata; pode diferir da licitada.
+- **Saldo para adesoes:** quando publicado por sistema de gestao de atas, e especifico da adesao; **nao equivale** ao saldo contratavel pela gerenciadora ou por Araquari.
+- **Saldo contratavel institucional:** exibir apenas quando a fonte identificar inequivocamente esse saldo, o item, a data e o escopo. Nao calcular por subtracao simples de empenhos.
+- **Quantidade reservada a Araquari:** nao apurada automaticamente; indicar 'Verificacao documental necessaria' somente quando a consulta realmente exigir essa informacao.
+
+Os registros quantitativos futuros devem passar por `src/arp-quantity-policy.mjs`, com tipologia, origem e data verificaveis. O modulo nao inventa quantidades e nao coleta dados. O PNCP pode publicar a ata e suas condicoes sem detalhar a distribuicao administrativa interna. Os itens/fornecedores so devem ser incorporados depois de verificar endpoints oficiais e a granularidade efetivamente retornada.
+
+A prioridade de integracao seguinte e cruzar licitacoes e atas institucionais com contratos formais e empenhos de Araquari **somente por vinculos documentais verificaveis**. Uma licitacao SRP pode nao resultar em nenhuma contratacao ou empenho.
