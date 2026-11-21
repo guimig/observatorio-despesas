@@ -41,3 +41,7 @@ Fonte: [Manual PNCP, consultar partes envolvidas em ata](https://pncp.gov.br/man
 ### Cobertura distribuída das partes envolvidas
 
 A primeira execução consultou 12 atas de uma única licitação, sem encontrar correspondência simultânea de CNPJ e UG. Para evitar que uma compra com muitas atas monopolize a verificação, o planejamento agora intercala atas de compras diferentes (uma por compra a cada rodada), sem deixar de revalidar as já consultadas após 30 dias. O agendamento executa até 30 consultas por dia útil, respeitando a serialização das coletas. Resultados sem correspondência são evidência insuficiente para atribuição, **não prova de ausência de participação**. O catálogo de participações permanece separado dos dados públicos do painel até validação semântica da API.
+
+### Auditoria do formato real das partes envolvidas
+
+Como as primeiras consultas completas não identificaram a combinação CNPJ/UG do Campus, a coleta registra **somente contagens agregadas em logs efêmeros**: quantidade de linhas, presença de campos de órgão, unidade e papel, e quantas correspondências ocorreram por CNPJ, por UG e simultaneamente. Não imprime CNPJ, CPF, nomes, registros brutos ou valores de fornecedores. Esses diagnósticos não entram no JSON público. A interpretação de uma correspondência depende da estrutura efetivamente publicada pelo PNCP; ausência de correspondência não comprova ausência de participação. A etapa seguinte é validar a semântica dos campos e, somente depois, publicar vínculos confirmados no painel.
