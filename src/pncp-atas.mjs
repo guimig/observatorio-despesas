@@ -41,7 +41,7 @@ export async function scanAtas(notice,{fetcher=requestPublicJSON}={}){
  if(!Array.isArray(body))throw Error('Resposta de atas nao e lista completa');
  if(body.length>1000)throw Error('Resposta de atas acima do limite');
  const records=new Map();
- for(const row of body){
+ for(const row of rows){
   const record=normalizeAta(row,notice.pncpId);
   if(!record)throw Error('Ata sem sequencial valido; nao gravar resultado parcial');
   if(records.has(record.id))throw Error('Ata duplicada na resposta');
