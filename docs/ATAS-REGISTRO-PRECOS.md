@@ -84,3 +84,7 @@ O coletor `collect:pncp-tender-items` consulta ate tres licitacoes SRP por execu
 ### Consulta dos itens licitados no painel
 
 O explorador recolhível em Licitações carrega sob demanda o catálogo de itens PNCP validado no build estático. Permite filtrar por descrição, item ou ID PNCP e por procedimento, com paginação de 25 linhas, quantidade licitada institucional e data da coleta. A cobertura informa quantas licitações SRP possuem itens coletados; ausência de item não equivale a quantidade zero nem a ausência de contratação. Não exibe saldo de ata nem reserva de Araquari.
+
+### Ampliação progressiva e tratamento de falhas (novembro de 2026)
+
+O agendamento coleta até cinco licitações SRP pendentes por execução, em vez de três. A seleção usa rotação diária determinística sobre os procedimentos ainda não coletados, de modo que uma licitação com falha repetida não impeça indefinidamente o avanço para outras. Procedimentos bem-sucedidos são preservados; os que falham continuam elegíveis em rodadas posteriores. A seleção não prova completude histórica: a cobertura depende da abrangência do catálogo de licitações, da disponibilidade do endpoint e do sucesso das consultas. Nenhum quantitativo é somado entre itens de unidades de medida diferentes.
