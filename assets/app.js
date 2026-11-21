@@ -849,7 +849,9 @@ function renderNotices() {
     const ataChecked=(atasData?.checks||[]).some(c=>c.procurementId===notice.pncpId);
     const related=element('td','');
     if(ataCount){
-      related.append(element('span','small-muted',fmtCount(ataCount)+' ata(s) de registro de preços identificada(s)'));
+      const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
+      ataLabel.title='Atas vinculadas à licitação do órgão publicador. Não representam atas exclusivas de Araquari, quantidades reservadas ao Campus ou compras/empenhos efetivos.';
+      related.append(ataLabel);
     }else if(notice.srp===true){
       related.append(element('span','small-muted',ataChecked?
         'Nenhuma ata retornada na última consulta PNCP':
