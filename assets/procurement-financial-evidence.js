@@ -21,3 +21,25 @@ export function procurementFinancialEvidence(notice,contracts=[],documents=[]){
   level:verifiedNes.size?'confirmed':confirmed.size?'confirmed':
     indications.size?'indication':'unverified'};
 }
+
+/** Lista explicita de elos, sem inferencia por fornecedor, valor ou descricao. */
+export function procurementEvidenceDetails(notice,contracts=[],documents=[]){
+ const related=contracts.filter(c=>c.procurementId===notice?.pncpId);
+ const rows=[],seen=new Set();
+ for(const c of related){
+  const attribution=assessContractAttribution(c,documents);
+  const verified=documents.filter(d=>d?.phase===1&&typeof d.id==='string'&&
+    /^158459\d{5}20\d{2}NE\d{6}$/.test(d.id)&&
+    matchDocumentContract(d,c)?.level==='confirmed');
+  const references=[...new Set(verified.map(d=>d.id))];
+  const key=String(c.id||c.pncpId||c.number||'');
+  if(!key||seen.has(key))continue;
+  seen.add(key);
+  rows.push({instrument:key,level:references.length?'verified_ne':
+   attribution.level==='confirmed'?'declared_ne':
+   attribution.level==='unverified'?'unverified':'indication',
+   reason:references.length?'NE da UG 158459 conferida em CGU e instrumento PNCP':
+    attribution.reason,commitments:references});
+ }
+ return rows;
+}

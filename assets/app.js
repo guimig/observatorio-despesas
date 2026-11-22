@@ -1,5 +1,5 @@
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
-import {procurementFinancialEvidence} from './procurement-financial-evidence.js';
+import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
@@ -862,6 +862,25 @@ function renderNotices() {
       const evidence=element('span','small-muted','Indicios documentais em '+fmtCount(financial.indicatedInstruments)+' instrumento(s)');
       evidence.title='Indicios administrativos ou de NE nao conferida; nao constituem prova de despesa de Araquari.';
       related.append(evidence);
+    }
+    if(financial.instruments){
+      const details=element('details','');
+      const summary=element('summary','relation-link','Ver evidências documentais');
+      summary.title='Detalhamento dos instrumentos vinculados pelo identificador PNCP e da situação de comprovação de NE da UG 158459.';
+      details.append(summary);
+      const entries=procurementEvidenceDetails(notice,procurementData?.contracts||[],loadedCguDocuments());
+      const list=element('ul','');
+      for(const entry of entries){
+        const li=element('li','small-muted');
+        const status=entry.level==='verified_ne'?'NE conferida com CGU':
+          entry.level==='declared_ne'?'Referência de NE no PNCP':
+          entry.level==='indication'?'Indício não confirmado':'Sem evidência de Araquari';
+        li.append(element('strong','',status),element('span','',' · Instrumento: '+entry.instrument));
+        li.append(element('span','',' · '+entry.reason));
+        if(entry.commitments.length)li.append(element('span','',' · NE(s): '+entry.commitments.join(', ')));
+        list.append(li);
+      }
+      details.append(list);related.append(details);
     }
     if(ataCount){
       const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
