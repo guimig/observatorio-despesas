@@ -51,7 +51,10 @@ export function validateMonth(data) {
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
       'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
-      'liquidationLinksChecked', 'description']);
+      'liquidationLinksChecked', 'description', 'descriptionCheckedAt']);
+    if(doc.descriptionCheckedAt!==undefined &&
+      (typeof doc.descriptionCheckedAt!=='string'||!DATE_RE.test(doc.descriptionCheckedAt)))
+      throw Error('Revisão narrativa documental inválida');
     if(doc.description!==undefined && publicNarrativeText(doc.description)!==doc.description)
       throw Error('Descrição de documento não sanitizada');
     if (doc.paymentLinksChecked !== undefined &&
@@ -252,6 +255,10 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
         throw Error('Natureza de favorecido desconhecida');
       }
       delete doc.beneficiary;
+      const old=previousById.get(doc.id);
+      if(old?.description&&!doc.description)doc.description=old.description;
+      if(old?.descriptionCheckedAt&&!doc.descriptionCheckedAt)
+        doc.descriptionCheckedAt=old.descriptionCheckedAt;
       normalized.push(doc);
     }
     for (const doc of normalized) {
