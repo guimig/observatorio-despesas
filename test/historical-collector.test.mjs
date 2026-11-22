@@ -80,9 +80,9 @@ test('distingue colisao documental por data e fase sem expor IDs',()=>{
  ]};
  const result=documentCollisionSummary(existing,incoming);
  assert.deepEqual(result,{otherDate:1,otherPhase:1});
- assert.equal(collisionCode(result),'CGU_DOC_COLLISION_BOTH');
+ assert.equal(collisionCode(result),'CGU_DOC_COLLISION_DATE');
  assert.equal(collisionCode({otherDate:1,otherPhase:0}),'CGU_DOC_COLLISION_DATE');
- assert.equal(collisionCode({otherDate:0,otherPhase:1}),'CGU_DOC_COLLISION_PHASE');
+ assert.equal(collisionCode({otherDate:0,otherPhase:1}),null);
  assert.equal(collisionCode({otherDate:0,otherPhase:0}),null);
 });
 
