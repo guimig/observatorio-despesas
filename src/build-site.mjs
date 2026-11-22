@@ -20,7 +20,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   await mkdir(join(output, 'assets'), { recursive: true });
   await mkdir(join(output, 'data', 'months'), { recursive: true });
 
-  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/procurement-links.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/trajectory.js', 'assets/style.css',
+  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/procurement-links.js', 'assets/procurement-financial-evidence.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/trajectory.js', 'assets/style.css',
     'data/manifest.json']) {
     await copyFile(join(base, file), join(output, file));
   }
