@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
+import {resolveItemMovements} from './item-movements.mjs';
 
 function bounded(value,fallback,max){
   const n=Number(value||fallback);
@@ -16,7 +17,7 @@ export function rotatePending(documents,limit,slot=0){
   const offset=(slot*limit)%documents.length;
   return [...documents.slice(offset),...documents.slice(0,offset)].slice(0,limit);
 }
-export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,slot=0}={}){
+export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,slot=0}={}){
   validateMonth(month);
   const liquidations=month.documents.filter(doc=>doc.phase===2&&
     doc.liquidationLinksChecked!==true)
@@ -28,11 +29,17 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     .map(doc=>doc.id);
   const selectedPayments=rotatePending(payments,bounded(maxPayments,15,50),slot);
   const items=month.documents.filter(doc=>doc.phase===1&&
-    !Object.hasOwn(month.itemsByDocument||{},doc.id))
+    (!Object.hasOwn(month.itemsByDocument||{},doc.id)||doc.itemsDetailVersion!==2))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
   const selectedItems=rotatePending(items,bounded(maxItems,7,20),slot);
-  return {liquidations:selectedLiquidations,payments:selectedPayments,items:selectedItems};
+  const histories=month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)
+    .flatMap(doc=>(month.itemsByDocument?.[doc.id]||[])
+      .filter(item=>item.historyChecked!==true).map(item=>({id:doc.id,seq:item.seq})))
+    .sort((a,b)=>a.id.localeCompare(b.id)||a.seq-b.seq);
+  const selectedHistories=rotatePending(histories,bounded(maxItemHistories,10,30),slot);
+  return {liquidations:selectedLiquidations,payments:selectedPayments,
+    items:selectedItems,itemHistories:selectedHistories};
 }
 export function scheduledMonthSlot(now=new Date()){
   const date=now instanceof Date?now:new Date(now);
@@ -58,7 +65,7 @@ export function summarizeFailures(failures){
   for(const reason of failures){
     const key=['consulta_indisponivel','resposta_invalida','pagina_repetida',
       'limite_paginacao','impacto_nao_identificado','valor_fora_limite',
-      'item_invalido','sequencial_duplicado_divergente','persistencia_invalida',
+      'item_invalido','movimentacao_invalida','sequencial_duplicado_divergente','persistencia_invalida',
       'acesso_negado','recurso_nao_encontrado','erro_http'].includes(reason)
       ?reason:'outro';
     counts[key]=(counts[key]||0)+1;
@@ -80,7 +87,8 @@ async function main(){
   const args={slot,
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
-    maxItems:process.env.ENRICH_ITEMS||7
+    maxItems:process.env.ENRICH_ITEMS||7,
+    maxItemHistories:process.env.ENRICH_HISTORY_ITEMS||10
   };
   const priority=['oldest','newest','round_robin'].includes(process.env.ENRICH_PRIORITY)
     ?process.env.ENRICH_PRIORITY:'newest';
@@ -92,7 +100,7 @@ async function main(){
   for(const monthName of alternatives){
     const data=await readMonth(root,monthName);
     const plan=planEnrichment(data,args);
-    if(plan.liquidations.length||plan.payments.length||plan.items.length){
+    if(plan.liquidations.length||plan.payments.length||plan.items.length||plan.itemHistories.length){
       chosen={monthName,plan};break;
     }
   }
@@ -102,7 +110,8 @@ async function main(){
   }
   console.log('Plano de enriquecimento: competência '+chosen.monthName+'; '+
     chosen.plan.liquidations.length+' liquidações; '+chosen.plan.payments.length+
-    ' pagamentos; '+chosen.plan.items.length+' empenhos.');
+    ' pagamentos; '+chosen.plan.items.length+' empenhos; '+
+    chosen.plan.itemHistories.length+' historicos de itens.');
   if(process.argv.includes('--dry-run')){
     console.log('Simulação: nenhuma consulta autenticada ou arquivo alterado.');
     return;
@@ -112,17 +121,22 @@ async function main(){
   let successes=0,errors=0,links=0,items=0;
   const failures=[];
   for(const [kind,docs] of [['liquidation',chosen.plan.liquidations],
-    ['payment',chosen.plan.payments],['items',chosen.plan.items]]){
-    for(const id of docs){
+    ['payment',chosen.plan.payments],['items',chosen.plan.items],
+    ['itemHistory',chosen.plan.itemHistories]]){
+    for(const item of docs){
+      const id=kind==='itemHistory'?item.id:item;
       const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token}):
-        kind==='payment'?await resolvePaymentLinks(id,{token}):await resolveItems(id,{token});
+        kind==='payment'?await resolvePaymentLinks(id,{token}):
+        kind==='items'?await resolveItems(id,{token}):
+          await resolveItemMovements(id,item.seq,{token});
       if(!outcome.ok){
         failures.push(outcome.reason||'outro');
         errors++;
         continue;
       }
       const result=kind==='items'?{kind:'items',items:outcome.items}:
-        {kind,links:outcome.links};
+        kind==='itemHistory'?{kind:'itemHistory',seq:item.seq,movements:outcome.movements}:
+          {kind,links:outcome.links};
       try{
         await persistEnrichment(root,chosen.monthName,id,result,new Date());
       }catch{
@@ -140,7 +154,8 @@ async function main(){
     JSON.stringify(summarizeFailures(failures)));
   console.log('Enriquecimento CGU (liquidações, pagamentos e itens): '+successes+' documento(s) concluído(s), '+
     errors+' sem conclusão; '+links+' vínculo(s) de liquidação/pagamento e '+
-    items+' item(ns) de empenho. Respostas brutas e dados pessoais não persistidos.');
+    items+' item(ns) de empenho. Historicos de itens sao processados separadamente. '+
+    'Respostas brutas e dados pessoais não persistidos.');
   if(!successes&&errors)throw Error('Não foi possível completar nenhuma consulta');
 }
 if(process.argv[1] && import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
