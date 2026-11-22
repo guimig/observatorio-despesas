@@ -10,7 +10,7 @@ const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
 const DATE=/^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/;
 const ID=/^10635424000186-1-\d{6}\/20\d{2}$/;
 const FIELDS=['id','pncpId','source','publicationUasg','month','modality',
-  'number','process','unitCode','object','estimatedCents','homologatedCents',
+  'number','process','unitCode','object','objectCheckedAt','estimatedCents','homologatedCents',
   'situation','srp','published','disputeMode','legalBasisCode',
   'proposalStart','proposalEnd'];
 export const blankNotices=()=>({
@@ -51,6 +51,8 @@ export function validateNotices(data){
       throw Error('Processo de publicação inválido');
     if(n.object!==undefined&&publicNarrativeText(n.object)!==n.object)
       throw Error('Objeto de publicação não sanitizado');
+    if(n.objectCheckedAt!==undefined&&!validDate(n.objectCheckedAt))
+      throw Error('Data de revisão narrativa inválida');
     for(const field of ['estimatedCents','homologatedCents']){
       if(n[field]!==undefined&&!Number.isSafeInteger(n[field]))
         throw Error('Valor de publicação inválido');
@@ -112,8 +114,14 @@ export function mergeNotices(previous,scans,now=new Date()){
       (current.count??0)>=records.length)continue;
     if(status!=='unavailable') {
       if(status==='complete'||!current){
+        const previousById=new Map(next.notices.map(n=>[n.id,n]));
         next.notices=next.notices.filter(n=>!(n.month===month&&n.modality===Number(modality)));
-        next.notices.push(...structuredClone(records));
+        for(const original of records){
+          const copy=structuredClone(original),prior=previousById.get(copy.id);
+          if(prior?.object&&!copy.object)copy.object=prior.object;
+          if(prior?.objectCheckedAt)copy.objectCheckedAt=prior.objectCheckedAt;
+          next.notices.push(copy);
+        }
       }
     }
     next.coverage=next.coverage.filter(c=>!(c.month===month&&c.modality===Number(modality)));
