@@ -67,7 +67,7 @@ export function mergePncpRecord(original,incoming,{kind,now=new Date(),checked=f
     }
     // Referencias de NE da coleta anterior nao podem permanecer confirmadas
     // apos uma mudanca de identificadores de instrumento/fornecedor.
-    if(['number','process','unitCode','supplierCnpj','supplierCpfMasked']
+    if(['number','process','unitCode','supplierCnpj','supplierCpfMasked','procurementId']
       .some(key=>!same(before[key],record[key]))){
       delete record.commitmentStatus;
       delete record.commitmentRefs;
