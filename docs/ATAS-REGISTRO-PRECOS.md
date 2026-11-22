@@ -96,3 +96,7 @@ Na tabela de licitacoes, a coluna de instrumentos decorrentes passa a indicar se
 ### Consulta das evidencias por instrumento
 
 A tabela de licitacoes apresenta a opcao recolhivel **Ver evidencias documentais** para cada licitacao com instrumentos PNCP vinculados. Exibe o identificador do instrumento, a classificacao da evidencia e, quando conferida contra documento CGU da UG 158459 carregado, a NE integral. A lista nao faz consulta remota adicional e sua cobertura depende dos documentos CGU ja carregados na sessao. Ausencia de evidencia nao significa inexistencia de despesa. A informacao e uma relacao documental, nao uma atribuicao de quantidades de itens.
+
+### Conferencia historica de NEs sob demanda
+
+O botao **Conferir NEs em todas as competencias** consulta, apenas quando acionado, os JSONs mensais publicos listados no manifesto da UG 158459 e ainda nao carregados no navegador. Cada competencia e validada antes de entrar no cache; arquivos indisponiveis sao contabilizados sem inventar resultados. A competencia financeira exibida no dashboard permanece inalterada. Apos a carga, os vinculos de licitacoes e contratos sao recalculados com o conjunto de documentos disponiveis. O carregamento nao acessa APIs autenticadas, nao produz novos dados, nao comprova inexistencia de despesa e pode consumir rede/memoria em acervos historicos grandes. O controle manual evita custo de carregamento inicial.
