@@ -112,3 +112,17 @@ O bloco recolhivel de auditoria examina somente referencias explicitas de NE 158
 ### Relatorio gerencial de auditoria
 
 O painel de auditoria oferece filtro por situacao documental, busca por numero de NE, instrumento ou licitacao e exportacao local em CSV (UTF-8 com BOM, delimitador ponto e virgula). A tabela limita a visualizacao a 100 linhas, mas o CSV inclui **todos os registros filtrados**. A exportacao usa os dados publicos ja carregados no navegador, sem envio a servidor. Celulas com prefixos de formulas sao neutralizadas para reduzir risco de execucao em planilhas. O resultado depende das competencias carregadas e deve indicar cobertura parcial quando aplicavel.
+
+### Inventario dos campos de consulta ja normalizados (revisao de novembro de 2026)
+
+A revisao dos adaptadores e da interface encontrou campos ja coletados que nao integravam a pesquisa textual. Foram adicionados, sem novas consultas de rede:
+
+| Fonte | Campos adicionais pesquisaveis | Cuidados |
+| --- | --- | --- |
+| Licitacoes PNCP | data de publicacao, competencia, situacao, indicador SRP, codigo da unidade publicadora, valores estimado e homologado em centavos | Pesquisa textual de numeros brutos, nao filtro monetario por intervalo; codigo PNCP de unidade nao equivale automaticamente a UG SIAFI |
+| Instrumentos PNCP/Compras.gov | assinatura, inicio/fim de vigencia, competencia, unidade publicadora, valor em centavos, status da coleta de NE e status do elo licitacao-contrato | Busca textual apenas nos contratos formais; instrumentos substitutivos continuam fora da tabela de contratos |
+| Auditoria PNCP-CGU | referencia de NE no numero do instrumento, mesmo quando nao ha array de referencias; NE abreviada apenas com UG 158459 expressa no proprio instrumento | Ausencia de NE na CGU continua lacuna, nao prova de inexistencia |
+
+**Campos ainda nao expostos como filtros especificos:** intervalos monetarios, periodo de vigencia, situacao do procedimento, SRP sim/nao, situacao de conferencia de cada instrumento, e fornecedor estruturado por CNPJ. A pesquisa textual nao substitui filtros tipados. **Dados ainda nao disponiveis com comprovacao suficiente:** quantidade efetivamente registrada por ata/item, saldo contratavel por campus, distribuicao interna de cotas, itens efetivamente adquiridos por NE e vinculo entre todos os instrumentos e cada item licitado. Nao inferir esses campos de valores, fornecedor, objeto ou numero do processo.
+
+A presente revisao cobre o **modelo normalizado existente no repositorio**, nao constitui auditoria exaustiva de todos os campos de todas as APIs oficiais. Novos campos externos so devem ser incorporados apos auditoria de esquema, procedencia, protecao de dados e utilidade gerencial.

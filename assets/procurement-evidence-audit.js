@@ -11,15 +11,25 @@ export function auditProcurementReferences(contracts=[],documents=[],{loadedMont
  for(const contract of contracts){
   const instrument=String(contract?.id||contract?.pncpId||contract?.number||'');
   if(!instrument)continue;
-  const refs=Array.isArray(contract.commitmentRefs)?contract.commitmentRefs:[];
+  const refs=Array.isArray(contract.commitmentRefs)?[...contract.commitmentRefs]:[];
+  // O PNCP tambem pode registrar a NE como numero do instrumento.
+  // Sem UG explicitamente associada, numero curto nao e prova suficiente.
+  if(typeof contract.number==='string'&&
+     (extractAraquariNeEvidence(contract.number)||
+      String(contract.unitCode??'')==='158459'&&/^20\d{2}NE\d{6}$/.test(contract.number))) {
+    refs.push(contract.number);
+  }
   for(const ref of refs){
    const parsed=extractAraquariNeEvidence(ref);
-   if(!parsed)continue;
-   const reference=parsed.kind==='full'?parsed.ne:parsed.short;
+   const shortByUnit=!parsed&&ref===contract.number&&String(contract.unitCode??'')==='158459'&&
+     /^20\d{2}NE\d{6}$/.test(ref)?{kind:'ug_short',short:ref}:null;
+   const evidence=parsed||shortByUnit;
+   if(!evidence)continue;
+   const reference=evidence.kind==='full'?evidence.ne:evidence.short;
    const key=instrument+'|'+reference;
    if(seen.has(key))continue;seen.add(key);
    const matched=[...known.values()].some(doc=>matchDocumentContract(doc,contract)?.level==='confirmed'&&
-     (parsed.kind==='full'?doc.id===reference:doc.id.endsWith(reference)));
+     (evidence.kind==='full'?doc.id===reference:doc.id.endsWith(reference)));
    findings.push({instrument,reference,procurementId:contract.procurementId||null,
     status:matched?'verified':complete?'not_found_in_published_history':'not_checked_fully'});
   }
