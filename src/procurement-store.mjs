@@ -15,7 +15,7 @@ const CNPJ=/^\d{14}$/;
 const DATE=/^20\d{2}-\d{2}-\d{2}$/;
 const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
- 'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','kind',
+ 'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','objectCheckedAt','kind',
  'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt'];
 
 export const blankProcurement=()=>({
@@ -121,6 +121,8 @@ export function validateProcurement(data){
       throw Error('Nome de fornecedor não sanitizado');
     if(contract.object!==undefined&&publicNarrativeText(contract.object)!==contract.object)
       throw Error('Objeto contratual não sanitizado');
+    if(contract.objectCheckedAt!==undefined&&!date(contract.objectCheckedAt))
+      throw Error('Data de revisão narrativa contratual inválida');
     if(contract.kind!==undefined&&publicItemDescription(contract.kind,80)!==contract.kind)
       throw Error('Espécie contratual não sanitizada');
   }
@@ -167,6 +169,8 @@ export function mergeProcurement(current,scans,now=new Date()){
         for(const record of records){
           const copy=structuredClone(record);
           const old=oldContracts.get(copy.id);
+          if(old?.object&&!copy.object)copy.object=old.object;
+          if(old?.objectCheckedAt)copy.objectCheckedAt=old.objectCheckedAt;
           // Preservar consulta de NE apenas se os campos-base do instrumento
           // não mudaram. Contratos retificados devem ser reconsultados.
           const sameInstrument=old && old.number===copy.number &&
