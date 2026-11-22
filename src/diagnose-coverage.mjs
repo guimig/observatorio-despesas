@@ -16,6 +16,7 @@ export function auditBaseline(report,{revision='unknown'}={}){
     commitmentsMissing:report.commitmentsMissing,
     missingByYear:report.missingByYear,
     pendingEnrichment:report.pendingEnrichment,
+    phaseObservations:report.phaseObservations||{total:0,overlappingDocuments:0,amountDisagreements:0},
     asOf:report.asOf||null,
     history:report.history||null,
     phaseCounts:report.phaseCounts||null,
@@ -74,7 +75,7 @@ export function baselineMarkdown(baseline){
     '## Observatorio de Despesas - auditoria CGU',
     `Revisao: ${baseline.revision} | referencia (Brasilia): ${baseline.asOf||'indisponivel'} | UG: ${baseline.unit}`,
     `Cobertura historica: **${headline}**. Competencias sem arquivo: ${history.monthsMissing?.length??'n/d'}.`,
-    `Documentos: ${baseline.documents}; vinculos: ${baseline.relations}; NEs referenciadas sem documento: ${baseline.commitmentsMissing}; enriquecimentos pendentes: ${baseline.pendingEnrichment}.`,
+    `Documentos canônicos: ${baseline.documents}; aparições adicionais em outras fases: ${baseline.phaseObservations?.total??0}; divergências de valores informados: ${baseline.phaseObservations?.amountDisagreements??0}; vínculos: ${baseline.relations}; NEs referenciadas sem documento: ${baseline.commitmentsMissing}; enriquecimentos pendentes: ${baseline.pendingEnrichment}.`,
     '',
     '| Competencia | Dias completos / encerrados | Parciais | Ausentes | Enriquecimentos pendentes |',
     '| --- | ---: | ---: | ---: | ---: |'
@@ -87,11 +88,18 @@ export function baselineMarkdown(baseline){
 
 export function diagnoseCoverage(months,{now=new Date(),earliestMonth='2025-01'}={}) {
   const docs=new Map(), refs=new Set(), phaseCount={1:0,2:0,3:0};
+  const observedIds=new Set();
+  let observedTotal=0,observedDisagreements=0;
   const monthsSummary=[];
   for(const month of months){
     for(const doc of month.documents){
       docs.set(doc.id,doc);
       phaseCount[doc.phase]=(phaseCount[doc.phase]||0)+1;
+    }
+    for(const item of month.phaseObservations||[]){
+      observedIds.add(item.id);
+      observedTotal++;
+      if(item.amountRelation==='different')observedDisagreements++;
     }
     for(const relation of month.relations)refs.add(relation.to);
     const dates=new Set(month.coverage.map(c=>c.date));
@@ -116,6 +124,7 @@ export function diagnoseCoverage(months,{now=new Date(),earliestMonth='2025-01'}
   const pendingEnrichment=monthsSummary.reduce((total,month)=>total+month.pendingTotal,0);
   const asOf=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   return {months:monthsSummary,asOf,history:historicalWindow(months,{now,earliestMonth}),phaseCounts:phaseCount,
+    phaseObservations:{total:observedTotal,overlappingDocuments:observedIds.size,amountDisagreements:observedDisagreements},
     pendingEnrichment,documents:docs.size,relations:months.reduce((n,m)=>n+m.relations.length,0),
     commitmentsCollected:known.size,commitmentsReferenced:refs.size,
     commitmentsMissing:missing.length,missingByYear,
