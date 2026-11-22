@@ -72,6 +72,13 @@ function showCatalogDetail(record,kind){
     ['Valor contratual',fmtMoney(record.amountCents)],
     ['Evidência de Araquari',campusEvidenceLabel(campusEvidence(record))]
   ];
+  if(record.recheckedAt)data.push(['Última reconsulta ao PNCP',localDate(record.recheckedAt)]);
+  if(record.sourceUpdatedAt)data.push(['Atualização informada pelo PNCP',
+    localDate(record.sourceUpdatedAt)]);
+  if(record.lastChangedAt)data.push(['Alteração observada no acervo',
+    localDate(record.lastChangedAt)]);
+  if(record.revisionCount)data.push(['Revisões materiais observadas',
+    String(record.revisionCount)]);
   for(const [label,value] of data)appendDetailField(fields,label,value);
   appendDetailField(fields,isNotice?'Objeto da licitação':'Objeto do contrato',
     record.object||'Descrição não disponível na fonte consultada',{long:true});
