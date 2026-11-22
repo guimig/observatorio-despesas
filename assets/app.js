@@ -1,3 +1,4 @@
+import {filterStructuredNotice,filterStructuredContract,parseReaisFilter} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
@@ -19,8 +20,8 @@ const pageSize = 25;
 let procurementData=null;
 let noticesData=null;
 let atasData=null;
-const noticesState={query:'',modality:'all',attribution:'likely',page:0};
-const contractsState={query:'',source:'all',scope:'all',attribution:'likely',page:0};
+const noticesState={query:'',modality:'all',attribution:'likely',srp:'all',minCents:null,maxCents:null,page:0};
+const contractsState={query:'',source:'all',scope:'all',attribution:'likely',minCents:null,maxCents:null,activeOn:'',page:0};
 const contractsPerPage=20;
 const cache = new Map();
 let commitmentTrajectories=[];
@@ -673,6 +674,7 @@ function filteredContracts(){
   if(!procurementData)return [];
   return procurementData.contracts.filter(contract=>{
     if(!isFormalContract(contract))return false;
+    if(!filterStructuredContract(contract,contractsState))return false;
     if(contractsState.source!=='all'&&contract.source!==contractsState.source)return false;
     if(contractsState.scope!=='all'&&contract.scope!==contractsState.scope)return false;
     const evidence=campusEvidence(contract);
@@ -790,10 +792,22 @@ async function initProcurement(){
   $('contract-attribution').addEventListener('change',value=>{
     contractsState.attribution=value.target.value;contractsState.page=0;renderContracts();
   });
+  for(const [id,field] of [['contract-min-value','minCents'],['contract-max-value','maxCents']]){
+    $(id).addEventListener('input',e=>{
+      const raw=e.target.value.trim(),parsed=parseReaisFilter(raw);
+      e.target.setCustomValidity(raw&&parsed===null?'Informe um valor em reais válido.':'');
+      contractsState[field]=parsed;contractsState.page=0;renderContracts();
+    });
+  }
+  $('contract-active-on').addEventListener('change',e=>{
+    contractsState.activeOn=e.target.value;contractsState.page=0;renderContracts();
+  });
   $('clear-contract-filters').addEventListener('click',()=>{
     contractsState.query='';contractsState.source='all';contractsState.scope='all';
-    contractsState.attribution='likely';
+    contractsState.attribution='likely';contractsState.minCents=null;
+    contractsState.maxCents=null;contractsState.activeOn='';
     contractsState.page=0;
+    for(const id of ['contract-min-value','contract-max-value','contract-active-on'])$(id).value='';
     $('contract-search').value='';
     $('contract-source').value='all';$('contract-scope').value='all';
     $('contract-attribution').value='likely';
@@ -835,6 +849,7 @@ function noticeEvidence(notice) {
 }
 function filteredNotices() {
   return (noticesData?.notices||[]).filter(item=>{
+    if(!filterStructuredNotice(item,noticesState))return false;
     if(noticesState.modality!=='all' && String(item.modality)!==noticesState.modality)
       return false;
     const evidence=noticeEvidence(item);
@@ -1070,10 +1085,22 @@ async function initNotices() {
   $('notices-attribution').addEventListener('change',v=>{
     noticesState.attribution=v.target.value;noticesState.page=0;renderNotices();
   });
+  $('notices-srp').addEventListener('change',e=>{
+    noticesState.srp=e.target.value;noticesState.page=0;renderNotices();
+  });
+  for(const [id,field] of [['notices-min-value','minCents'],['notices-max-value','maxCents']]){
+    $(id).addEventListener('input',e=>{
+      const raw=e.target.value.trim(),parsed=parseReaisFilter(raw);
+      e.target.setCustomValidity(raw&&parsed===null?'Informe um valor em reais válido.':'');
+      noticesState[field]=parsed;noticesState.page=0;renderNotices();
+    });
+  }
   $('notices-reset').addEventListener('click',()=>{
     noticesState.query='';noticesState.modality='all';noticesState.attribution='likely';
+    noticesState.srp='all';noticesState.minCents=null;noticesState.maxCents=null;
     noticesState.page=0;
     $('notices-search').value='';selector.value='all';
+    $('notices-srp').value='all';$('notices-min-value').value='';$('notices-max-value').value='';
     $('notices-attribution').value='likely';
     renderNotices();
   });
