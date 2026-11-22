@@ -16,13 +16,13 @@ export function auditProcurementReferences(contracts=[],documents=[],{loadedMont
   // Sem UG explicitamente associada, numero curto nao e prova suficiente.
   if(typeof contract.number==='string'&&
      (extractAraquariNeEvidence(contract.number)||
-      String(contract.unitCode??'')==='158459'&&/^20\\d{2}NE\\d{6}$/.test(contract.number))) {
+      String(contract.unitCode??'')==='158459'&&/^20\d{2}NE\d{6}$/.test(contract.number))) {
     refs.push(contract.number);
   }
   for(const ref of refs){
    const parsed=extractAraquariNeEvidence(ref);
    const shortByUnit=!parsed&&ref===contract.number&&String(contract.unitCode??'')==='158459'&&
-     /^20\\d{2}NE\\d{6}$/.test(ref)?{kind:'ug_short',short:ref}:null;
+     /^20\d{2}NE\d{6}$/.test(ref)?{kind:'ug_short',short:ref}:null;
    const evidence=parsed||shortByUnit;
    if(!evidence)continue;
    const reference=evidence.kind==='full'?evidence.ne:evidence.short;
