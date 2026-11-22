@@ -372,6 +372,23 @@ function showContractAssociations(doc){
   if(matches.length>8)slot.append(element('p','small-muted',
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
+function summarizeItemOperations(items,issueDate){
+ if(!Array.isArray(items))return 'Histórico ainda não consultado.';
+ const checked=items.filter(item=>item.historyChecked===true).length;
+ if(!checked)return 'Movimentações dos itens ainda não consultadas.';
+ const others=items.flatMap(item=>(item.movements||[])
+   .filter(event=>event.date!==issueDate&&event.type!=='original')
+   .map(event=>({seq:item.seq,date:event.date,operation:event.operation})))
+   .sort((a,b)=>a.date.localeCompare(b.date)||a.seq-b.seq);
+ const coverage='Itens com histórico completo: '+checked+'/'+items.length+'. ';
+ if(!others.length)return coverage+
+   'Nenhuma operação posterior identificada nesses históricos, sem garantia de ausência de alterações em itens pendentes.';
+ return coverage+'Operações posteriores identificadas: '+
+   others.slice(0,12).map(x=>'seq. '+String(x.seq).padStart(3,'0')+
+     ' · '+localDate(x.date)+' · '+x.operation).join('; ')+
+   (others.length>12?' e mais '+(others.length-12)+' operação(ões) nos itens.':'')+
+   '. A data de emissão do empenho permanece independente dessas operações.';
+}
 function renderSiafiItems(target,items){
  target.replaceChildren();
  const groups=new Map();
@@ -503,6 +520,8 @@ function showDocument(doc, monthData = state.data) {
       list.append(item);
     }
   }
+  if(doc.phase===1)appendDetailField(fields,'Alterações observadas no histórico dos itens',
+    summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
   const itemSection=$('dialog-items-section');
   itemSection.hidden=doc.phase!==1;
   const details=$('dialog-items');
@@ -620,7 +639,7 @@ function showCommitmentTrajectory(entry){
   const doc=entry.document;
   const entries=[
     ['Documento de empenho',entry.id],
-    ['Data',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
+    ['Data de emissão da NE',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
     ['Processo',doc?.process||'Não informado'],
     ['Valor documental da NE',doc?fmtMoney(doc.cents):'Indisponível: NE não coletada'],
     ['Cobertura documental',!doc?'NE referenciada, mas não coletada':
@@ -635,6 +654,8 @@ function showCommitmentTrajectory(entry){
   appendDetailField(fields,'Descrição / observação da nota de empenho',
     doc?.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
+  appendDetailField(fields,'Alterações observadas no histórico dos itens',
+    summarizeItemOperations(entry.items,doc?.date),{long:true});
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
