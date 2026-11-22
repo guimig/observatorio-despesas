@@ -104,3 +104,7 @@ O botao **Conferir NEs em todas as competencias** consulta, apenas quando aciona
 ### Indicadores de cobertura dos vinculos
 
 A secao de licitacoes apresenta totais de publicacoes PNCP, publicacoes com instrumentos vinculados, com NE 158459 conferida na CGU, com referencia de NE no PNCP sem conferencia, somente com indícios e sem evidencia identificada. As quatro ultimas classes sao exclusivas e priorizam o nivel mais forte disponivel. Os indicadores sao recalculados conforme novas competencias mensais sao carregadas. O painel exibe quantas competencias publicadas foram consultadas. **Sem evidencia** nao significa que nao houve contrato, empenho ou aquisicao; **com instrumento** nao equivale a contrato formal. Os totais nao sao taxas de contratacao nem indicadores de execucao financeira.
+
+### Auditoria de referencias de NE
+
+O bloco recolhivel de auditoria examina somente referencias explicitas de NE 158459 em instrumentos PNCP. Classifica cada referencia como conferida com documento CGU, ainda nao conferida por falta de competencias carregadas, ou nao localizada no historico mensal publicado integralmente carregado. A ultima situacao e uma lacuna documental, **nao prova inexistencia de despesa nem irregularidade**. Duplicatas do mesmo instrumento e referencia sao eliminadas; a interface limita a exibicao inicial a 100 linhas e informa o total. O escopo e a qualidade do catalogo PNCP e do historico CGU condicionam todos os resultados.
