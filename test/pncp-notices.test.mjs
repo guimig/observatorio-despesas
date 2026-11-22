@@ -13,7 +13,8 @@ const fixture=(modality=6)=>({
   processo:'23349.000111/2026-18',
   objetoCompra:'Aquisição de equipamentos de laboratório',
   valorTotalEstimado:25000,valorTotalHomologado:18000,
-  situacaoCompraId:1,srp:true
+  situacaoCompraId:1,srp:true,modoDisputaId:3,amparoLegal:{codigo:22},
+  dataAberturaProposta:'2026-11-20T08:00:00',dataEncerramentoProposta:'2026-11-27T18:00:00'
 });
 test('14 modalidades do PNCP varridas sob CNPJ publicador Reitoria',()=>{
  assert.equal(Object.keys(MODALITIES).length,14);
@@ -34,6 +35,10 @@ test('normalizar edital PNCP não atribui pela UASG 158125',()=>{
  assert.equal(n.estimatedCents,2500000);
  assert.equal(n.homologatedCents,1800000);
  assert.equal(n.srp,true);
+ assert.equal(n.disputeMode,3);
+ assert.equal(n.legalBasisCode,22);
+ assert.equal(n.proposalStart,'2026-11-20');
+ assert.equal(n.proposalEnd,'2026-11-27');
  assert.equal(n.object,'Aquisição de equipamentos de laboratório');
  assert.equal(assessNoticeAttribution(n).level,'process_indication');
  const other=normalizeNotice({...fixture(),processo:'23350.000111/2026-18'},6);
@@ -84,6 +89,7 @@ test('catálogo admite cobertura por modalidade sem dados inventados',()=>{
  }]);
  assert.equal(failed.changed,false);
  assert.doesNotThrow(()=>validateNotices(first.data));
+ assert.throws(()=>validateNotices({...first.data,notices:first.data.notices.map(n=>({...n,proposalEnd:'2026-02-30'}))}),/Prazo PNCP/);
 });
 test('outra modalidade mantém cobertura independente e nunca substitui histórico',()=>{
  const a=normalizeNotice(fixture(),6);

@@ -858,7 +858,8 @@ function filteredNotices() {
     if(noticesState.attribution==='unverified'&&evidence.level!=='unverified')return false;
     const values=[item.pncpId,item.number,item.process,item.object,
       MODALITIES[item.modality],item.unitCode,item.published,item.month,
-      item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents];
+      item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents,
+      item.disputeMode,item.legalBasisCode,item.proposalStart,item.proposalEnd];
     return !noticesState.query||values.filter(Boolean).join(' ').toLowerCase()
       .includes(noticesState.query);
   });

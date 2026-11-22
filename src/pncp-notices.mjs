@@ -58,6 +58,14 @@ export function normalizeNotice(row,modality){
   if(Number.isInteger(row.situacaoCompraId)&&row.situacaoCompraId>=0&&
      row.situacaoCompraId<=1000)notice.situation=Number(row.situacaoCompraId);
   if(typeof row.srp==='boolean')notice.srp=row.srp;
+  if(Number.isSafeInteger(row.modoDisputaId)&&row.modoDisputaId>=0&&row.modoDisputaId<=1000)
+    notice.disputeMode=row.modoDisputaId;
+  if(Number.isSafeInteger(row.amparoLegal?.codigo)&&row.amparoLegal.codigo>=0&&row.amparoLegal.codigo<=10000)
+    notice.legalBasisCode=row.amparoLegal.codigo;
+  const proposalStart=iso(row.dataAberturaProposta);
+  const proposalEnd=iso(row.dataEncerramentoProposta);
+  if(proposalStart)notice.proposalStart=proposalStart;
+  if(proposalEnd)notice.proposalEnd=proposalEnd;
   notice.published=pub;
   return assertPublicSafe(notice);
 }
