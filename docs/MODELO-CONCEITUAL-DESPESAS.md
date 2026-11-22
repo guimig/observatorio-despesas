@@ -122,3 +122,16 @@ apagados somente porque uma nova consulta retornou vazia. O lote é limitado por
 `ENRICH_LIQUIDATIONS` (padrão 12) e usa exclusivamente a secret
 `CGU_API_KEY` no ambiente do GitHub Actions. A interface exibe se a consulta de
 vínculos foi concluída, distinguindo-a da presença de relações financeiras.
+
+## Observação de documento em múltiplos filtros de fase da CGU (novembro de 2026)
+
+A apuração histórica da UG 158459 identificou o **mesmo identificador integral SIAFI** nos resultados de duas consultas `/despesas/documentos` realizadas com parâmetros `fase=2` e `fase=3` para a mesma data. Na execução de 22/11/2026, houve um caso em 08/12/2025 e dois casos em 10/12/2025. A duplicidade é de **aparição no resultado da consulta**, não evidência de dois documentos, duas obrigações ou duas operações distintas. A causa contábil/semântica da classificação ainda exige amostragem e documentação oficial.
+
+O JSON mensal conserva **um único registro em `documents[]`**, com `id` SIAFI, `date`, `phase` original do primeiro filtro coletado e `cents`. Atributo opcional `phaseObservations[]` registra somente uma observação adicional `{id,date,phase,amountKnown,amountRelation}`. `phase` designa o *filtro de origem do resultado*, não uma nova etapa financeira comprovada. `amountRelation` indica apenas se o valor informado nessa consulta é igual, diferente ou inconclusivo em relação ao registro canônico, sem divulgar ou acumular o valor adicional. Não se duplica documento, fornecedor, vínculo, liquidação nem pagamento.
+
+- Cobertura `coverage[].count` representa **ocorrências retornadas por fase** (`documents` canônicos nessa fase + observações adicionais); não representa quantidade de documentos únicos da UG.
+- `phaseObservations` é compatível com arquivos antigos sem o campo; a validação rejeita órfãos, fase igual à canônica, observações duplicadas e contagem divergente. IDs encontrados em **datas diferentes** continuam bloqueados para revisão.
+- A interface e a auditoria exibem aparições adicionais, mas **não somam os respectivos valores** e suspendem o total monetário conclusivo das fases afetadas por sobreposição. Uma retificação no valor canônico invalida a comparação anterior de valores.
+- Atribuição de NS a pagamento, vínculo NS→OB/DF, liquidação efetiva e conciliação SIAFI continuam **pendentes** de evidência oficial. A duplicidade do filtro não autoriza inferir que um valor foi pago.
+
+Essa é uma evolução compatível do **schema 1**, sem reescrever registros antigos, criar um banco de dados ou reconstruir valores financeiros. Antes de divulgar totais globais de fases sobrepostas, validar amostras com a fonte e a unidade contábil.
