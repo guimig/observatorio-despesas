@@ -1,0 +1,69 @@
+name: Reconsultar atualizacoes PNCP por ID
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Quantidade por catalogo (1 a 16)'
+        type: choice
+        required: true
+        default: '4'
+        options: ['2','4','8','12','16']
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/revisar-pncp.yml'
+      - 'src/pncp-revision-collector.mjs'
+  schedule:
+    - cron: '11 14 * * 1,3,6'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+jobs:
+  revisar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testar e validar catalogos publicados
+        run: |
+          npm test
+          npm run check:data
+      - name: Reconsulta pontual a PNCP
+        env:
+          PNCP_REVISIONS_BATCH: ${{ inputs.batch || '4' }}
+        run: npm run recheck:pncp
+      - name: Verificar integridade e privacidade dos JSONs
+        run: npm run check:data
+      - name: Versionar somente catalogos alterados
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/notices.json data/procurement/contracts.json
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: revisar publicacoes PNCP ja cadastradas'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: revisar
+    if: needs.revisar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml

@@ -5,12 +5,14 @@ import {assertPublicSafe} from './privacy.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {normalizeProcess} from './procurement.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
+import {NOTICE_FIELDS} from './pncp-record-revisions.mjs';
 
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
 const DATE=/^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/;
 const ID=/^10635424000186-1-\d{6}\/20\d{2}$/;
 const FIELDS=['id','pncpId','source','publicationUasg','month','modality',
   'number','process','unitCode','object','objectCheckedAt','estimatedCents','homologatedCents',
+  'sourceUpdatedAt','recheckedAt','lastChangedAt','revisionCount',
   'situation','srp','published','disputeMode','legalBasisCode',
   'proposalStart','proposalEnd'];
 export const blankNotices=()=>({
@@ -53,6 +55,11 @@ export function validateNotices(data){
       throw Error('Objeto de publicação não sanitizado');
     if(n.objectCheckedAt!==undefined&&!validDate(n.objectCheckedAt))
       throw Error('Data de revisão narrativa inválida');
+    for(const field of ['sourceUpdatedAt','recheckedAt','lastChangedAt']){
+      if(n[field]!==undefined&&!validDate(n[field]))throw Error('Data PNCP invalida');
+    }
+    if(n.revisionCount!==undefined&&(!Number.isSafeInteger(n.revisionCount)||n.revisionCount<1))
+      throw Error('Contagem de revisoes PNCP invalida');
     for(const field of ['estimatedCents','homologatedCents']){
       if(n[field]!==undefined&&!Number.isSafeInteger(n[field]))
         throw Error('Valor de publicação inválido');
@@ -120,6 +127,16 @@ export function mergeNotices(previous,scans,now=new Date()){
           const copy=structuredClone(original),prior=previousById.get(copy.id);
           if(prior?.object&&!copy.object)copy.object=prior.object;
           if(prior?.objectCheckedAt)copy.objectCheckedAt=prior.objectCheckedAt;
+          for(const field of ['recheckedAt','lastChangedAt','revisionCount']){
+            if(prior?.[field]!==undefined)copy[field]=prior[field];
+          }
+          if(prior?.sourceUpdatedAt&&(!copy.sourceUpdatedAt||
+             prior.sourceUpdatedAt>copy.sourceUpdatedAt)){
+            for(const field of NOTICE_FIELDS){
+              if(prior[field]!==undefined)copy[field]=prior[field];
+            }
+            copy.sourceUpdatedAt=prior.sourceUpdatedAt;
+          }
           next.notices.push(copy);
         }
       }

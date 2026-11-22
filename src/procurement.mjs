@@ -148,6 +148,8 @@ export function normalizePncp(row){
   if(object)contract.object=object;
   const kind=publicItemDescription(row.tipoContrato?.nome,80);
   if(kind)contract.kind=kind;
+  const changed=iso(row.dataAtualizacaoGlobal??row.dataAtualizacao);
+  if(changed)contract.sourceUpdatedAt=changed;
   return assertPublicSafe(Object.fromEntries(Object.entries(contract)
     .filter(([,v])=>v!==null&&v!==undefined)));
 }

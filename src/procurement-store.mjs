@@ -5,6 +5,7 @@ import {assertPublicSafe} from './privacy.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procurement.mjs';
+import {CONTRACT_FIELDS} from './pncp-record-revisions.mjs';
 
 const SOURCE=new Set(['pncp','compras']);
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -16,6 +17,7 @@ const DATE=/^20\d{2}-\d{2}-\d{2}$/;
 const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
  'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','objectCheckedAt','kind',
+ 'sourceUpdatedAt','recheckedAt','lastChangedAt','revisionCount',
  'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt'];
 
 export const blankProcurement=()=>({
@@ -123,6 +125,13 @@ export function validateProcurement(data){
       throw Error('Objeto contratual não sanitizado');
     if(contract.objectCheckedAt!==undefined&&!date(contract.objectCheckedAt))
       throw Error('Data de revisão narrativa contratual inválida');
+    for(const field of ['sourceUpdatedAt','recheckedAt','lastChangedAt']){
+      if(contract[field]!==undefined&&!date(contract[field]))
+        throw Error('Data de revisao PNCP invalida');
+    }
+    if(contract.revisionCount!==undefined&&
+       (!Number.isSafeInteger(contract.revisionCount)||contract.revisionCount<1))
+      throw Error('Contagem de revisoes PNCP invalida');
     if(contract.kind!==undefined&&publicItemDescription(contract.kind,80)!==contract.kind)
       throw Error('Espécie contratual não sanitizada');
   }
@@ -171,6 +180,16 @@ export function mergeProcurement(current,scans,now=new Date()){
           const old=oldContracts.get(copy.id);
           if(old?.object&&!copy.object)copy.object=old.object;
           if(old?.objectCheckedAt)copy.objectCheckedAt=old.objectCheckedAt;
+          for(const field of ['recheckedAt','lastChangedAt','revisionCount']){
+            if(old?.[field]!==undefined)copy[field]=old[field];
+          }
+          if(old?.sourceUpdatedAt&&(!copy.sourceUpdatedAt||
+             old.sourceUpdatedAt>copy.sourceUpdatedAt)){
+            for(const field of CONTRACT_FIELDS){
+              if(old[field]!==undefined)copy[field]=old[field];
+            }
+            copy.sourceUpdatedAt=old.sourceUpdatedAt;
+          }
           // Preservar consulta de NE apenas se os campos-base do instrumento
           // não mudaram. Contratos retificados devem ser reconsultados.
           const sameInstrument=old && old.number===copy.number &&
