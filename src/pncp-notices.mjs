@@ -2,6 +2,7 @@
 import {REITORIA_CNPJ,monthBounds,requestPublicJSON} from './procurement.mjs';
 import {parseMoneyCents} from './cgu.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 import {assertPublicSafe} from './privacy.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
 import {normalizeProcess} from './procurement.mjs';
@@ -46,7 +47,7 @@ export function normalizeNotice(row,modality){
   const number=tinyCode(row.numeroCompra,65);
   const process=normalizeProcess(row.processo);
   const unit=tinyCode(row.unidadeOrgao?.codigoUnidade,25);
-  const object=publicItemDescription(row.objetoCompra,260);
+  const object=publicNarrativeText(row.objetoCompra);
   if(number)notice.number=number;
   if(process)notice.process=process;
   if(unit)notice.unitCode=unit;
