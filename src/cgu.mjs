@@ -108,19 +108,35 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause } 
           Accept: 'application/json', 'chave-api-dados': token
         }
       });
-    } catch {
-      if (attempt === 3) throw Error('CGU indisponível após novas tentativas');
+    } catch (cause) {
+      if (attempt === 3) {
+        const error=Error('CGU indisponível após novas tentativas');
+        error.code=cause?.name==='AbortError'?'CGU_TIMEOUT':'CGU_TRANSPORT';
+        throw error;
+      }
       await wait(retryDelay(attempt));
       continue;
     } finally { clearTimeout(timeout); }
     if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3) {
       await wait(retryDelay(attempt,{retryAfter:response.headers?.get?.('retry-after')})); continue;
     }
-    if (!response.ok) throw Error('CGU HTTP ' + response.status);
+    if (!response.ok) {
+      const error=Error('CGU HTTP ' + response.status);
+      error.status=response.status;
+      throw error;
+    }
     let body;
     try { body = await response.json(); }
-    catch { throw Error('CGU retornou JSON inesperado'); }
-    if (!Array.isArray(body)) throw Error('CGU retornou formato diferente de lista');
+    catch {
+      const error=Error('CGU retornou JSON inesperado');
+      error.code='CGU_INVALID_JSON';
+      throw error;
+    }
+    if (!Array.isArray(body)) {
+      const error=Error('CGU retornou formato diferente de lista');
+      error.code='CGU_INVALID_SHAPE';
+      throw error;
+    }
     return body;
   }
   throw Error('CGU indisponível');
