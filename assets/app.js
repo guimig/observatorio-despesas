@@ -681,7 +681,10 @@ function filteredContracts(){
     if(contractsState.attribution==='unverified'&&evidence.level!=='unverified')return false;
     const fields=[contract.id,contract.number,contract.pncpId,contract.procurementId,
       contract.process,contract.supplierCnpj,contract.supplierCpfMasked,
-      contract.supplierName,contract.object,contract.kind,...(contract.commitmentRefs||[])];
+      contract.supplierName,contract.object,contract.kind,contract.signed,
+      contract.starts,contract.ends,contract.publishedMonth,contract.unitCode,
+      contract.amountCents,contract.commitmentStatus,contract.procurementLinkStatus,
+      ...(contract.commitmentRefs||[])];
     return !contractsState.query||fields.filter(Boolean).join(' ').toLowerCase()
       .includes(contractsState.query);
   });
@@ -839,7 +842,8 @@ function filteredNotices() {
     if(noticesState.attribution==='likely'&&evidence.level==='unverified')return false;
     if(noticesState.attribution==='unverified'&&evidence.level!=='unverified')return false;
     const values=[item.pncpId,item.number,item.process,item.object,
-      MODALITIES[item.modality],item.unitCode];
+      MODALITIES[item.modality],item.unitCode,item.published,item.month,
+      item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents];
     return !noticesState.query||values.filter(Boolean).join(' ').toLowerCase()
       .includes(noticesState.query);
   });
