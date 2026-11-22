@@ -24,7 +24,7 @@ export function previousMonthInBrazil(now = new Date()) {
 
 export function planHistoricalDays({
   month, existing = null, now = new Date(),
-  batchDays = 3, startDay = 1, recheck = false
+  batchDays = 3, startDay = 1, recheck = false, dayOffset = 0
 } = {}) {
   if (!MONTH.test(month)) throw Error('Competência histórica inválida');
   if (!Number.isSafeInteger(batchDays) || batchDays < 1 || batchDays > 7) {
@@ -32,6 +32,9 @@ export function planHistoricalDays({
   }
   if (!Number.isSafeInteger(startDay) || startDay < 1 || startDay > 31) {
     throw Error('Dia inicial inválido');
+  }
+  if (!Number.isSafeInteger(dayOffset) || dayOffset < 0) {
+    throw Error('Rotacao historica invalida');
   }
   if (existing && (existing.month !== month || !Array.isArray(existing.coverage))) {
     throw Error('JSON histórico incompatível');
@@ -56,9 +59,13 @@ export function planHistoricalDays({
       month.slice(5, 7) + '/' + month.slice(0, 4);
     isoDate(brDate);
     candidates.push(brDate);
-    if (candidates.length >= batchDays) break;
   }
-  return candidates;
+  // Todos os dias elegiveis são conhecidos antes de selecionar o lote.
+  // A rotação não elimina lacunas, mas impede datas com erro persistente de
+  // ocupar todos os lotes consecutivos; o controle por fase continua no JSON.
+  const start = candidates.length ? dayOffset % candidates.length : 0;
+  const rotated = [...candidates.slice(start), ...candidates.slice(0, start)];
+  return rotated.slice(0, batchDays);
 }
 
 /** Seleciona a competência mais recente ainda incompleta, retrocedendo até o

@@ -17,3 +17,13 @@ Como o identificador da NE informa o exercício, mas não a data de emissão, a 
 ## Acompanhamento
 
 Verifique a execução do workflow `backfill-cgu.yml`, o `data/manifest.json` e os campos `coverage` dos JSONs mensais. A contagem de NEs referenciadas sem documento deve ser recalculada após cada lote. O número pode aumentar temporariamente quando novas relações são descobertas.
+
+## Recuperação por fase e rotação de dias (novembro de 2026)
+
+O backfill da CGU agora separa as três fases para cada data. Um erro ao consultar a fase 2 não apaga nem impede a persistência de fases 1 e 3 válidas; o checkpoint mensal registra a cobertura de cada fase independentemente. Na próxima execução, só fases sem resultado completo e válido serão consultadas, exceto quando a rechecagem manual for expressamente solicitada.
+
+Em execuções **agendadas**, os dias ainda pendentes são selecionados com rotação determinística limitada ao mesmo lote de três dias. Assim, uma data com erro repetido não bloqueia todas as outras datas. Datas problemáticas permanecem pendentes e voltam à fila; não são marcadas como completas nem excluídas. Execuções manuais mantêm seleção linear e parâmetro inicial informado pelo operador.
+
+Os logs registram dia, **fase**, categoria segura de erro e quantidade de documentos consultados, nunca identificadores, resposta bruta, CPF, token ou URL individual de documento. Uma resposta vazia, com paginação validada, pode representar consulta documental completa sem registros. Resultado de coleta parcial nunca equivale a ausência de despesa ou total mensal definitivo.
+
+**Critério de estabilidade antes de aumentar frequência:** acompanhar amostras reais, especialmente 08/12/2025 e 10/12/2025, verificar falhas por fase e reprocessar até cobertura completa. Manter um lote diário até três execuções sucessivas com evolução demonstrável e sem falha não diagnosticada. O controle de cobertura, e não a conclusão verde do workflow, determina se uma competência foi integralmente recuperada.

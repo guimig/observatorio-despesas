@@ -96,3 +96,19 @@ test('não classifica NE já coletada como lacuna nem extrapola limite históric
  const selected=await chooseHistoricalMonth({now,earliestMonth:'2026-01',priorityYears:['2025'],prioritize:true,loadExisting:async()=>null});
  assert.equal(selected,'2026-10');
 });
+
+test('rotacao percorre dias pendentes sem reconsultar os ja completos',()=>{
+ const existing={month:'2026-10',coverage:full('2026-10-01')};
+ const first=planHistoricalDays({month:'2026-10',existing,now,batchDays:3,dayOffset:0});
+ const second=planHistoricalDays({month:'2026-10',existing,now,batchDays:3,dayOffset:3});
+ assert.deepEqual(first,['02/10/2026','03/10/2026','04/10/2026']);
+ assert.deepEqual(second,['05/10/2026','06/10/2026','07/10/2026']);
+ assert.equal(first.some(d=>second.includes(d)),false);
+});
+
+test('rotacao realiza retorno circular e respeita limite real de fevereiro',()=>{
+ const candidates=planHistoricalDays({month:'2024-02',now,batchDays:7,startDay:27,dayOffset:2});
+ assert.deepEqual(candidates,['29/02/2024','27/02/2024','28/02/2024']);
+ assert.throws(()=>planHistoricalDays({month:'2026-10',now,dayOffset:-1}));
+ assert.throws(()=>planHistoricalDays({month:'2026-10',now,dayOffset:1.5}));
+});
