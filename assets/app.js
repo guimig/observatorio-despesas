@@ -1,4 +1,5 @@
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
+import {procurementFinancialEvidence} from './procurement-financial-evidence.js';
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
@@ -848,6 +849,20 @@ function renderNotices() {
     const ataCount=(atasData?.atas||[]).filter(a=>a.procurementId===notice.pncpId).length;
     const ataChecked=(atasData?.checks||[]).some(c=>c.procurementId===notice.pncpId);
     const related=element('td','');
+    const financial=procurementFinancialEvidence(notice,procurementData?.contracts||[],loadedCguDocuments());
+    if(financial.verifiedCommitments){
+      const evidence=element('span','small-muted',fmtCount(financial.verifiedCommitments)+' NE(s) Araquari conferida(s) com CGU');
+      evidence.title='NE da UG 158459 identificada em documento CGU e vinculada ao instrumento PNCP pelo numero integral ou UG + numero da NE. Nao equivale a quantidade adquirida por item.';
+      related.append(evidence);
+    }else if(financial.confirmedInstruments){
+      const evidence=element('span','small-muted',fmtCount(financial.confirmedInstruments)+' instrumento(s) com referencia de NE 158459 no PNCP');
+      evidence.title='Vinculo declarado no PNCP, ainda sem confrontacao com NE CGU carregada. Nao representa despesa liquidada ou paga.';
+      related.append(evidence);
+    }else if(financial.indicatedInstruments){
+      const evidence=element('span','small-muted','Indicios documentais em '+fmtCount(financial.indicatedInstruments)+' instrumento(s)');
+      evidence.title='Indicios administrativos ou de NE nao conferida; nao constituem prova de despesa de Araquari.';
+      related.append(evidence);
+    }
     if(ataCount){
       const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
       ataLabel.title='Atas institucionais do órgão publicador. Quantidade licitada, registrada e saldo disponível são indicadores distintos. Não há atribuição automática de quantidades a Araquari nem presunção de compra ou empenho.';
