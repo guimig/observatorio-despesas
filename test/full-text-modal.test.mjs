@@ -115,7 +115,7 @@ test('tabelas não imprimem objeto integral e modais oferecem ficha com descriç
  assert.match(app,/showCatalogDetail\(notice,'notice'\)/);
  assert.match(app,/showCatalogDetail\(contract,'contract'\)/);
  assert.match(app,/showDialogFromTop\(\$\('document-dialog'\)\)/);
- assert.match(app,/Descrição \/ observação da nota de empenho/);
+ assert.match(app,/Descrição \/ observação do documento SIAFI/);
  assert.doesNotMatch(app,/element\('td','beneficiary-cell',notice\.object/);
  assert.doesNotMatch(app,/element\('td','beneficiary-cell',contract\.object/);
 });
