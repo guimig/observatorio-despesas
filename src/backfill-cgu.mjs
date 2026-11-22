@@ -2,7 +2,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { collectDayPhase } from './cgu.mjs';
-import { collectHistoricalDate } from './historical-collector.mjs';
+import { collectHistoricalDate,documentCollisionSummary,collisionCode } from './historical-collector.mjs';
 import { planHistoricalDays, chooseHistoricalMonth, missingCommitmentYears } from './backfill.mjs';
 import { persistWindow, validateMonth, validatePublishedData } from './store.mjs';
 
@@ -71,10 +71,23 @@ async function main() {
         token,maxPages:process.env.CGU_MAX_PAGES || 30,
         maxImpactPages:process.env.CGU_MAX_IMPACT_PAGES || 8
       }),
-      persist:patch=>persistWindow(process.cwd(),[patch],now),
+      persist:async patch=>{
+        const current=await readExisting(month);
+        const collision=documentCollisionSummary(current,patch);
+        const code=collisionCode(collision);
+        if(code){
+          const error=Error('Inconsistencia documental CGU');
+          error.code=code;
+          error.conflictCount=collision.otherDate+collision.otherPhase;
+          throw error; // Nao modificar arquivo nem marcar fase como completa.
+        }
+        return persistWindow(process.cwd(),[patch],now);
+      },
       logger:event=>{
         if(event.status==='failed')
-          console.warn(event.date+': fase '+event.phase+' falhou ('+event.category+'); checkpoint preservado.');
+          console.warn(event.date+': fase '+event.phase+' falhou ('+event.category+
+            (event.count!==undefined?'; '+event.count+' colisao(oes)':'')+
+            '); checkpoint preservado.');
         else if(event.status==='checkpoint_failed')
           console.error(event.date+': fase '+event.phase+
             ' falhou ao validar/gravar checkpoint ('+event.category+'); execução abortada.');
