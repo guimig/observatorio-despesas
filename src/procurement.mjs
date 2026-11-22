@@ -1,6 +1,7 @@
 /** Fontes públicas de contratos, com escopos separados IFC x Campus Araquari. */
 import { parseMoneyCents } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 import { assertPublicSafe, maskCpf } from './privacy.mjs';
 export { matchDocumentContract } from '../assets/procurement-links.js';
 
@@ -143,7 +144,7 @@ export function normalizePncp(row){
   };
   const vendor=supplier(row,'niFornecedor','tipoPessoa','nomeRazaoSocialFornecedor');
   Object.assign(contract,vendor);
-  const object=publicItemDescription(row.objetoContrato,260);
+  const object=publicNarrativeText(row.objetoContrato);
   if(object)contract.object=object;
   const kind=publicItemDescription(row.tipoContrato?.nome,80);
   if(kind)contract.kind=kind;
@@ -165,7 +166,7 @@ export function normalizeCompras(row){
     number,unitCode:CAMPUS_UG,process:processo(row.processo),
     starts,ends:iso(row.dataVigenciaFinal),amountCents:amount(row.valorGlobal)};
   Object.assign(contract,supplier(row,'niFornecedor','tipoPessoaFornecedor','nomeRazaoSocialFornecedor'));
-  const object=publicItemDescription(row.objeto,260);
+  const object=publicNarrativeText(row.objeto);
   if(object)contract.object=object;
   const kind=publicItemDescription(row.nomeTipo,80);
   if(kind)contract.kind=kind;
