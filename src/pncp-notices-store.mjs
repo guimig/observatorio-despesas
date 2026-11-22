@@ -2,7 +2,7 @@
 import {readFile,writeFile,rename,mkdir,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {assertPublicSafe} from './privacy.mjs';
-import {publicItemDescription} from './enrich-cgu.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 import {normalizeProcess} from './procurement.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
 
@@ -49,7 +49,7 @@ export function validateNotices(data){
     }
     if(n.process!==undefined&&normalizeProcess(n.process)!==n.process)
       throw Error('Processo de publicação inválido');
-    if(n.object!==undefined&&publicItemDescription(n.object,260)!==n.object)
+    if(n.object!==undefined&&publicNarrativeText(n.object)!==n.object)
       throw Error('Objeto de publicação não sanitizado');
     for(const field of ['estimatedCents','homologatedCents']){
       if(n[field]!==undefined&&!Number.isSafeInteger(n[field]))

@@ -56,3 +56,9 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 #dialog-trajectory-section{margin-top:18px;border-top:1px solid var(--border);padding-top:15px}
 #dialog-liquidations,#dialog-payments{margin:10px 0 16px}
 #dialog-trajectory-note{border-left:3px solid var(--brand);padding-left:12px}
+
+/* Campos narrativos: somente na ficha de detalhes, sem truncamento visual. */
+.document-fields .narrative-field{grid-column:1/-1}
+.document-fields .narrative-field dd{white-space:pre-wrap;line-height:1.65;font-weight:480;overflow-wrap:anywhere}
+.document-dialog{overflow-y:auto;overscroll-behavior:contain;scroll-behavior:auto}
+.document-dialog .dialog-content{overflow:visible}

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { assertPublicSafe } from './privacy.mjs';
 import { UG } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 
 export const VERSION = 1;
 const DOCUMENT_RE = /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
@@ -50,7 +51,9 @@ export function validateMonth(data) {
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
       'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
-      'liquidationLinksChecked']);
+      'liquidationLinksChecked', 'description']);
+    if(doc.description!==undefined && publicNarrativeText(doc.description)!==doc.description)
+      throw Error('Descrição de documento não sanitizada');
     if (doc.paymentLinksChecked !== undefined &&
         (doc.phase !== 3 || doc.paymentLinksChecked !== true)) {
       throw Error('Marcador de consulta de pagamento inválido');

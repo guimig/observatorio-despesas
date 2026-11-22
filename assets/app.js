@@ -7,6 +7,7 @@ import {filterAuditFindings,auditFindingsCsv} from './procurement-audit-report.j
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
+import {showDialogFromTop} from './dialog-scroll.js';
 import { auditMonth } from './quality.js';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
@@ -33,6 +34,53 @@ function element(tag, className, content) {
   if (className) node.className = className;
   if (content !== undefined) node.textContent = String(content);
   return node;
+}
+function appendDetailField(host,label,value,{long=false}={}){
+  const group=element('div',long?'narrative-field':'');
+  group.append(element('dt','',label),element('dd','',value??'Não informado'));
+  host.append(group);
+}
+function showCatalogDetail(record,kind){
+  const isNotice=kind==='notice';
+  const dialog=$('record-dialog'),fields=$('record-fields');
+  $('record-title').textContent=isNotice?
+    (MODALITIES[record.modality]||'Licitação')+' · '+(record.number||record.pncpId):
+    'Contrato formal · '+(record.number||record.id);
+  $('record-eyebrow').textContent=isNotice?'PUBLICAÇÃO PNCP':'INSTRUMENTO CONTRATUAL';
+  fields.replaceChildren();
+  const data=isNotice?[
+    ['Identificador PNCP',record.pncpId],
+    ['Modalidade',MODALITIES[record.modality]||'Outra'],
+    ['Número',record.number],
+    ['Processo administrativo',record.process],
+    ['Publicação',record.published?localDate(record.published):'Não informada'],
+    ['Registro de preços',record.srp===true?'Sim':record.srp===false?'Não':'Não informado'],
+    ['Unidade publicadora',record.publicationUasg||'158125 · IFC Reitoria'],
+    ['Estimativa da contratação',fmtMoney(record.estimatedCents)],
+    ['Valor homologado',fmtMoney(record.homologatedCents)],
+    ['Evidência de Araquari',campusEvidenceLabel(noticeEvidence(record))]
+  ]:[
+    ['Identificador',record.pncpId||record.id],
+    ['Número do instrumento',record.number],
+    ['Espécie',record.kind||'Contrato formal'],
+    ['Origem',contractSourceName(record.source)],
+    ['Processo administrativo',record.process],
+    ['Fornecedor',contractSupplier(record)],
+    ['Data de assinatura',record.signed?localDate(record.signed):'Não informada'],
+    ['Início da vigência',record.starts?localDate(record.starts):'Não informado'],
+    ['Fim da vigência',record.ends?localDate(record.ends):'Não informado'],
+    ['Valor contratual',fmtMoney(record.amountCents)],
+    ['Evidência de Araquari',campusEvidenceLabel(campusEvidence(record))]
+  ];
+  for(const [label,value] of data)appendDetailField(fields,label,value);
+  appendDetailField(fields,isNotice?'Objeto da licitação':'Objeto do contrato',
+    record.object||'Descrição não disponível na fonte consultada',{long:true});
+  const url=isNotice?publicNoticeUrl(record):publicPncpUrl(record);
+  const link=$('record-official-link');
+  link.hidden=!url;
+  if(url)link.href=url;
+  else link.removeAttribute('href');
+  showDialogFromTop(dialog);
 }
 function status(message, kind = '') {
   $('status').className = 'notice' + (kind ? ' ' + kind : '');
@@ -347,11 +395,10 @@ function showDocument(doc, monthData = state.data) {
         'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis'],
     ['Fonte', 'CGU / Portal da Transparência']
   ];
-  for(const [label,value] of entries) {
-    const group=element('div');
-    group.append(element('dt','',label),element('dd','',value));
-    fields.append(group);
-  }
+  for(const [label,value] of entries)appendDetailField(fields,label,value);
+  if(doc.phase===1)appendDetailField(fields,'Descrição / observação da nota de empenho',
+    doc.description||'Texto não disponibilizado ou não publicável na fonte consultada',
+    {long:true});
   const relationsMap=new Map();
   for(const loaded of cache.values()) {
     for(const relation of loaded.relations) {
@@ -420,8 +467,7 @@ function showDocument(doc, monthData = state.data) {
     }
   }
   showContractAssociations(doc);
-  const dialog=$('document-dialog');
-  if(!dialog.open)dialog.showModal();
+  showDialogFromTop($('document-dialog'));
 }
 function refreshFilters() {
   state.page = 0;
@@ -534,7 +580,10 @@ function showCommitmentTrajectory(entry){
     ['Exercício da NE',entry.id.slice(11,15)],
     ['Itens do empenho',entry.itemsChecked?'Consulta concluída':'Aguardando consulta']
   ];
-  for(const [label,value] of entries){const group=element('div');group.append(element('dt','',label),element('dd','',value));fields.append(group);}
+  for(const [label,value] of entries)appendDetailField(fields,label,value);
+  appendDetailField(fields,'Descrição / observação da nota de empenho',
+    doc?.description||'Texto não disponibilizado ou não publicável na fonte consultada',
+    {long:true});
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
@@ -556,7 +605,7 @@ function showCommitmentTrajectory(entry){
     '. Pendências de consulta: '+(entry.pendingLiquidations||entry.pendingPayments?'sim':'não identificado nos documentos vinculados carregados')+'.';
   $('dialog-contracts').replaceChildren(element('p','small-muted',
     'A associação com contrato formal permanece na seção de contratações e depende de evidência oficial; empenho substitutivo não é classificado como contrato formal.'));
-  const dialog=$('document-dialog');if(!dialog.open)dialog.showModal();
+  showDialogFromTop($('document-dialog'));
 }
 async function initTrajectories(){
   $('trajectory-section').hidden=false;
@@ -648,6 +697,7 @@ function initEvents() {
   $('next-page').addEventListener('click', () => { state.page++; renderTable(); });
   $('export-button').addEventListener('click', exportCsv);
   $('close-dialog').addEventListener('click', () => $('document-dialog').close());
+  $('close-record-dialog').addEventListener('click', () => $('record-dialog').close());
   const theme = localStorage.getItem('observatorio-tema');
   if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
   $('theme-toggle').addEventListener('click', () => {
@@ -743,7 +793,10 @@ function renderContracts(){
     }else{idcell.append(element('span','doc-code',contract.number||contract.id));}
     const supplier=element('td','beneficiary-cell',contractSupplier(contract));
     const process=element('td','doc-code',contract.process||'—');
-    const object=element('td','beneficiary-cell',contract.object||'Descrição indisponível');
+    const details=element('td');
+    const open=element('button','details-button','Ver detalhes');
+    open.type='button';open.addEventListener('click',()=>showCatalogDetail(contract,'contract'));
+    details.append(open);
     const amount=element('td','align-right',
       Number.isSafeInteger(contract.amountCents)?fmtMoney(contract.amountCents):'Não informado');
     const purchaseCell=element('td','');
@@ -764,7 +817,7 @@ function renderContracts(){
         contract.procurementLinkStatus==='not_reported'?'Sem referência informada':
         'Aguardando consulta'));
     }
-    row.append(source,proof,idcell,purchaseCell,supplier,process,object,amount);
+    row.append(source,proof,idcell,purchaseCell,supplier,process,amount,details);
     tbody.append(row);
   }
 }
@@ -1056,7 +1109,10 @@ function renderNotices() {
         :'Nenhum instrumento decorrente identificado nesta base; ausência não comprova pendência'));
     }
     const process=element('td','doc-code',notice.process||'—');
-    const object=element('td','beneficiary-cell',notice.object||'Descrição não disponibilizada');
+    const details=element('td');
+    const open=element('button','details-button','Ver detalhes');
+    open.type='button';open.addEventListener('click',()=>showCatalogDetail(notice,'notice'));
+    details.append(open);
     const evidence=noticeEvidence(notice);
     const status=element('td','',campusEvidenceLabel(evidence));
     status.title=evidence.reason;
@@ -1064,7 +1120,7 @@ function renderNotices() {
       Number.isSafeInteger(notice.estimatedCents)?
         fmtMoney(notice.estimatedCents):'Não informado');
     value.title='Estimativa da licitação, não despesa empenhada, contratada ou paga';
-    row.append(modality,docCell,related,process,object,status,value);
+    row.append(modality,docCell,related,process,status,value,details);
     tbody.append(row);
   }
 }
