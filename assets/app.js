@@ -2,6 +2,7 @@ import { matchDocumentContract, assessContractAttribution, assessNoticeAttributi
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
 import {auditProcurementReferences} from './procurement-evidence-audit.js';
+import {filterAuditFindings,auditFindingsCsv} from './procurement-audit-report.js';
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
@@ -843,6 +844,11 @@ function filteredNotices() {
       .includes(noticesState.query);
   });
 }
+let latestProcurementAudit=null;
+function selectedAuditFindings(){
+ return filterAuditFindings(latestProcurementAudit?.findings||[],{
+  status:$('procurement-audit-filter').value,query:$('procurement-audit-search').value});
+}
 function renderProcurementEvidenceAudit(){
  const total=state.manifest?.months?.length||0;
  const audit=auditProcurementReferences(procurementData?.contracts||[],loadedCguDocuments(),
@@ -853,12 +859,15 @@ function renderProcurementEvidenceAudit(){
   fmtCount(audit.counts.not_checked_fully)+' · competências '+fmtCount(audit.loadedMonths)+
   '/'+fmtCount(audit.totalMonths)+'. '+(audit.complete?'Histórico mensal publicado carregado.':
   'Carregue as competências restantes para distinguir referências ainda não conferidas.');
+ latestProcurementAudit=audit;
+ const filtered=selectedAuditFindings();
+ $('procurement-audit-filter-status').textContent=fmtCount(filtered.length)+' de '+fmtCount(audit.findings.length)+' referências exibíveis com os filtros atuais.';
  const tbody=$('procurement-audit-rows');tbody.replaceChildren();
- if(!audit.findings.length){
+ if(!filtered.length){
   const tr=element('tr'),td=element('td','','Nenhuma referência explícita de NE 158459 encontrada nos instrumentos carregados.');
   td.colSpan=3;tr.append(td);tbody.append(tr);return;
  }
- for(const row of audit.findings.slice(0,100)){
+ for(const row of filtered.slice(0,100)){
   const tr=element('tr');
   const status=row.status==='verified'?'Conferida com CGU':
    row.status==='not_found_in_published_history'?'Não localizada no histórico publicado':
@@ -866,8 +875,8 @@ function renderProcurementEvidenceAudit(){
   tr.append(element('td','',row.instrument),element('td','',row.reference),element('td','',status));
   tbody.append(tr);
  }
- if(audit.findings.length>100){
-  const tr=element('tr'),td=element('td','','Exibidas as primeiras 100 referências de '+fmtCount(audit.findings.length)+'.');
+ if(filtered.length>100){
+  const tr=element('tr'),td=element('td','','Exibidas as primeiras 100 referências de '+fmtCount(filtered.length)+' filtradas; exporte o CSV para obter todas.');
   td.colSpan=3;tr.append(td);tbody.append(tr);
  }
 }
@@ -1144,6 +1153,19 @@ async function loadTenderItems(){
   $('tender-items-coverage').textContent='Itens ainda indisponíveis; a coleta incremental pode estar em andamento.';
  }finally{tenderItemsState.loading=false;$('tender-items-load').disabled=false;}
 }
+$('procurement-audit-filter').addEventListener('change',()=>{if(latestProcurementAudit)renderProcurementEvidenceAudit();});
+$('procurement-audit-search').addEventListener('input',()=>{if(latestProcurementAudit)renderProcurementEvidenceAudit();});
+$('procurement-audit-export').addEventListener('click',()=>{
+ if(!latestProcurementAudit)return;
+ const rows=selectedAuditFindings();
+ const csv=auditFindingsCsv(rows);
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement('a');
+ link.href=url;link.download='auditoria-ne-arquari.csv';
+ document.body.append(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
 $('historical-ne-load').addEventListener('click',loadHistoricalNeEvidence);
 function initTenderItems(){
  $('tender-items-load').addEventListener('click',loadTenderItems);
