@@ -46,8 +46,10 @@ test('NE 2026NE000288: quatro sequenciais, quatro compras, quatro descricoes e R
   seq:row.sequencial,sub:'11',subdesc:'MATERIAL QUIMICO',
   ...(row.sequencial===2?{description:'ACETONA'}:{}),cents:100
  }))}).data;
- assert.deepEqual(planEnrichment(old).items,[ne]);
- const upgraded=applyDocumentEnrichment(old,ne,{kind:'items',items:outcome.items}).data;
+ const legacy=structuredClone(old);
+ delete legacy.documents[0].itemsDetailVersion;
+ assert.deepEqual(planEnrichment(legacy).items,[ne]);
+ const upgraded=applyDocumentEnrichment(legacy,ne,{kind:'items',items:outcome.items}).data;
  assert.equal(upgraded.documents[0].itemsDetailVersion,2);
  assert.equal(planEnrichment(upgraded).items.length,0);
  assert.equal(planEnrichment(upgraded).itemHistories.length,4);
