@@ -4,6 +4,7 @@
  */
 import { getCguArray, parseMoneyCents } from './cgu.mjs';
 import { sanitizeText, assertPublicSafe } from './privacy.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 
 const BASE='https://api.portaldatransparencia.gov.br/api-de-dados/despesas';
 const DOC=/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
@@ -157,8 +158,12 @@ export function normalizeItem(row){
   if(/^[\w./-]{1,20}$/.test(sub))item.sub=sub;
   const subdesc=publicItemDescription(row.descricaoSubelemento,110);
   if(subdesc)item.subdesc=subdesc;
-  const description=publicItemDescription(row.descricao,260);
-  if(description)item.description=description;
+  const description=publicNarrativeText(row.descricao,5000);
+  if(description){
+    const found=/^Item compra:\s*(\d{1,8})\s*-\s*([\s\S]+)$/i.exec(description);
+    if(found){item.purchaseItem=found[1];item.description=found[2].trim();}
+    else item.description=description;
+  }
   const cents=parseMoneyCents(row.valorAtual);
   if(cents!==null)item.cents=cents;
   return assertPublicSafe(item);
