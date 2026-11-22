@@ -65,6 +65,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'.nojekyll'),'');
     await writeFile(join(root,'assets','app.js'),'');
     await writeFile(join(root,'assets','procurement-links.js'),'');
+    await writeFile(join(root,'assets','procurement-financial-evidence.js'),'');
     await writeFile(join(root,'assets','pncp-modalities.js'),'');
     await writeFile(join(root,'assets','instrument-types.js'),'');
     await writeFile(join(root,'assets','document-species.js'),'');
@@ -95,7 +96,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
