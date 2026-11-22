@@ -92,3 +92,7 @@ O agendamento coleta até cinco licitações SRP pendentes por execução, em ve
 ### Vinculos documentais com despesas de Araquari
 
 Na tabela de licitacoes, a coluna de instrumentos decorrentes passa a indicar separadamente: (1) NEs da UG 158459 confrontadas entre documentos CGU carregados e referencias do instrumento PNCP; (2) instrumentos com referencia de NE 158459 declarada no PNCP, ainda sem conferencia com documento CGU carregado; (3) instrumentos com indícios administrativos, como processo SIPAC 23349, sem confirmacao de despesa. A contagem de NEs elimina duplicacoes do mesmo identificador. A ausencia de vinculo nao prova inexistencia de contratacao. Nenhuma das contagens representa quantidade adquirida por item, valor empenhado, saldo de ata ou obrigacao de contratar.
+
+### Consulta das evidencias por instrumento
+
+A tabela de licitacoes apresenta a opcao recolhivel **Ver evidencias documentais** para cada licitacao com instrumentos PNCP vinculados. Exibe o identificador do instrumento, a classificacao da evidencia e, quando conferida contra documento CGU da UG 158459 carregado, a NE integral. A lista nao faz consulta remota adicional e sua cobertura depende dos documentos CGU ja carregados na sessao. Ausencia de evidencia nao significa inexistencia de despesa. A informacao e uma relacao documental, nao uma atribuicao de quantidades de itens.
