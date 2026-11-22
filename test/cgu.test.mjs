@@ -148,7 +148,7 @@ test('CGU pessoa jurídica fornece CNPJ e nome, processo e classificação sanit
     numeroProcesso: '23349.000123/2026-01',
     grupo: 'Outras Despesas Correntes', elemento: 'Serviços de Terceiros',
     programa: 'Educação Profissional', acao: 'Ação Teste',
-    observacao: 'Não publicar uma observação integral com dados pessoais'
+    observacao: 'Não publicar uma observação integral com dados pessoais user@example.com'
   }, '18/11/2026', 1);
   assert.deepEqual(doc.beneficiary, {
     type: 'pj', id: '12345678000190', name: 'Empresa Exemplo Ltda.'
