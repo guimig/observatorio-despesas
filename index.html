@@ -235,8 +235,8 @@
         <table class="contracts-table">
           <thead>
             <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th><th scope="col">Instrumentos decorrentes</th>
-              <th scope="col">Processo SIPAC</th><th scope="col">Objeto</th>
-              <th scope="col">Evidência de Araquari</th><th scope="col" class="align-right">Valor estimado</th></tr>
+              <th scope="col">Processo SIPAC</th><th scope="col">Evidência de Araquari</th>
+              <th scope="col" class="align-right">Valor estimado</th><th scope="col">Detalhes</th></tr>
           </thead>
           <tbody id="notices-rows"></tbody>
         </table>
@@ -286,7 +286,7 @@
       </div>
       <div class="table-scroll">
         <table class="contracts-table">
-          <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Licitação de origem</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col">Objeto</th><th scope="col" class="align-right">Valor contratual</th></tr></thead>
+          <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Licitação de origem</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor contratual</th><th scope="col">Detalhes</th></tr></thead>
           <tbody id="contract-rows"></tbody>
         </table>
       </div>
@@ -309,7 +309,7 @@
     <section class="methodology">
       <h2>Como interpretar estes dados</h2>
       <p>A consulta é documental e limitada à <strong>UG 158459</strong>. A UO 26422 representa o IFC como um todo. As somas de empenhos, liquidações e pagamentos não devem ser subtraídas diretamente, porque os documentos podem se referir a empenhos de períodos diferentes, inclusive restos a pagar.</p>
-      <p>Os JSONs públicos contêm identificadores SIAFI validados, datas, fases, valores em centavos, vínculos documentais e campos minimizados de favorecido, processo e classificação. Dados de pessoas físicas não incluem nomes, e CPF é sempre exibido como ***.123.456-**. Não publicamos CPF integral, observações livres nem respostas brutas da API.</p>
+      <p>Os JSONs públicos contêm identificadores SIAFI validados, datas, fases, valores em centavos, vínculos documentais e campos minimizados de favorecido, processo e classificação. Dados de pessoas físicas não incluem nomes, e CPF é sempre exibido como ***.123.456-**. Não publicamos CPF integral, respostas brutas da API nem textos livres que não passem pela sanitização. As descrições oficiais publicáveis são mostradas apenas nas fichas detalhadas.</p>
       <div class="source-links">
         <a href="https://portaldatransparencia.gov.br/" target="_blank" rel="noopener noreferrer">Portal da Transparência</a>
         <a href="https://github.com/guimig/observatorio-despesas" target="_blank" rel="noopener noreferrer">Código-fonte e metodologia</a>
@@ -346,6 +346,17 @@
         <div id="dialog-items" class="relations"></div>
         <p class="helper">Detalhamento e valor atual do item segundo a CGU; dados sujeitos à disponibilidade e atualização da fonte. Descrições com possíveis dados pessoais são suprimidas.</p>
       </section>
+    </div>
+  </dialog>
+  <dialog id="record-dialog" aria-labelledby="record-title" class="document-dialog">
+    <div class="dialog-content">
+      <div class="dialog-heading">
+        <div><div id="record-eyebrow" class="eyebrow">FICHA DE CONTRATAÇÃO</div><h2 id="record-title">Detalhes</h2></div>
+        <button type="button" class="icon-button" id="close-record-dialog" aria-label="Fechar detalhes">✕</button>
+      </div>
+      <dl id="record-fields" class="document-fields"></dl>
+      <p class="helper">Informações públicas do PNCP/Compras.gov.br. Publicação pela Reitoria não comprova execução financeira pelo Campus Araquari.</p>
+      <a id="record-official-link" class="inline-link" target="_blank" rel="noopener noreferrer" hidden>Consultar registro oficial</a>
     </div>
   </dialog>
   <footer class="site-footer">
