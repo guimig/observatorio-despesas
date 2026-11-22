@@ -5,6 +5,7 @@ import {assertPublicSafe} from './privacy.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {normalizeProcess} from './procurement.mjs';
 import {MODALITIES} from '../assets/pncp-modalities.js';
+import {NOTICE_FIELDS} from './pncp-record-revisions.mjs';
 
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
 const DATE=/^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/;
@@ -130,7 +131,12 @@ export function mergeNotices(previous,scans,now=new Date()){
             if(prior?.[field]!==undefined)copy[field]=prior[field];
           }
           if(prior?.sourceUpdatedAt&&(!copy.sourceUpdatedAt||
-             prior.sourceUpdatedAt>copy.sourceUpdatedAt))copy.sourceUpdatedAt=prior.sourceUpdatedAt;
+             prior.sourceUpdatedAt>copy.sourceUpdatedAt)){
+            for(const field of NOTICE_FIELDS){
+              if(prior[field]!==undefined)copy[field]=prior[field];
+            }
+            copy.sourceUpdatedAt=prior.sourceUpdatedAt;
+          }
           next.notices.push(copy);
         }
       }
