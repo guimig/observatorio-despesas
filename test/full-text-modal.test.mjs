@@ -11,7 +11,7 @@ import {validateProcurement,blankProcurement,mergeProcurement} from '../src/proc
 import {showDialogFromTop} from '../assets/dialog-scroll.js';
 
 const longText='Fornecimento de materiais e serviços para laboratórios.\n\n'+
-  'Justificativa técnica: '+('descrição da solução em parágrafo. '.repeat(18));
+  'Justificativa técnica: '+('descrição da solução em parágrafo. '.repeat(18)).trimEnd();
 const ne='158459000012026NE000015';
 const pncpId='10635424000186-1-000123/2026';
 const procurementId='10635424000186-2-000123/2026';
