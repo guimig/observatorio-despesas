@@ -64,9 +64,12 @@ async function main() {
     const status = Number(error?.status ?? error?.statusCode);
     if (Number.isInteger(status) && status >= 400 && status <= 599) return 'http_' + status;
     const code = String(error?.code || '').toUpperCase();
-    if (['ETIMEDOUT','ESOCKETTIMEDOUT','ABORT_ERR'].includes(code) || error?.name === 'AbortError') return 'timeout';
-    if (['ECONNRESET','ENOTFOUND','EAI_AGAIN','ECONNREFUSED'].includes(code)) return 'network';
-    if (error?.name === 'SyntaxError') return 'invalid_json';
+    if (['CGU_TIMEOUT','ETIMEDOUT','ESOCKETTIMEDOUT','ABORT_ERR'].includes(code) || error?.name === 'AbortError') return 'timeout';
+    if (['CGU_TRANSPORT','ECONNRESET','ENOTFOUND','EAI_AGAIN','ECONNREFUSED'].includes(code)) return 'network';
+    if (code==='CGU_INVALID_JSON' || error?.name === 'SyntaxError') return 'invalid_json';
+    if (code==='CGU_INVALID_SHAPE') return 'invalid_schema';
+    // Apenas mensagens fechadas emitidas pelo adaptador, nunca texto livre remoto.
+    if (error?.message==='CGU indisponível') return 'network';
     return 'validation_or_other';
   };
   for (const date of days) {

@@ -190,3 +190,33 @@ test('backoff exponencial respeita Retry-After e limite de espera',async()=>{
  assert.deepEqual(rows,[]);
  assert.deepEqual(waits,[3000,3000]);
 });
+
+test('falha HTTP expõe somente status numérico, sem corpo nem credenciais',async()=>{
+ await assert.rejects(getCguArray('https://example.invalid',{token:'fake',
+  fetcher:async()=>({status:403,ok:false})}),error=>{
+   assert.equal(error.status,403);
+   assert.equal(error.message,'CGU HTTP 403');
+   assert.equal(JSON.stringify(error).includes('fake'),false);
+   return true;
+  });
+});
+
+test('respostas JSON inválidas e formatos não listáveis têm códigos previsíveis',async()=>{
+ await assert.rejects(getCguArray('https://example.invalid',{token:'fake',
+  fetcher:async()=>({status:200,ok:true,json:async()=>{throw SyntaxError('payload')}})}),
+  error=>error.code==='CGU_INVALID_JSON');
+ await assert.rejects(getCguArray('https://example.invalid',{token:'fake',
+  fetcher:async()=>({status:200,ok:true,json:async()=>({data:[]})})}),
+  error=>error.code==='CGU_INVALID_SHAPE');
+});
+
+test('falha final de rede e timeout são distintos, com retries limitados',async()=>{
+ let calls=0;
+ await assert.rejects(getCguArray('https://example.invalid',{token:'fake',wait:async()=>{},
+  fetcher:async()=>{calls++;throw new TypeError('Network unavailable')}}),
+  error=>error.code==='CGU_TRANSPORT');
+ assert.equal(calls,4);
+ await assert.rejects(getCguArray('https://example.invalid',{token:'fake',wait:async()=>{},
+  fetcher:async()=>{const e=Error('aborted');e.name='AbortError';throw e}}),
+  error=>error.code==='CGU_TIMEOUT');
+});
