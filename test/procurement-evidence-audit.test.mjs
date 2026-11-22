@@ -21,3 +21,17 @@ test('NE de outra UG nao vira referencia de Araquari',()=>{
  const a=auditProcurementReferences([{id:'x',commitmentRefs:['158125000012026NE000001']}],[],{loadedMonths:1,totalMonths:1});
  assert.equal(a.findings.length,0);
 });
+
+test('numero integral do instrumento PNCP tambem e referencia de NE',()=>{
+ const c=[{id:'i',number:ne,commitmentRefs:[]}];
+ const a=auditProcurementReferences(c,[{id:ne,phase:1}],{loadedMonths:1,totalMonths:1});
+ assert.equal(a.counts.verified,1);
+});
+test('numero abreviado so e elegivel com UG 158459 expressa',()=>{
+ const number='2026NE000001';
+ const unknown=auditProcurementReferences([{id:'a',number}],[],{loadedMonths:1,totalMonths:1});
+ assert.equal(unknown.findings.length,0);
+ const campus=auditProcurementReferences([{id:'b',number,unitCode:'158459'}],[],{loadedMonths:1,totalMonths:1});
+ assert.equal(campus.findings.length,1);
+ assert.equal(campus.findings[0].status,'not_found_in_published_history');
+});
