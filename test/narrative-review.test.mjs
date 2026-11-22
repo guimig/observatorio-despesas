@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {planNarrativeReviews,applyNarrativeReview,reviewDue,
-  planCommitmentNarratives} from '../src/narrative-review.mjs';
+  planCommitmentNarratives,planOtherDocumentNarratives} from '../src/narrative-review.mjs';
 import {refreshNarratives} from '../src/collect-public-narratives.mjs';
 import {normalizeNotice} from '../src/pncp-notices.mjs';
 import {mergeNotices,blankNotices,validateNotices} from '../src/pncp-notices-store.mjs';
@@ -147,5 +147,44 @@ test('CGU incrementa descrições de NE e registra consulta sem repetir proximo 
   assert.doesNotThrow(()=>validateMonth(saved));
   const preview=await refreshNarratives({root,now,token:'dummy',dryRun:true});
   assert.equal(preview.commitmentDates,0);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('planeja recuperacao por fase de observacao NS OB DF sem confundir emissao NE',()=>{
+ const monthly=mergeMonth(emptyMonth('2026-11'),'2026-11',[
+  {documents:[{id:'158459264222026NS000019',phase:2,date:'2026-11-18',cents:100}],
+   links:[],coverage:{date:'2026-11-18',phase:2,complete:true,count:1,invalid:0}},
+  {documents:[{id:'158459264222026OB000011',phase:3,date:'2026-11-18',cents:100}],
+   links:[],coverage:{date:'2026-11-18',phase:3,complete:true,count:1,invalid:0}}
+ ]).data;
+ const plan=planOtherDocumentNarratives([monthly],{now,batch:2});
+ assert.deepEqual(plan,[{date:'2026-11-18',phase:3},{date:'2026-11-18',phase:2}]);
+ monthly.documents.find(x=>x.phase===3).descriptionCheckedAt='2026-11-22';
+ assert.deepEqual(planOtherDocumentNarratives([monthly],{now,batch:2}),
+  [{date:'2026-11-18',phase:2}]);
+});
+
+test('rotina de descricao atualiza documento de pagamento sem valor estimado',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'observatorio-narrativa-ob-'));
+ try{
+  await mkdir(join(root,'data','months'),{recursive:true});
+  const id='158459264222026OB000011';
+  const patch={documents:[{id,phase:3,date:'2026-11-18',cents:100}],
+   links:[],coverage:{date:'2026-11-18',phase:3,complete:true,count:1,invalid:0}};
+  const monthly=mergeMonth(emptyMonth('2026-11'),'2026-11',[patch]).data;
+  await writeFile(join(root,'data','manifest.json'),JSON.stringify({
+   schema_version:1,unit:'158459',status:'dados_publicados',months:['2026-11']
+  }));
+  await writeFile(join(root,'data','months','2026-11.json'),JSON.stringify(monthly));
+  const result=await refreshNarratives({root,token:'dummy',now,commitmentDays:1,
+   otherPhaseDays:1,collect:async()=>({
+    documents:[{...patch.documents[0],description:'PAGAMENTO DE SERVICOS DE APOIO'}],
+    links:[],coverage:patch.coverage
+   })});
+  assert.equal(result.reviewedOtherDocumentDates,1);
+  const stored=JSON.parse(await readFile(join(root,'data','months','2026-11.json')));
+  assert.equal(stored.documents[0].description,'PAGAMENTO DE SERVICOS DE APOIO');
+  assert.equal(stored.documents[0].descriptionCheckedAt,'2026-11-22');
+  assert.doesNotThrow(()=>validateMonth(stored));
  }finally{await rm(root,{recursive:true,force:true});}
 });
