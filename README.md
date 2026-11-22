@@ -278,3 +278,11 @@ O fluxo de backfill utiliza os três registros `coverage[date, phase]` separadam
 ## Documentos canônicos e sobreposição entre fases CGU
 
 Alguns documentos SIAFI são devolvidos em mais de um filtro de fase da CGU, sem que isso por si só comprove uma segunda operação financeira. O formato mensal mantém cada documento uma única vez em `documents` e registra aparições adicionais em `phaseObservations` (identificador, data, filtro consultado e comparação não monetária de valores). A cobertura de cada fase continua usando a quantidade de **ocorrências na consulta**, sem multiplicar identidades. A interface sinaliza sobreposições e não apresenta como definitivos os totais de fases atingidas. O campo é opcional, preservando os JSONs existentes e sem exigir banco externo.
+
+## Recuperação incremental de descrições históricas
+
+Desde a ampliação dos campos narrativos, textos anteriormente omitidos por limite de 260 caracteres podem ser recuperados em reconsultas oficiais. O workflow `.github/workflows/recuperar-descricoes.yml` usa lotes pequenos: até cinco publicações PNCP de licitação, cinco instrumentos PNCP e dois dias com NEs históricas sem descrição por execução; não cria base adicional.
+
+O planejamento prioriza registros sem texto seguro e registra somente a data da última consulta (`objectCheckedAt` ou `descriptionCheckedAt`), com rechecagem após 30 dias se a fonte continuar sem descrição publicável. Reconsultas válidas preservam o texto já confirmado e não publicam respostas brutas, nomes de pessoas físicas nem tokens. É possível simular com `npm run narratives:plan` e executar `npm run collect:narratives` (a parte CGU requer `CGU_API_KEY`). Falha ou conteúdo bloqueado por privacidade não significa que o documento original esteja sem objeto.
+
+As descrições são exibidas apenas na ficha detalhada; os campos de pesquisa podem continuar usando esses textos sem sobrecarregar a tabela. O formulário modal inicia sempre no topo, inclusive ao alternar documentos sem fechá-lo.
