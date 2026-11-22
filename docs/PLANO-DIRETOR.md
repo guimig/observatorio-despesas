@@ -52,7 +52,7 @@ Etapas P0-A e P0-B são prioridade imediata; P1-C pode avançar em paralelo sem 
 
 - Checkpoint por `data/months/AAAA-MM.json`, sem nova base ou arquivo bruto. `data/manifest.json` contém somente competências publicadas.
 - Priorizar lacunas de NEs referenciadas e, alternadamente, competências recentes. Período-base inicial `2025-01`; ampliar anos apenas com disponibilidade comprovada.
-- Dois agendamentos diários (`11:13` e `23:13` UTC), cada qual com lote conservador de **três dias**; execução manual aceita de um a sete dias. Aceleração é **aproximadamente seis dias elegíveis/dia**, não garantia de coleta: falhas, paginação, filas e reconsultas podem reduzir avanço.
+- Um agendamento diário (`11:13` UTC), com lote conservador de **três dias**; execução manual aceita de um a sete dias. A expansão para dois lotes diários **fica condicionada ao diagnóstico das falhas observadas em 22/11/2026**, quando os três dias tentados (14 a 16/10) falharam. Não aumentar ritmo enquanto a causa for desconhecida.
 - Antes de ampliar mais, registrar duração, falhas HTTP, taxa de dias válidos por lote, ocupação da fila compartilhada e crescimento do repositório por pelo menos alguns ciclos.
 - `npm run audit:baseline` produz JSON de linha de base. `node src/diagnose-coverage.mjs --audit-md` produz Markdown sem NEs individuais. O relatório considera **meses ainda sem arquivo e todos os dias encerrados**; dia parcialmente consultado difere de dia ausente.
 - O trabalho histórico não encerra até que o intervalo declarado esteja integralmente coberto ou que cada lacuna esteja explicitamente justificada. Cobertura da consulta não é enriquecimento nem conciliação contábil.
