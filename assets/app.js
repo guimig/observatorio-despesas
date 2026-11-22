@@ -1,6 +1,7 @@
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
+import {auditProcurementReferences} from './procurement-evidence-audit.js';
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
@@ -842,6 +843,34 @@ function filteredNotices() {
       .includes(noticesState.query);
   });
 }
+function renderProcurementEvidenceAudit(){
+ const total=state.manifest?.months?.length||0;
+ const audit=auditProcurementReferences(procurementData?.contracts||[],loadedCguDocuments(),
+  {loadedMonths:cache.size,totalMonths:total});
+ $('procurement-audit-status').textContent='Referências conferidas: '+
+  fmtCount(audit.counts.verified)+' · não localizadas no histórico publicado: '+
+  fmtCount(audit.counts.not_found_in_published_history)+' · conferência incompleta: '+
+  fmtCount(audit.counts.not_checked_fully)+' · competências '+fmtCount(audit.loadedMonths)+
+  '/'+fmtCount(audit.totalMonths)+'. '+(audit.complete?'Histórico mensal publicado carregado.':
+  'Carregue as competências restantes para distinguir referências ainda não conferidas.');
+ const tbody=$('procurement-audit-rows');tbody.replaceChildren();
+ if(!audit.findings.length){
+  const tr=element('tr'),td=element('td','','Nenhuma referência explícita de NE 158459 encontrada nos instrumentos carregados.');
+  td.colSpan=3;tr.append(td);tbody.append(tr);return;
+ }
+ for(const row of audit.findings.slice(0,100)){
+  const tr=element('tr');
+  const status=row.status==='verified'?'Conferida com CGU':
+   row.status==='not_found_in_published_history'?'Não localizada no histórico publicado':
+   'Conferência histórica incompleta';
+  tr.append(element('td','',row.instrument),element('td','',row.reference),element('td','',status));
+  tbody.append(tr);
+ }
+ if(audit.findings.length>100){
+  const tr=element('tr'),td=element('td','','Exibidas as primeiras 100 referências de '+fmtCount(audit.findings.length)+'.');
+  td.colSpan=3;tr.append(td);tbody.append(tr);
+ }
+}
 function renderProcurementEvidenceCoverage(){
  if(!noticesData)return;
  const total=state.manifest?.months?.length||0;
@@ -870,6 +899,7 @@ function renderProcurementEvidenceCoverage(){
 function renderNotices() {
   if(!noticesData)return;
   renderProcurementEvidenceCoverage();
+  renderProcurementEvidenceAudit();
   const all=filteredNotices();
   const pages=Math.max(1,Math.ceil(all.length/20));
   noticesState.page=Math.max(0,Math.min(pages-1,noticesState.page));
