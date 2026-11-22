@@ -42,3 +42,17 @@ export function applyNarrativeReview(catalog,id,raw,{kind,now=new Date()}={}){
   next.updated_at=now.toISOString();
   return {changed:JSON.stringify(next)!==previous,data:next};
 }
+
+/** Datas com NE presente e ainda sem descrição publicável, sem armazenar fila extra. */
+export function planCommitmentNarratives(months,{now=new Date(),batch=2}={}){
+  if(!Array.isArray(months)||!Number.isSafeInteger(batch)||batch<1||batch>7)
+    throw Error('Plano de descrições CGU inválido');
+  const days=new Set();
+  for(const month of months){
+    for(const doc of month.documents||[]){
+      if(doc.phase===1&&!doc.description&&reviewDue(doc.descriptionCheckedAt,now))
+        days.add(doc.date);
+    }
+  }
+  return [...days].sort().reverse().slice(0,batch);
+}
