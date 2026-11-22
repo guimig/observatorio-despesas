@@ -274,3 +274,7 @@ A recuperação histórica mantém **um lote diário com três dias elegíveis**
 ## Recuperação histórica resiliente por fase
 
 O fluxo de backfill utiliza os três registros `coverage[date, phase]` separadamente: uma falha na fase de liquidação não bloqueia a gravação de fases de empenho e pagamento válidas, e uma próxima tentativa recupera somente fases incompletas. Lotes agendados distribuem dias pendentes com rotação, mantendo limite de três dias; execução manual segue sequencial para facilitar diagnóstico específico. O relatório operacional exibe dia, fase, contagem e categoria sanitizada de falha. Isso **não significa** cobertura financeira completa nem comprova ausência de despesas em dias sem registros.
+
+## Documentos canônicos e sobreposição entre fases CGU
+
+Alguns documentos SIAFI são devolvidos em mais de um filtro de fase da CGU, sem que isso por si só comprove uma segunda operação financeira. O formato mensal mantém cada documento uma única vez em `documents` e registra aparições adicionais em `phaseObservations` (identificador, data, filtro consultado e comparação não monetária de valores). A cobertura de cada fase continua usando a quantidade de **ocorrências na consulta**, sem multiplicar identidades. A interface sinaliza sobreposições e não apresenta como definitivos os totais de fases atingidas. O campo é opcional, preservando os JSONs existentes e sem exigir banco externo.
