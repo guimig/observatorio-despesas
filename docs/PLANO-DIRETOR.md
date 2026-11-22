@@ -81,3 +81,7 @@ Saldo de ata; saldo contratual inferido; detecção automática de irregularidad
 - [Atas, itens e participantes](ATAS-REGISTRO-PRECOS.md)
 
 **Revisão gerencial:** após cada grupo de entregas, registrar SHA, amostra validada, cobertura, limitações, testes, rollback e decisão explícita sobre prosseguir. Nenhum indicador financeiro torna-se homologado automaticamente por passar na CI.
+
+## Incremento técnico — isolamento e rotação CGU (22/11/2026)
+
+O backfill passa a gravar checkpoints por **dia/fase**: se uma fase falhar, as fases que tiveram coleta e validação bem-sucedidas são preservadas; em nova execução apenas as fases pendentes são reconsultadas. Execuções agendadas percorrem datas pendentes com rotação circular, sem suprimir erros persistentes ou modificar o limite de três dias por lote. Chamadas manuais preservam a ordem sequencial. Isso evita perda de trabalho e ajuda a identificar dados problemáticos, mas **não resolve por si só a causa material** das falhas da CGU. A issue #88 permanece aberta até validação real de estabilidade e diagnóstico de datas problemáticas.
