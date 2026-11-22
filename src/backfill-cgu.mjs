@@ -1,7 +1,8 @@
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectWindow } from './cgu.mjs';
+import { collectDayPhase } from './cgu.mjs';
+import { collectHistoricalDate } from './historical-collector.mjs';
 import { planHistoricalDays, chooseHistoricalMonth, missingCommitmentYears } from './backfill.mjs';
 import { persistWindow, validateMonth, validatePublishedData } from './store.mjs';
 
@@ -36,11 +37,14 @@ async function main() {
     console.log('Nenhuma competência histórica com dias pendentes no intervalo configurado.');
     return;
   }
+  const batchDays=Number(process.env.BACKFILL_DAYS || 3);
+  const rotation=process.env.BACKFILL_ROTATE==='true';
+  const epochDay=Math.floor(Date.parse(now.toISOString().slice(0,10)+'T00:00:00Z')/86400000);
   const options = {
-    month, now, existing: await readExisting(month),
-    batchDays: Number(process.env.BACKFILL_DAYS || 3),
+    month, now, existing: await readExisting(month),batchDays,
     startDay: Number(process.env.BACKFILL_START_DAY || 1),
-    recheck: process.env.BACKFILL_RECHECK === 'true'
+    recheck: process.env.BACKFILL_RECHECK === 'true',
+    dayOffset: rotation ? epochDay*batchDays : 0
   };
   const days = planHistoricalDays(options);
   if (!days.length) {
@@ -57,48 +61,39 @@ async function main() {
   }
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
-  let succeeded = 0, failed = 0, totalDocs = 0;
-  const failureKinds = {};
-  // Apenas categorias de erro: nunca registrar resposta remota, URL, token ou documento.
-  const safeFailureCategory = error => {
-    const status = Number(error?.status ?? error?.statusCode);
-    if (Number.isInteger(status) && status >= 400 && status <= 599) return 'http_' + status;
-    const code = String(error?.code || '').toUpperCase();
-    if (['CGU_TIMEOUT','ETIMEDOUT','ESOCKETTIMEDOUT','ABORT_ERR'].includes(code) || error?.name === 'AbortError') return 'timeout';
-    if (['CGU_TRANSPORT','ECONNRESET','ENOTFOUND','EAI_AGAIN','ECONNREFUSED'].includes(code)) return 'network';
-    if (code==='CGU_INVALID_JSON' || error?.name === 'SyntaxError') return 'invalid_json';
-    if (code==='CGU_INVALID_SHAPE') return 'invalid_schema';
-    // Apenas mensagens fechadas emitidas pelo adaptador, nunca texto livre remoto.
-    if (error?.message==='CGU indisponível') return 'network';
-    return 'validation_or_other';
-  };
-  for (const date of days) {
-    try {
-      const patches = await collectWindow({
-        token, now, dates: [date],
-        maxPages: process.env.CGU_MAX_PAGES || 30,
-        maxImpactPages: process.env.CGU_MAX_IMPACT_PAGES || 8
-      });
-      await persistWindow(process.cwd(), patches, now);
-      succeeded++;
-      totalDocs += patches.reduce((sum, patch) => sum + patch.documents.length, 0);
-      console.log(date + ': ' + patches.length + ' fases consultadas, ' +
-        patches.reduce((sum, patch) => sum + patch.coverage.count, 0) +
-        ' documentos (fase incompleta: ' +
-        patches.filter(patch => !patch.coverage.complete).length + ')');
-    } catch (error) {
-      failed++;
-      const kind=safeFailureCategory(error);
-      failureKinds[kind]=(failureKinds[kind]||0)+1;
-      // A próxima execução recupera o dia ausente; os dias válidos são mantidos.
-      console.warn(date + ': consulta não concluída (' + kind + '); checkpoint anterior preservado.');
-    }
+  let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0;
+  const failureKinds={};
+  for(const date of days){
+    const monthData=await readExisting(month);
+    const result=await collectHistoricalDate({
+      date,existing:monthData,recheck:options.recheck,
+      collect:(value,phase)=>collectDayPhase(value,phase,{
+        token,maxPages:process.env.CGU_MAX_PAGES || 30,
+        maxImpactPages:process.env.CGU_MAX_IMPACT_PAGES || 8
+      }),
+      persist:patch=>persistWindow(process.cwd(),[patch],now),
+      logger:event=>{
+        if(event.status==='failed')
+          console.warn(event.date+': fase '+event.phase+' falhou ('+event.category+'); checkpoint preservado.');
+        else console.log(event.date+': fase '+event.phase+' '+event.status+
+          '; '+event.count+' documento(s) consultado(s).');
+      }
+    });
+    if(result.fullyComplete)completedDays++;
+    if(result.consulted>0 && !result.fullyComplete)partiallyRecoveredDays++;
+    failedPhases+=result.failed;
+    totalDocs+=result.documents;
+    for(const [kind,n] of Object.entries(result.failures))
+      failureKinds[kind]=(failureKinds[kind]||0)+n;
   }
   await validatePublishedData(process.cwd());
-  console.log('Resultado da coleta histórica: ' + succeeded + ' dia(s) concluído(s); ' +
-    failed + ' falha(s); ' + totalDocs + ' documento(s) obtidos; categorias de falha: ' +
-    JSON.stringify(failureKinds) + '.');
-  if (!succeeded) throw Error('Nenhum dia concluído: dados existentes mantidos');
+  console.log('Resultado da coleta histórica: '+completedDays+
+    ' dia(s) com tres fases completas; '+partiallyRecoveredDays+
+    ' dia(s) com novas fases mas incompletos; '+failedPhases+
+    ' falha(s) de fase; '+totalDocs+' documento(s) consultados; categorias: '+
+    JSON.stringify(failureKinds)+'.');
+  if(!completedDays&&!partiallyRecoveredDays)
+    throw Error('Nenhuma fase concluida: checkpoints anteriores preservados');
 }
 main().catch(() => {
   console.error('Backfill CGU interrompido; dados de períodos anteriormente validados preservados.');
