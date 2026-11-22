@@ -193,3 +193,16 @@ test('retificacao nao pode excluir documento canônico referenciado por outra fa
     coverage:{date:'2025-12-08',phase:2,complete:true,count:0,invalid:0}};
   assert.throws(()=>mergeMonth(initial,'2025-12',[removal]),/referenciado por outra fase/);
 });
+
+test('retificacao do valor canônico invalida apenas comparacao, sem apagar outra fase',()=>{
+  const shared='158459000012025NS000052';
+  let month=mergeMonth(emptyMonth('2025-12'),'2025-12',[
+    make('2025-12-08',2,shared,100),
+    make('2025-12-08',3,shared,100)
+  ]).data;
+  month=mergeMonth(month,'2025-12',[make('2025-12-08',2,shared,150)]).data;
+  assert.equal(month.documents[0].cents,150);
+  assert.equal(month.phaseObservations[0].amountRelation,'unknown');
+  assert.equal(month.coverage.length,2);
+  assert.doesNotThrow(()=>validateMonth(month));
+});
