@@ -48,6 +48,10 @@ jobs:
         run: |
           npm test
           npm run check:data
+      - name: Resumir pendencias de textos sem dados individuais
+        run: |
+          echo '### Recuperacao de descricoes historicas' >> "$GITHUB_STEP_SUMMARY"
+          npm run narratives:plan >> "$GITHUB_STEP_SUMMARY"
       - name: Recuperar textos oficiais ausentes
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
