@@ -10,10 +10,10 @@ import {requestPublicJSON,normalizePncp} from './procurement.mjs';
 import {mergePncpRecord} from './pncp-record-revisions.mjs';
 
 const DAY=86400000;
-function frequency(record,kind){
+function frequency(record,kind,now){
   const baseline=kind==='notice'?record.published:record.signed||record.starts||
     record.publishedMonth+'-01';
-  const age=Date.now()-new Date(baseline+'T00:00:00Z').getTime();
+  const age=now.getTime()-new Date(baseline+'T00:00:00Z').getTime();
   return age<30*DAY?7:age<180*DAY?30:90;
 }
 export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
@@ -25,7 +25,7 @@ export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
   const eligible=entries.filter(item=>item.source==='pncp'&&item.pncpId)
     .filter(item=>{
       const time=new Date((item.recheckedAt||'')+'T00:00:00Z').getTime();
-      return !Number.isFinite(time)||now.getTime()-time>=frequency(item,kind)*DAY;
+      return !Number.isFinite(time)||now.getTime()-time>=frequency(item,kind,now)*DAY;
     }).sort((a,b)=>{
       const aCheck=a.recheckedAt||'',bCheck=b.recheckedAt||'';
       return aCheck.localeCompare(bCheck)||
