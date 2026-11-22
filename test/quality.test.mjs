@@ -64,3 +64,26 @@ test('vínculos duplicados são sinalizados para bloqueio estrutural',()=>{
   data.relations.push({...data.relations[0]});
   assert.ok(auditMonth(data,{now}).issues.includes('vinculo_duplicado'));
 });
+
+test('audita sobreposicao sem duplicar identidade nem declarar erro estrutural',()=>{
+  const data=sample();
+  data.phaseObservations=[{
+    id:ns,date:'2026-11-18',phase:3,amountKnown:true,amountRelation:'different'
+  }];
+  data.coverage.find(c=>c.phase===3).count=2;
+  const report=auditMonth(data,{now});
+  assert.deepEqual(report.issues,[]);
+  assert.equal(report.phaseObservations.total,1);
+  assert.equal(report.phaseObservations.overlappingDocuments,1);
+  assert.equal(report.phaseObservations.amountDisagreements,1);
+  assert.equal(report.coverage.completeDays,1);
+  assert.equal(report.links.total,3);
+});
+
+test('auditoria avisa quando fase adicional nao tem cobertura correspondente',()=>{
+  const data=sample();
+  data.phaseObservations=[{
+    id:ns,date:'2026-11-17',phase:3,amountKnown:true,amountRelation:'same'
+  }];
+  assert.ok(auditMonth(data,{now}).issues.includes('observacao_fase_invalida'));
+});

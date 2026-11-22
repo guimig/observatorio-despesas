@@ -16,9 +16,9 @@ export function documentCollisionSummary(existing,patch){
   return summary;
 }
 export function collisionCode(summary){
-  if(summary.otherDate&&summary.otherPhase)return 'CGU_DOC_COLLISION_BOTH';
+  // Mesma data em outro filtro nao duplica o documento: registra-se
+  // uma observacao de fase, sem afirmar que ocorreu uma segunda despesa.
   if(summary.otherDate)return 'CGU_DOC_COLLISION_DATE';
-  if(summary.otherPhase)return 'CGU_DOC_COLLISION_PHASE';
   return null;
 }
 export function safeFailureCategory(error){

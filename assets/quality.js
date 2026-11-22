@@ -21,6 +21,7 @@ export function auditMonth(month,{now=new Date()}={}){
     throw Error('Dados mensais incompatíveis com auditoria');
   const expectedDays=closedDaysInMonth(month.month,now);
   const days=new Map(),docs=new Map(),issues=[];
+  const appearances=month.phaseObservations||[];
   for(const c of month.coverage){
     if(!days.has(c.date))days.set(c.date,new Map());
     const byPhase=days.get(c.date);
@@ -45,9 +46,17 @@ export function auditMonth(month,{now=new Date()}={}){
     if(c.complete!==true)partialQueries++;
     invalidValues+=Number(c.invalid)||0;
     const matches=month.documents.filter(d=>d.date===c.date&&d.phase===c.phase);
-    if(matches.length!==c.count ||
-       matches.filter(d=>d.cents===null).length!==c.invalid)
+    const additional=appearances.filter(d=>d.date===c.date&&d.phase===c.phase);
+    if(matches.length+additional.length!==c.count ||
+       matches.filter(d=>d.cents===null).length+
+         additional.filter(d=>!d.amountKnown).length!==c.invalid)
       issues.push('contagem_divergente');
+  }
+  for(const observation of appearances){
+    const owner=docs.get(observation.id);
+    if(!owner||owner.date!==observation.date||owner.phase===observation.phase||
+      !days.get(observation.date)?.has(observation.phase))
+      issues.push('observacao_fase_invalida');
   }
   const byPhase=phase=>{
     const set=month.documents.filter(doc=>doc.phase===phase);
@@ -95,6 +104,11 @@ export function auditMonth(month,{now=new Date()}={}){
     },
     enrichment:{liquidations,payments,items,
       pending:liquidations.pending+payments.pending+items.pending},
+    phaseObservations:{
+      total:appearances.length,
+      overlappingDocuments:new Set(appearances.map(item=>item.id)).size,
+      amountDisagreements:appearances.filter(item=>item.amountRelation==='different').length
+    },
     links:{total:month.relations.length,
       multipleCommitments:[...bySource.values()].filter(set=>set.size>1).length,
       negative,crossExercise,liquidationValueReviews},

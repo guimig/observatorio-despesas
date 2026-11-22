@@ -42,6 +42,7 @@ on:
       - 'src/backfill-cgu.mjs'
       - 'src/backfill.mjs'
       - 'src/historical-collector.mjs'
+      - 'src/store.mjs'
   # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
   # Mantido um lote diario ate diagnosticar falhas de fonte da coleta historica.
   schedule:

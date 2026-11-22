@@ -32,7 +32,7 @@ function validId(id) { return typeof id === 'string' && DOCUMENT_RE.test(id); }
 export function validateMonth(data) {
   assertPublicSafe(data);
   assertAllowedKeys(data, ['schema_version', 'unit', 'month', 'source',
-    'documents', 'relations', 'coverage', 'beneficiaries', 'itemsByDocument', 'updated_at']);
+    'documents', 'relations', 'coverage', 'phaseObservations', 'beneficiaries', 'itemsByDocument', 'updated_at']);
   if (data.schema_version !== VERSION || data.unit !== UG || !MONTH_RE.test(data.month) ||
     data.source !== 'CGU' || !Array.isArray(data.documents) ||
     !Array.isArray(data.relations) || !Array.isArray(data.coverage)) {
@@ -87,6 +87,22 @@ export function validateMonth(data) {
       throw Error('Documento público inválido ou duplicado');
     }
     assertCents(doc.cents); ids.add(doc.id);
+  }
+  // A aparicao em outro filtro da API nao constitui outro documento nem
+  // comprova uma nova operacao de liquidacao/pagamento.
+  const appearances=data.phaseObservations||[];
+  if(!Array.isArray(appearances))throw Error('Aparicoes em fases invalidas');
+  const appearanceKeys=new Set();
+  for(const item of appearances){
+    assertAllowedKeys(item,['id','date','phase','amountKnown','amountRelation']);
+    const owner=data.documents.find(doc=>doc.id===item.id);
+    const key=item.id+'/'+item.date+'/'+item.phase;
+    if(!owner||owner.date!==item.date||!phases.has(item.phase)||
+       owner.phase===item.phase||typeof item.amountKnown!=='boolean'||
+       !['same','different','unknown'].includes(item.amountRelation)||
+       ((!item.amountKnown||owner.cents===null)&&item.amountRelation!=='unknown')||
+       appearanceKeys.has(key))throw Error('Aparicao documental em fase invalida');
+    appearanceKeys.add(key);
   }
   if (data.itemsByDocument !== undefined) {
     if (!data.itemsByDocument || typeof data.itemsByDocument !== 'object' ||
@@ -146,14 +162,19 @@ export function validateMonth(data) {
     if (keys.has(key)) throw Error('Cobertura documental duplicada');
     keys.add(key);
     const matched = data.documents.filter(doc => doc.date === c.date && doc.phase === c.phase);
-    if (matched.length !== c.count ||
-        matched.filter(doc => doc.cents === null).length !== c.invalid) {
+    const additional=appearances.filter(item=>item.date===c.date&&item.phase===c.phase);
+    if (matched.length+additional.length !== c.count ||
+        matched.filter(doc => doc.cents === null).length+
+          additional.filter(item=>!item.amountKnown).length !== c.invalid) {
       throw Error('Contagem documental divergente');
     }
     if (c.complete && c.reason) throw Error('Consulta completa com motivo parcial');
   }
   for (const doc of data.documents) {
     if (!keys.has(doc.date + '/' + doc.phase)) throw Error('Documento sem cobertura declarada');
+  }
+  for(const item of appearances){
+    if(!keys.has(item.date+'/'+item.phase))throw Error('Aparicao sem cobertura declarada');
   }
   return data;
 }
@@ -187,6 +208,11 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
     const previousDocs=next.documents.filter(doc =>
       doc.date===coverage.date && doc.phase===coverage.phase);
     const previousById=new Map(previousDocs.map(doc=>[doc.id,doc]));
+    const incomingIds=new Set(documents.map(doc=>doc.id));
+    if(previousDocs.some(doc=>!incomingIds.has(doc.id)&&
+       (next.phaseObservations||[]).some(item=>item.id===doc.id))){
+      throw Error('Documento de origem referenciado por outra fase: revisar retificacao');
+    }
     const removedIds=new Set(previousDocs.map(doc=>doc.id));
     const previousLinks=next.relations.filter(link=>removedIds.has(link.from));
     const incomingOrigins=new Set(links.map(link=>link.from));
@@ -195,23 +221,45 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       !(doc.date === coverage.date && doc.phase === coverage.phase));
     next.relations = next.relations.filter(link => !removedIds.has(link.from));
     next.coverage = next.coverage.filter(c => c.date + '/' + c.phase !== key);
-    const normalized = structuredClone(documents).map(doc => {
-      if (!doc.beneficiary) return doc;
-      if (doc.beneficiary.type === 'pj') {
-        if (!next.beneficiaries) next.beneficiaries = {};
-        const { id, name } = doc.beneficiary;
-        if (!/^\d{14}$/.test(id)) throw Error('CNPJ público inválido');
-        next.beneficiaries[id] = name || next.beneficiaries[id] || '';
-        doc.partyRef = id;
-      } else if (doc.beneficiary.type === 'pf') {
-        doc.cpfMasked = doc.beneficiary.id;
-      } else throw Error('Natureza de favorecido desconhecida');
+    next.phaseObservations=(next.phaseObservations||[]).filter(item=>
+      !(item.date===coverage.date&&item.phase===coverage.phase));
+    const normalized=[];
+    for(const doc of structuredClone(documents)){
+      const owner=next.documents.find(entry=>entry.id===doc.id);
+      if(owner){
+        if(owner.date!==doc.date)throw Error('Documento em datas diferentes exige revisao');
+        if(owner.phase===doc.phase)throw Error('Documento duplicado no mesmo filtro');
+        const amountKnown=doc.cents!==null;
+        const amountRelation=!amountKnown||owner.cents===null?'unknown':
+          doc.cents===owner.cents?'same':'different';
+        next.phaseObservations.push({
+          id:doc.id,date:doc.date,phase:doc.phase,amountKnown,amountRelation
+        });
+        continue;
+      }
+      if(doc.beneficiary?.type==='pj'){
+        if(!next.beneficiaries)next.beneficiaries={};
+        const {id,name}=doc.beneficiary;
+        if(!/^\d{14}$/.test(id))throw Error('CNPJ público inválido');
+        next.beneficiaries[id]=name||next.beneficiaries[id]||'';
+        doc.partyRef=id;
+      }else if(doc.beneficiary?.type==='pf'){
+        doc.cpfMasked=doc.beneficiary.id;
+      }else if(doc.beneficiary){
+        throw Error('Natureza de favorecido desconhecida');
+      }
       delete doc.beneficiary;
-      return doc;
-    });
+      normalized.push(doc);
+    }
     for (const doc of normalized) {
       const before=previousById.get(doc.id);
       if (!before || before.cents !== doc.cents) {
+        // Não reutilizar comparação de valor anterior a uma retificação.
+        if(before?.cents!==doc.cents){
+          for(const item of next.phaseObservations||[]){
+            if(item.id===doc.id)item.amountRelation='unknown';
+          }
+        }
         // Dados retificados exigem nova consulta dos itens/vínculos.
         if (doc.phase===1 && next.itemsByDocument) delete next.itemsByDocument[doc.id];
         continue;
@@ -230,7 +278,9 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       }
     }
     next.documents.push(...normalized);
-    next.relations.push(...structuredClone(links.filter(link=>!carriedOrigins.has(link.from))));
+    const canonicalIds=new Set(normalized.map(doc=>doc.id));
+    next.relations.push(...structuredClone(links.filter(link=>
+      canonicalIds.has(link.from)&&!carriedOrigins.has(link.from))));
     next.coverage.push(structuredClone(coverage));
   }
   if (next.itemsByDocument) {
@@ -246,6 +296,9 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
   }
   next.documents.sort((a, b) => a.date.localeCompare(b.date) ||
     a.phase - b.phase || a.id.localeCompare(b.id));
+  if(next.phaseObservations?.length)next.phaseObservations.sort((a,b)=>
+    a.date.localeCompare(b.date)||a.phase-b.phase||a.id.localeCompare(b.id));
+  else delete next.phaseObservations;
   next.relations.sort((a, b) => a.from.localeCompare(b.from) ||
     a.to.localeCompare(b.to) || a.cents - b.cents);
   next.coverage.sort((a, b) => a.date.localeCompare(b.date) || a.phase - b.phase);
