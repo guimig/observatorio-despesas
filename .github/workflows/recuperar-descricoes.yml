@@ -1,0 +1,80 @@
+name: Recuperar textos publicos de empenhos e contratacoes
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Publicacoes por catalogo (1 a 20)'
+        type: choice
+        required: true
+        default: '5'
+        options: ['2','5','10','20']
+      cgu_days:
+        description: 'Dias com NEs sem texto por lote (1 a 7)'
+        type: choice
+        required: true
+        default: '2'
+        options: ['1','2','3','5','7']
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/recuperar-descricoes.yml'
+      - 'src/collect-public-narratives.mjs'
+  schedule:
+    - cron: '41 15 * * *'
+
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  cancel-in-progress: false
+
+jobs:
+  recuperar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar dados e privacidade antes da consulta
+        run: |
+          npm test
+          npm run check:data
+      - name: Recuperar textos oficiais ausentes
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          NARRATIVE_BATCH: ${{ inputs.batch || '5' }}
+          NARRATIVE_CGU_DAYS: ${{ inputs.cgu_days || '2' }}
+        run: npm run collect:narratives
+      - name: Conferir integridade e privacidade das fichas
+        run: npm run check:data
+      - name: Versionar apenas JSONs publicos alterados
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/procurement/notices.json data/procurement/contracts.json data/manifest.json data/months/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Nenhum texto seguro adicional disponivel.'
+            exit 0
+          fi
+          git commit -m 'data: recuperar descricoes e objetos publicos'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: recuperar
+    if: needs.recuperar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
