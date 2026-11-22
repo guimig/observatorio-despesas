@@ -85,3 +85,11 @@ Saldo de ata; saldo contratual inferido; detecção automática de irregularidad
 ## Incremento técnico — isolamento e rotação CGU (22/11/2026)
 
 O backfill passa a gravar checkpoints por **dia/fase**: se uma fase falhar, as fases que tiveram coleta e validação bem-sucedidas são preservadas; em nova execução apenas as fases pendentes são reconsultadas. Execuções agendadas percorrem datas pendentes com rotação circular, sem suprimir erros persistentes ou modificar o limite de três dias por lote. Chamadas manuais preservam a ordem sequencial. Isso evita perda de trabalho e ajuda a identificar dados problemáticos, mas **não resolve por si só a causa material** das falhas da CGU. A issue #88 permanece aberta até validação real de estabilidade e diagnóstico de datas problemáticas.
+
+## Colisões de identificador SIAFI entre datas ou fases (22/11/2026)
+
+A recuperação real encontrou rejeição por **documento público inválido ou duplicado** ao tentar gravar a fase 3 em 08/12/2025 (run 45057655056). Como o normalizador CGU já valida o formato SIAFI e a data da consulta, a duplicidade no acervo mensal é uma hipótese fortemente sustentada pela validação no armazenamento. Não se atribui automaticamente culpa à API nem se escolhe qual registro prevalece.
+
+Antes de cada gravação, o coletor compara os documentos da fase com os identificadores já existentes naquela competência. Se o mesmo ID estiver associado a **outra data** ou **outra fase**, a fase inteira é rejeitada sem alterar o checkpoint. O log informa só data da consulta, fase, categoria do conflito e **quantidade de IDs conflitantes**, sem publicar os próprios identificadores. A coleta continua nas demais fases/datas. A fase rejeitada permanece sem cobertura válida e será reconsultada no futuro; o sistema não elimina documentos, não infere valores zero e não marca sucesso indevido.
+
+A solução final da colisão ainda exige estudar o retorno real, a data e a espécie do documento e a semântica de fase na CGU/SIAFI. Não resolver por descarte silencioso, escolha da data mais recente ou redistribuição de valores sem evidência oficial. A issue #88 permanece aberta.
