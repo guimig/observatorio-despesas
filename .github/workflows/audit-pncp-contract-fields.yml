@@ -1,6 +1,10 @@
 name: Audit PNCP contract detail fields
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-pncp-contract-fields.yml'
 permissions:
   contents: read
 jobs:
