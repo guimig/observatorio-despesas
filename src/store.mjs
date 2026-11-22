@@ -5,6 +5,7 @@ import { assertPublicSafe } from './privacy.mjs';
 import { UG } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
+import {officialDecimal,movementClass} from './item-movements.mjs';
 
 export const VERSION = 1;
 const DOCUMENT_RE = /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
@@ -51,7 +52,11 @@ export function validateMonth(data) {
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
       'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
-      'liquidationLinksChecked', 'description', 'descriptionCheckedAt']);
+      'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion']);
+    if(doc.itemsDetailVersion!==undefined&&doc.itemsDetailVersion!==2)
+      throw Error('Versao de enriquecimento de itens invalida');
+    if(doc.itemsDetailVersion===2&&!Object.hasOwn(data.itemsByDocument||{},doc.id))
+      throw Error('Versao de itens sem catalogo');
     if(doc.descriptionCheckedAt!==undefined &&
       (typeof doc.descriptionCheckedAt!=='string'||!DATE_RE.test(doc.descriptionCheckedAt)))
       throw Error('Revisão narrativa documental inválida');
@@ -119,7 +124,26 @@ export function validateMonth(data) {
           items.length > 4000) throw Error('Itens sem empenho de origem válido');
       const sequences=new Set();
       for (const item of items) {
-        assertAllowedKeys(item, ['seq','code','sub','subdesc','description','cents']);
+        assertAllowedKeys(item, ['seq','code','sub','subdesc','description','purchaseItem','cents',
+          'movements','historyChecked']);
+        if(item.purchaseItem!==undefined&&!/^\d{1,8}$/.test(item.purchaseItem))
+          throw Error('Numero de item da compra invalido');
+        if(item.historyChecked!==undefined&&item.historyChecked!==true)
+          throw Error('Marcador de historico invalido');
+        if(item.movements!==undefined){
+          if(item.historyChecked!==true||!Array.isArray(item.movements)||item.movements.length>500)
+            throw Error('Lista de movimentacoes invalida');
+          for(const m of item.movements){
+            assertAllowedKeys(m,['date','operation','type','quantity','unitPrice','cents']);
+            if(!DATE_RE.test(m.date)||publicNarrativeText(m.operation,120)!==m.operation||
+              movementClass(m.operation)!==m.type||
+              officialDecimal(m.quantity)!==m.quantity||
+              officialDecimal(m.unitPrice)!==m.unitPrice||!Number.isSafeInteger(m.cents))
+              throw Error('Movimentacao de item invalida');
+          }
+        }
+        if(item.historyChecked===true&&!Array.isArray(item.movements))
+          throw Error('Consulta historica sem dados de cobertura');
         if (!Number.isSafeInteger(item.seq) || item.seq < 1 || item.seq > 100000 ||
             sequences.has(item.seq)) throw Error('Sequencial de item inválido');
         sequences.add(item.seq);
@@ -130,11 +154,10 @@ export function validateMonth(data) {
             throw Error('Código de item inválido');
           }
         }
-        for (const [key,max] of [['subdesc',110],['description',260]]) {
-          if (item[key] !== undefined && publicItemDescription(item[key],max) !== item[key]) {
-            throw Error('Descrição de item não sanitizada');
-          }
-        }
+        if(item.subdesc!==undefined&&publicItemDescription(item.subdesc,110)!==item.subdesc)
+          throw Error('Subelemento nao sanitizado');
+        if(item.description!==undefined&&publicNarrativeText(item.description,5000)!==item.description)
+          throw Error('Descricao de item nao sanitizada');
         if (item.cents !== undefined && !Number.isSafeInteger(item.cents)) {
           throw Error('Valor monetário de item inválido');
         }
@@ -259,6 +282,8 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       if(old?.description&&!doc.description)doc.description=old.description;
       if(old?.descriptionCheckedAt&&!doc.descriptionCheckedAt)
         doc.descriptionCheckedAt=old.descriptionCheckedAt;
+      if(old?.itemsDetailVersion===2&&old.cents===doc.cents)
+        doc.itemsDetailVersion=2;
       normalized.push(doc);
     }
     for (const doc of normalized) {
@@ -271,7 +296,10 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
           }
         }
         // Dados retificados exigem nova consulta dos itens/vínculos.
-        if (doc.phase===1 && next.itemsByDocument) delete next.itemsByDocument[doc.id];
+        if(doc.phase===1){
+          delete doc.itemsDetailVersion;
+          if(next.itemsByDocument)delete next.itemsByDocument[doc.id];
+        }
         continue;
       }
       const prior=previousLinks.filter(link=>link.from===doc.id);
@@ -350,9 +378,25 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   }else if(result.kind==='items'){
     if(target.phase!==1||!Array.isArray(result.items))throw Error('Itens de empenho inválidos');
     next.itemsByDocument ||= {};
-    next.itemsByDocument[id]=structuredClone(result.items);
+    const previous=new Map((next.itemsByDocument[id]||[]).map(item=>[item.seq,item]));
+    next.itemsByDocument[id]=structuredClone(result.items).map(item=>{
+      const old=previous.get(item.seq);
+      if(old?.historyChecked===true&&old.cents===item.cents){
+        item.historyChecked=true;item.movements=structuredClone(old.movements);
+      }
+      return item;
+    });
+    target.itemsDetailVersion=2;
     next.itemsByDocument=Object.fromEntries(Object.entries(next.itemsByDocument)
       .sort(([a],[b])=>a.localeCompare(b)));
+  }else if(result.kind==='itemHistory'){
+    if(target.phase!==1||!Number.isSafeInteger(result.seq)||
+       !Array.isArray(result.movements)||!next.itemsByDocument?.[id])
+      throw Error('Historico sem item de empenho consultado');
+    const item=next.itemsByDocument[id].find(row=>row.seq===result.seq);
+    if(!item)throw Error('Sequencial de historico nao encontrado');
+    item.historyChecked=true;
+    item.movements=structuredClone(result.movements);
   }else throw Error('Tipo de enriquecimento não permitido');
   validateMonth(next);
   const withoutTimestamp=value=>{
