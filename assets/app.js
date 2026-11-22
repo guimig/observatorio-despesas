@@ -135,7 +135,9 @@ function beneficiaryLabel(doc, monthData = state.data) {
 }
 function filteredDocuments() {
   return state.data.documents.filter(doc => {
-    if (state.phase !== 'all' && String(doc.phase) !== state.phase) return false;
+    if (state.phase !== 'all' && String(doc.phase) !== state.phase &&
+      !(state.data.phaseObservations||[]).some(item=>
+        item.id===doc.id&&String(item.phase)===state.phase)) return false;
     if (state.day !== 'all' && doc.date !== state.day) return false;
     const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
       doc.partyRef && state.data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {})];
@@ -167,6 +169,9 @@ function renderTable() {
     const date = element('td', '', localDate(doc.date));
     const phase = element('td');
     phase.append(element('span', 'phase-label', phaseNames[doc.phase] || 'Outro'));
+    const others=(state.data.phaseObservations||[]).filter(item=>item.id===doc.id);
+    if(others.length)phase.append(element('span','small-muted',
+      ' · também consta em '+others.map(item=>phaseNames[item.phase]).join(', ')));
     const beneficiary = element('td', 'beneficiary-cell', beneficiaryLabel(doc));
     const process = element('td', 'doc-code', doc.process || '—');
     const amount = element('td', 'align-right', fmtMoney(doc.cents));
