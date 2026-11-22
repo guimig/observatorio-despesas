@@ -108,3 +108,7 @@ A secao de licitacoes apresenta totais de publicacoes PNCP, publicacoes com inst
 ### Auditoria de referencias de NE
 
 O bloco recolhivel de auditoria examina somente referencias explicitas de NE 158459 em instrumentos PNCP. Classifica cada referencia como conferida com documento CGU, ainda nao conferida por falta de competencias carregadas, ou nao localizada no historico mensal publicado integralmente carregado. A ultima situacao e uma lacuna documental, **nao prova inexistencia de despesa nem irregularidade**. Duplicatas do mesmo instrumento e referencia sao eliminadas; a interface limita a exibicao inicial a 100 linhas e informa o total. O escopo e a qualidade do catalogo PNCP e do historico CGU condicionam todos os resultados.
+
+### Relatorio gerencial de auditoria
+
+O painel de auditoria oferece filtro por situacao documental, busca por numero de NE, instrumento ou licitacao e exportacao local em CSV (UTF-8 com BOM, delimitador ponto e virgula). A tabela limita a visualizacao a 100 linhas, mas o CSV inclui **todos os registros filtrados**. A exportacao usa os dados publicos ja carregados no navegador, sem envio a servidor. Celulas com prefixos de formulas sao neutralizadas para reduzir risco de execucao em planilhas. O resultado depende das competencias carregadas e deve indicar cobertura parcial quando aplicavel.
