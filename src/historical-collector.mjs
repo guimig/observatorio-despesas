@@ -19,6 +19,16 @@ export function safeFailureCategory(error){
     ['Documento público inválido ou duplicado','invalid_document'],
     ['Contagem documental divergente','coverage_inconsistent'],
     ['Vínculo documental inválido','relation_validation'],
+    ['Esquema mensal inválido','month_schema_validation'],
+    ['Documento sem cobertura declarada','document_coverage_missing'],
+    ['Cobertura documental inválida','coverage_validation'],
+    ['Cobertura documental duplicada','coverage_duplicate'],
+    ['Consulta completa com motivo parcial','coverage_flag_conflict'],
+    ['Cadastro público de pessoa jurídica inválido','beneficiary_validation'],
+    ['CNPJ não encontrado no catálogo mensal','beneficiary_reference'],
+    ['CPF em formato diferente do mascaramento obrigatório','cpf_mask_validation'],
+    ['Valor monetário inválido','money_validation'],
+    ['Vínculo documental duplicado','relation_duplicate'],
     ['CGU indisponível','network']
   ]);
   return known.get(error?.message)||'validation_or_other';
