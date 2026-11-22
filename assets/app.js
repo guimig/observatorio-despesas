@@ -372,6 +372,61 @@ function showContractAssociations(doc){
   if(matches.length>8)slot.append(element('p','small-muted',
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
+function renderSiafiItems(target,items){
+ target.replaceChildren();
+ const groups=new Map();
+ for(const item of items||[]){
+   const key=(item.sub||'sem-codigo')+'|'+(item.subdesc||'');
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push(item);
+ }
+ for(const [key,group] of groups){
+   const [code,description]=key.split('|');
+   const section=element('section','item-subgroup');
+   const heading=element('h3','item-subgroup-heading',
+     'Subelemento '+(code==='sem-codigo'?'não informado':code)+
+     (description?' — '+description:''));
+   section.append(heading);
+   for(const item of group){
+     const block=element('div','relation-item item-detail-card');
+     const title='Seq. '+String(item.seq).padStart(3,'0')+
+       (item.purchaseItem?' · Compra '+item.purchaseItem:'');
+     block.append(element('strong','',title));
+     block.append(element('p','item-full-description',
+       item.description||'Descrição específica não disponibilizada pela fonte'));
+     block.append(element('span','small-muted','Valor atual informado do item: '+
+       (Number.isSafeInteger(item.cents)?fmtMoney(item.cents):'Indisponível')));
+     if(item.historyChecked===true){
+       const movements=item.movements||[];
+       const info=element('details','item-history');
+       const caption=element('summary','',
+         'Movimentações do item ('+movements.length+')');
+       info.append(caption);
+       if(!movements.length)info.append(element('p','small-muted',
+         'Consulta concluída, sem movimentações disponíveis na API CGU.'));
+       for(const event of movements){
+         const movement=element('div','item-history-row');
+         movement.append(element('strong','',
+           localDate(event.date)+' · '+event.operation));
+         movement.append(element('span','small-muted',
+           'Quantidade: '+event.quantity.replace('.',',')+
+           ' · Valor unitário: R$ '+event.unitPrice.replace('.',',')+
+           ' · Valor da operação: '+fmtMoney(event.cents)));
+         info.append(movement);
+       }
+       block.append(info);
+     }else block.append(element('span','small-muted',
+       'Histórico de quantidade, preço unitário e alterações aguardando consulta.'));
+     section.append(block);
+   }
+   const known=group.every(item=>Number.isSafeInteger(item.cents));
+   if(known)section.append(element('p','small-muted',
+     'Soma dos valores atuais dos itens deste subelemento disponíveis no acervo: '+
+     fmtMoney(group.reduce((total,item)=>total+item.cents,0))+
+     '. Não corresponde necessariamente ao saldo histórico.'));
+   target.append(section);
+ }
+}
 function showDocument(doc, monthData = state.data) {
   $('dialog-trajectory-section').hidden=true;
   $('dialog-relations-title').hidden=false;
@@ -403,7 +458,7 @@ function showDocument(doc, monthData = state.data) {
     ['Fonte', 'CGU / Portal da Transparência']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
-  if(doc.phase===1)appendDetailField(fields,'Descrição / observação da nota de empenho',
+  appendDetailField(fields,'Descrição / observação do documento SIAFI',
     doc.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
   const relationsMap=new Map();
@@ -459,18 +514,7 @@ function showDocument(doc, monthData = state.data) {
     } else if(!items.length) {
       details.append(element('p','small-muted','Consulta concluída: nenhum item disponível para esta NE.'));
     } else {
-      for(const value of items) {
-        const block=element('div','relation-item');
-        block.append(element('strong','','Item '+value.seq+' · '+(value.description||value.subdesc||value.code||'Descrição não divulgada')));
-        if(value.subdesc||value.sub) {
-          block.append(element('span','small-muted',
-            'Subelemento: '+(value.subdesc||'Não informado')+
-            (value.sub?' ('+value.sub+')':'')));
-        }
-        block.append(element('span','small-muted','Valor atual: '+
-          (Number.isSafeInteger(value.cents)?fmtMoney(value.cents):'Indisponível')));
-        details.append(block);
-      }
+      renderSiafiItems(details,items);
     }
   }
   showContractAssociations(doc);
@@ -594,12 +638,7 @@ function showCommitmentTrajectory(entry){
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
-  for(const item of entry.items||[]){
-    const block=element('div','relation-item');
-    block.append(element('strong','','Item '+item.seq+' · '+(item.description||item.subdesc||item.code||'Descrição não divulgada')));
-    block.append(element('span','small-muted','Valor atual do item: '+fmtMoney(item.cents)));
-    items.append(block);
-  }
+  renderSiafiItems(items,entry.items||[]);
   renderTrajectoryLinks($('dialog-liquidations'),entry.liquidations,
     'Nenhuma liquidação vinculada identificada no acervo consultado.');
   renderTrajectoryLinks($('dialog-payments'),entry.payments,
