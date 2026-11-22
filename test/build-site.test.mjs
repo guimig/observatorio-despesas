@@ -15,6 +15,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, '.nojekyll'), '');
     await writeFile(join(root, 'assets', 'app.js'), 'console.log("ok");');
     await writeFile(join(root, 'assets', 'procurement-links.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'procurement-financial-evidence.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'pncp-modalities.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'instrument-types.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'document-species.js'), 'export const v=1;');
