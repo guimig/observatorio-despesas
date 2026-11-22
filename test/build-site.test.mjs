@@ -18,6 +18,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'procurement-financial-evidence.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'procurement-evidence-coverage.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'procurement-evidence-audit.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'procurement-audit-report.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'pncp-modalities.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'instrument-types.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'document-species.js'), 'export const v=1;');
@@ -70,6 +71,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','procurement-financial-evidence.js'),'');
     await writeFile(join(root,'assets','procurement-evidence-coverage.js'),'');
     await writeFile(join(root,'assets','procurement-evidence-audit.js'),'');
+    await writeFile(join(root,'assets','procurement-audit-report.js'),'');
     await writeFile(join(root,'assets','pncp-modalities.js'),'');
     await writeFile(join(root,'assets','instrument-types.js'),'');
     await writeFile(join(root,'assets','document-species.js'),'');
@@ -100,7 +102,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
