@@ -3,6 +3,7 @@ import {readFile,writeFile,rename,mkdir,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {assertPublicSafe} from './privacy.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procurement.mjs';
 
 const SOURCE=new Set(['pncp','compras']);
@@ -118,11 +119,10 @@ export function validateProcurement(data){
        (!contract.supplierCnpj ||
          publicItemDescription(contract.supplierName,150)!==contract.supplierName))
       throw Error('Nome de fornecedor não sanitizado');
-    for(const [key,max] of [['object',260],['kind',80]]){
-      if(contract[key]!==undefined &&
-         publicItemDescription(contract[key],max)!==contract[key])
-        throw Error('Texto contratual livre não sanitizado');
-    }
+    if(contract.object!==undefined&&publicNarrativeText(contract.object)!==contract.object)
+      throw Error('Objeto contratual não sanitizado');
+    if(contract.kind!==undefined&&publicItemDescription(contract.kind,80)!==contract.kind)
+      throw Error('Espécie contratual não sanitizada');
   }
   const coverageKeys=new Set();
   for(const c of data.coverage){
