@@ -91,7 +91,7 @@ jobs:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           BACKFILL_MONTH: ${{ inputs.month }}
           BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2025-01' }}
-          BACKFILL_DAYS: ${{ github.event_name == 'push' && '5' || inputs.days || '3' }}
+          BACKFILL_DAYS: ${{ inputs.days || '3' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
           BACKFILL_PRIORITY_REFERENCES: ${{ github.event_name == 'push' && 'true' || inputs.priority_references || 'auto' }}
