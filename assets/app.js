@@ -210,6 +210,34 @@ function contractSupplier(contract){
   }
   return 'Não informado';
 }
+let historicalNeLoading=false;
+async function loadHistoricalNeEvidence(){
+ if(historicalNeLoading||!state.manifest)return;
+ const months=state.manifest.months.filter(m=>!cache.has(m));
+ const button=$('historical-ne-load'),indicator=$('historical-ne-status');
+ historicalNeLoading=true;button.disabled=true;
+ let completed=0,failed=0;
+ try{
+  for(const month of months){
+   indicator.textContent='Conferindo competências históricas: '+(completed+failed)+' de '+months.length+' pendentes…';
+   try{
+    const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
+    if(!response.ok)throw Error('Arquivo mensal indisponível');
+    const data=await response.json();
+    if(data.schema_version!==1||data.unit!=='158459'||data.month!==month||
+       !Array.isArray(data.documents)||!Array.isArray(data.relations)||
+       !Array.isArray(data.coverage))throw Error('Dados mensais incompatíveis');
+    cache.set(month,data);completed++;
+   }catch{failed++}
+  }
+  indicator.textContent='Conferência histórica: '+fmtCount(cache.size)+' de '+
+   fmtCount(state.manifest.months.length)+' competências carregadas'+
+   (failed?' · '+fmtCount(failed)+' indisponível(is), tente novamente':'')+
+   '. Ausência de NE não comprova inexistência de despesa.';
+  if(noticesData)renderNotices();
+  if(procurementData)renderContracts();
+ }finally{historicalNeLoading=false;button.disabled=false;}
+}
 function loadedCguDocuments() {
   return [...cache.values()].flatMap(month=>month.documents);
 }
@@ -1059,6 +1087,7 @@ async function loadTenderItems(){
   $('tender-items-coverage').textContent='Itens ainda indisponíveis; a coleta incremental pode estar em andamento.';
  }finally{tenderItemsState.loading=false;$('tender-items-load').disabled=false;}
 }
+$('historical-ne-load').addEventListener('click',loadHistoricalNeEvidence);
 function initTenderItems(){
  $('tender-items-load').addEventListener('click',loadTenderItems);
  $('tender-items-search').addEventListener('input',e=>{tenderItemsState.query=e.target.value.trim().toLowerCase();tenderItemsState.page=0;renderTenderItems();});
