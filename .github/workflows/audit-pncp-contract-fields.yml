@@ -1,0 +1,18 @@
+name: Audit PNCP contract detail fields
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit public PNCP contract detail field coverage
+        env:
+          PNCP_CONTRACT_AUDIT_LIMIT: '8'
+        run: node src/audit-pncp-contract-detail.mjs
