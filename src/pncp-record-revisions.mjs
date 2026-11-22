@@ -12,7 +12,6 @@ export const CONTRACT_FIELDS=Object.freeze([
   'supplierCnpj','supplierCpfMasked','supplierName','procurementId'
 ]);
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-const ISO_DATE=/^20\d{2}-\d{2}-\d{2}$/;
 
 function assertSource(record,update,kind){
   if(!record||!update||record.id!==update.id||record.pncpId!==update.pncpId||
@@ -79,9 +78,6 @@ export function mergePncpRecord(original,incoming,{kind,now=new Date(),checked=f
   if(incoming.sourceUpdatedAt &&
      (!record.sourceUpdatedAt ||incoming.sourceUpdatedAt>record.sourceUpdatedAt))
     record.sourceUpdatedAt=incoming.sourceUpdatedAt;
-  if(Number.isSafeInteger(incoming.sourceRevision)&&
-     (record.sourceRevision===undefined||incoming.sourceRevision>record.sourceRevision))
-    record.sourceRevision=incoming.sourceRevision;
   if(materialChanged){
     record.revisionCount=(record.revisionCount||0)+1;
     record.lastChangedAt=today;
