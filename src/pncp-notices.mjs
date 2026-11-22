@@ -68,6 +68,8 @@ export function normalizeNotice(row,modality){
   if(proposalStart)notice.proposalStart=proposalStart;
   if(proposalEnd)notice.proposalEnd=proposalEnd;
   notice.published=pub;
+  const changed=iso(row.dataAtualizacaoGlobal??row.dataAtualizacao);
+  if(changed)notice.sourceUpdatedAt=changed;
   return assertPublicSafe(notice);
 }
 export async function scanNotices(month,modality,{
