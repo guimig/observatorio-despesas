@@ -4,6 +4,7 @@
  * validado em guimig/EmailBackupHub (11/2026), com normalização canônica.
  */
 import { assertPublicSafe, maskCpf, sanitizeText } from './privacy.mjs';
+import {publicNarrativeText} from './public-narrative.mjs';
 
 export const UG = '158459';
 const BASE = 'https://api.portaldatransparencia.gov.br/api-de-dados/despesas';
@@ -186,7 +187,12 @@ export function normalizeDocument(row, date, phase) {
     ['program', row.programa], ['action', row.acao]
   ].map(([key, value]) => [key, shortPublicText(value, 120)]).filter(([, value]) => value));
   if (Object.keys(nature).length) doc.nature = nature;
-  // Observações livres podem conter dados pessoais além do CPF: ainda não publicadas.
+  // Nota de empenho: narrativa descritiva da fonte, se segura para publicação.
+  // Campo livre não seguro é omitido por inteiro; não se armazena resposta bruta.
+  if(phase===1){
+    const description=publicNarrativeText(row.observacao ?? row.descricaoDocumento ?? row.descricao);
+    if(description)doc.description=description;
+  }
   return assertPublicSafe(doc);
 }
 
