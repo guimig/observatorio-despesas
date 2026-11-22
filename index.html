@@ -175,6 +175,17 @@
       <details class="panel" id="procurement-audit-panel">
         <summary><strong>Auditoria de referências de empenho</strong></summary>
         <p id="procurement-audit-status" class="small-muted">Aguardando documentos.</p>
+        <div class="filters">
+          <label class="filter"><span>Situação documental</span><select id="procurement-audit-filter">
+            <option value="all">Todas</option>
+            <option value="not_found_in_published_history">Não localizada</option>
+            <option value="not_checked_fully">Conferência incompleta</option>
+            <option value="verified">Conferida</option>
+          </select></label>
+          <label class="filter"><span>Pesquisar referência ou instrumento</span><input id="procurement-audit-search" type="search" placeholder="Número da NE ou instrumento"></label>
+          <button id="procurement-audit-export" type="button" class="button button-secondary">Exportar CSV filtrado</button>
+        </div>
+        <p id="procurement-audit-filter-status" class="small-muted" role="status"></p>
         <div class="table-scroll"><table class="contracts-table">
           <thead><tr><th>Instrumento PNCP</th><th>Referência de NE</th><th>Situação documental</th></tr></thead>
           <tbody id="procurement-audit-rows"><tr><td colspan="3">Nenhuma referência examinada.</td></tr></tbody>
