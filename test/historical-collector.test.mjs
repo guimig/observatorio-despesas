@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {collectHistoricalDate,phasesMissingOnDate,safeFailureCategory} from '../src/historical-collector.mjs';
+import {collectHistoricalDate,phasesMissingOnDate,safeFailureCategory,documentCollisionSummary,collisionCode} from '../src/historical-collector.mjs';
 
 const date='08/12/2025', iso='2025-12-08';
 const patch=(phase,{complete=true,invalid=0}={})=>({
@@ -66,4 +66,43 @@ test('falhas de categorias conhecidas nao vazam mensagens ou payloads',()=>{
  assert.equal(safeFailureCategory({code:'CGU_TIMEOUT'}),'timeout');
  assert.equal(safeFailureCategory({message:'Documento CGU duplicado divergente'}),'duplicate_document_conflict');
  assert.equal(safeFailureCategory({message:'Identificador sigiloso 123'}),'validation_or_other');
+});
+
+test('distingue colisao documental por data e fase sem expor IDs',()=>{
+ const existing={documents:[
+  {id:'158459000012025NE000001',date:'2025-12-07',phase:1},
+  {id:'158459000012025OB000001',date:iso,phase:2}
+ ]};
+ const incoming={documents:[
+  {id:'158459000012025NE000001',date:iso,phase:1},
+  {id:'158459000012025OB000001',date:iso,phase:3},
+  {id:'158459000012025OB000002',date:iso,phase:3}
+ ]};
+ const result=documentCollisionSummary(existing,incoming);
+ assert.deepEqual(result,{otherDate:1,otherPhase:1});
+ assert.equal(collisionCode(result),'CGU_DOC_COLLISION_BOTH');
+ assert.equal(collisionCode({otherDate:1,otherPhase:0}),'CGU_DOC_COLLISION_DATE');
+ assert.equal(collisionCode({otherDate:0,otherPhase:1}),'CGU_DOC_COLLISION_PHASE');
+ assert.equal(collisionCode({otherDate:0,otherPhase:0}),null);
+});
+
+test('colisao em uma fase nao bloqueia outra e nao grava fase conflitante',async()=>{
+ const saved=[],events=[];
+ const result=await collectHistoricalDate({date,
+  collect:async(_,phase)=>patch(phase),
+  persist:async p=>{
+   if(p.coverage.phase===2){
+    const e=Error('Conflicting document id');e.code='CGU_DOC_COLLISION_DATE';e.conflictCount=2;throw e;
+   }
+   saved.push(p.coverage.phase);
+  },
+  logger:e=>events.push(e)
+ });
+ assert.deepEqual(saved,[1,3]);
+ assert.equal(result.fullyComplete,false);
+ assert.equal(result.consulted,2);
+ assert.equal(result.failed,1);
+ assert.equal(result.failures.document_duplicate_other_date,1);
+ assert.deepEqual(events.filter(e=>e.status==='failed').map(e=>[e.phase,e.count]),[[2,2]]);
+ assert.equal(JSON.stringify(events).includes('Conflicting document id'),false);
 });
