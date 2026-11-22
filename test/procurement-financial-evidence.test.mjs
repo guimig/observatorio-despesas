@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {procurementFinancialEvidence} from '../assets/procurement-financial-evidence.js';
+import {procurementFinancialEvidence,procurementEvidenceDetails} from '../assets/procurement-financial-evidence.js';
 const notice={pncpId:'10635424000186-1-000001/2026'};
 test('ARP e licitacao isoladas nao comprovam NE de Araquari',()=>{
  const r=procurementFinancialEvidence(notice,[],[]);
@@ -22,4 +22,19 @@ test('NE de outra UG nao e atribuida a Araquari',()=>{
  const c={id:'x',procurementId:notice.pncpId,commitmentRefs:['158125000012026NE000001']};
  const r=procurementFinancialEvidence(notice,[c],[]);
  assert.equal(r.level,'unverified');
+});
+
+test('detalhe exibe NE confrontada e nao duplica instrumento',()=>{
+ const ne='158459000012026NE000001';
+ const c={id:'contrato-1',procurementId:notice.pncpId,commitmentRefs:[ne]};
+ const details=procurementEvidenceDetails(notice,[c,c],[{id:ne,phase:1}]);
+ assert.equal(details.length,1);
+ assert.equal(details[0].level,'verified_ne');
+ assert.deepEqual(details[0].commitments,[ne]);
+});
+test('detalhe nao promove indício de processo a NE confirmada',()=>{
+ const c={id:'contrato-2',procurementId:notice.pncpId,process:'23349.000001/2026-00'};
+ const details=procurementEvidenceDetails(notice,[c],[]);
+ assert.equal(details[0].level,'indication');
+ assert.deepEqual(details[0].commitments,[]);
 });
