@@ -101,6 +101,11 @@ jobs:
       - name: Diagnosticar cobertura após o lote
         if: steps.credential.outputs.enabled == 'true'
         run: npm run diagnose:coverage
+      - name: Publicar cobertura no resumo da execucao
+        if: steps.credential.outputs.enabled == 'true'
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: node src/diagnose-coverage.mjs --audit-md >> "$GITHUB_STEP_SUMMARY"
       - name: Validar checkpoint antes de publicar
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
