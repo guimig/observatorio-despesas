@@ -11,7 +11,8 @@ const DATE=/^20\d{2}-(0[1-9]|1[0-2])-\d{2}$/;
 const ID=/^10635424000186-1-\d{6}\/20\d{2}$/;
 const FIELDS=['id','pncpId','source','publicationUasg','month','modality',
   'number','process','unitCode','object','estimatedCents','homologatedCents',
-  'situation','srp','published'];
+  'situation','srp','published','disputeMode','legalBasisCode',
+  'proposalStart','proposalEnd'];
 export const blankNotices=()=>({
   schema_version:1,publicationUasg:'158125',notices:[],coverage:[]
 });
@@ -57,6 +58,13 @@ export function validateNotices(data){
     if(n.situation!==undefined&&(!Number.isSafeInteger(n.situation)||
        n.situation<0||n.situation>1000))throw Error('Situação PNCP inválida');
     if(n.srp!==undefined&&typeof n.srp!=='boolean')throw Error('SRP inválido');
+    for(const field of ['disputeMode','legalBasisCode']){
+      if(n[field]!==undefined&&(!Number.isSafeInteger(n[field])||n[field]<0||n[field]>10000))
+        throw Error('Código PNCP inválido');
+    }
+    for(const field of ['proposalStart','proposalEnd']){
+      if(n[field]!==undefined&&!validDate(n[field]))throw Error('Prazo PNCP inválido');
+    }
   }
   const cover=new Set();
   for(const c of data.coverage){
