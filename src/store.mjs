@@ -254,6 +254,12 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
     for (const doc of normalized) {
       const before=previousById.get(doc.id);
       if (!before || before.cents !== doc.cents) {
+        // Não reutilizar comparação de valor anterior a uma retificação.
+        if(before?.cents!==doc.cents){
+          for(const item of next.phaseObservations||[]){
+            if(item.id===doc.id)item.amountRelation='unknown';
+          }
+        }
         // Dados retificados exigem nova consulta dos itens/vínculos.
         if (doc.phase===1 && next.itemsByDocument) delete next.itemsByDocument[doc.id];
         continue;
