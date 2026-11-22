@@ -78,3 +78,13 @@ AUD-02: adicionados testes de regressão da classificação de contratos formais
 ## AUD-05 — Auditoria inicial de chaves e escopo
 
 Documentadas as [regras de atribuição](AUDITORIA-ATRIBUICAO.md) e adicionados testes de regressão para vínculos oficiais versus indícios contextuais. **AUD-05 permanece parcialmente concluída**: faltam amostragem dos registros reais, métricas de cobertura e homologação de casos ambíguos.
+
+## Atualização do replanejamento v0.2 — 22/11/2026
+
+A linha de base pública passa a incluir o intervalo inteiro de dias encerrados desde `2025-01`: um mês não coletado é contado como competência ausente, não como zero, e dias parcialmente coletados não são considerados completos. O comando `node src/diagnose-coverage.mjs --audit-md` gera o resumo agregado na CI e nos lotes históricos; não cria novo JSON de histórico nem expõe IDs de documentos.
+
+**Fotografia anterior ao replanejamento:** 980 documentos, 493 vínculos, três competências com arquivos parciais, 52 NEs originais, 47 NEs referenciadas sem documento e 679 enriquecimentos pendentes. As quantidades mudam conforme a coleta.
+
+**AUD-01:** implementação da linha de base automatizada e seu resumo; acompanhamento humano do resultado ainda pendente. **AUD-04:** implementação da contagem de lacunas por calendário; a cobertura histórica real segue incompleta. **AUD-02:** regressão de instrumentos formais/substitutivos disponível, mas amostras jurídicas adicionais necessárias. **AUD-03 e AUD-09:** dicionário de indicadores existe, sem homologação ou conciliação contábil. **AUD-05:** evidências e classificações automatizadas, ainda com ambiguidade em publicações centralizadas. **AUD-06 a AUD-08:** controles e avaliações adicionais permanecem pendentes.
+
+A recuperação histórica automatizada passa de um para **dois lotes diários**, sem elevar o máximo normal de três dias por lote; após alguns ciclos, comparar ganho real, falhas, tempo de execução, filas e volume de dados antes de qualquer aumento adicional.
