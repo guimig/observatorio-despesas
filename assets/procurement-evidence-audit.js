@@ -21,7 +21,7 @@ export function auditProcurementReferences(contracts=[],documents=[],{loadedMont
   }
   for(const ref of refs){
    const parsed=extractAraquariNeEvidence(ref);
-   const shortByUnit=!parsed&&String(contract.unitCode??'')==='158459'&&
+   const shortByUnit=!parsed&&ref===contract.number&&String(contract.unitCode??'')==='158459'&&
      /^20\\d{2}NE\\d{6}$/.test(ref)?{kind:'ug_short',short:ref}:null;
    const evidence=parsed||shortByUnit;
    if(!evidence)continue;
