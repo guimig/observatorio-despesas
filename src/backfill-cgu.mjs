@@ -58,6 +58,17 @@ async function main() {
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
   let succeeded = 0, failed = 0, totalDocs = 0;
+  const failureKinds = {};
+  // Apenas categorias de erro: nunca registrar resposta remota, URL, token ou documento.
+  const safeFailureCategory = error => {
+    const status = Number(error?.status ?? error?.statusCode);
+    if (Number.isInteger(status) && status >= 400 && status <= 599) return 'http_' + status;
+    const code = String(error?.code || '').toUpperCase();
+    if (['ETIMEDOUT','ESOCKETTIMEDOUT','ABORT_ERR'].includes(code) || error?.name === 'AbortError') return 'timeout';
+    if (['ECONNRESET','ENOTFOUND','EAI_AGAIN','ECONNREFUSED'].includes(code)) return 'network';
+    if (error?.name === 'SyntaxError') return 'invalid_json';
+    return 'validation_or_other';
+  };
   for (const date of days) {
     try {
       const patches = await collectWindow({
@@ -72,15 +83,18 @@ async function main() {
         patches.reduce((sum, patch) => sum + patch.coverage.count, 0) +
         ' documentos (fase incompleta: ' +
         patches.filter(patch => !patch.coverage.complete).length + ')');
-    } catch {
+    } catch (error) {
       failed++;
+      const kind=safeFailureCategory(error);
+      failureKinds[kind]=(failureKinds[kind]||0)+1;
       // A próxima execução recupera o dia ausente; os dias válidos são mantidos.
-      console.warn(date + ': consulta não concluída; checkpoint anterior preservado.');
+      console.warn(date + ': consulta não concluída (' + kind + '); checkpoint anterior preservado.');
     }
   }
   await validatePublishedData(process.cwd());
   console.log('Resultado da coleta histórica: ' + succeeded + ' dia(s) concluído(s); ' +
-    failed + ' falha(s); ' + totalDocs + ' documento(s) obtidos.');
+    failed + ' falha(s); ' + totalDocs + ' documento(s) obtidos; categorias de falha: ' +
+    JSON.stringify(failureKinds) + '.');
   if (!succeeded) throw Error('Nenhum dia concluído: dados existentes mantidos');
 }
 main().catch(() => {

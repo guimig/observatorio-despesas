@@ -262,3 +262,11 @@ A interface distingue:
 - consulta concluída, pendente e documento relacionado não localizado.
 
 **Limite essencial:** a relação CGU disponível vincula NS e documentos de pagamento às NEs impactadas. Ela não comprova, por si só, que uma OB/DF específica quitou uma NS específica. Portanto a ficha não cria arestas diretas NS→OB/DF, não deduz quitação integral e não calcula saldo contábil. Valores negativos são mantidos como publicados, sem classificá-los automaticamente como anulação. Os somatórios exibidos são apenas somas dos vínculos de cada fase, não total líquido da despesa.
+
+## Replanejamento v0.2 — governança e cobertura real
+
+O desenvolvimento agora segue o [Plano Diretor v0.2](docs/PLANO-DIRETOR.md) e as [instruções para agentes e contribuidores](AGENTS.md). Implementar código, executar um workflow e homologar indicadores contábeis são estágios **distintos**.
+
+`npm run audit:baseline` apresenta agregados de documentos, enriquecimentos e cobertura histórica; `node src/diagnose-coverage.mjs --audit-md` produz um resumo Markdown (sem números de documentos individuais) nos checks de CI e nas recuperações históricas CGU. A auditoria considera meses ainda sem arquivos, dias encerrados ausentes e dias com alguma fase incompleta, usando `2025-01` como limite inicial. Indicadores não permitem concluir que o acervo de pagamentos está conciliado ou que ausência de documento equivale a gasto zero.
+
+A recuperação histórica mantém **um lote diário com três dias elegíveis** e permite execução manual entre um e sete dias. Após três falhas consecutivas observadas em 22/11/2026, a ampliação da frequência foi bloqueada até diagnóstico. A próxima execução registra categorias técnicas de falha sem payloads, chaves ou IDs; os checkpoints íntegros são preservados.
