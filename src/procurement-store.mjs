@@ -5,6 +5,7 @@ import {assertPublicSafe} from './privacy.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procurement.mjs';
+import {CONTRACT_FIELDS} from './pncp-record-revisions.mjs';
 
 const SOURCE=new Set(['pncp','compras']);
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -183,7 +184,12 @@ export function mergeProcurement(current,scans,now=new Date()){
             if(old?.[field]!==undefined)copy[field]=old[field];
           }
           if(old?.sourceUpdatedAt&&(!copy.sourceUpdatedAt||
-             old.sourceUpdatedAt>copy.sourceUpdatedAt))copy.sourceUpdatedAt=old.sourceUpdatedAt;
+             old.sourceUpdatedAt>copy.sourceUpdatedAt)){
+            for(const field of CONTRACT_FIELDS){
+              if(old[field]!==undefined)copy[field]=old[field];
+            }
+            copy.sourceUpdatedAt=old.sourceUpdatedAt;
+          }
           // Preservar consulta de NE apenas se os campos-base do instrumento
           // não mudaram. Contratos retificados devem ser reconsultados.
           const sameInstrument=old && old.number===copy.number &&
