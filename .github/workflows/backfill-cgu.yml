@@ -42,6 +42,7 @@ on:
   # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
   schedule:
     - cron: '13 11 * * *'
+    - cron: '13 23 * * *'
 
 permissions:
   contents: read
