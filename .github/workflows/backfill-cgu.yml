@@ -94,6 +94,7 @@ jobs:
           BACKFILL_DAYS: ${{ inputs.days || '3' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
+          BACKFILL_ROTATE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           BACKFILL_PRIORITY_REFERENCES: ${{ github.event_name == 'push' && 'true' || inputs.priority_references || 'auto' }}
           CGU_MAX_PAGES: '30'
           CGU_MAX_IMPACT_PAGES: '8'
