@@ -56,3 +56,20 @@ export function planCommitmentNarratives(months,{now=new Date(),batch=2}={}){
   }
   return [...days].sort().reverse().slice(0,batch);
 }
+
+/** Seleciona dias/fases CGU com documentos financeiros sem descricao segura. */
+export function planOtherDocumentNarratives(months,{now=new Date(),batch=1}={}){
+ if(!Array.isArray(months)||!Number.isSafeInteger(batch)||batch<1||batch>5)
+   throw Error('Plano de documentos financeiros invalido');
+ const keys=new Set();
+ for(const month of months){
+   for(const doc of month.documents||[]){
+     if([2,3].includes(doc.phase)&&!doc.description&&reviewDue(doc.descriptionCheckedAt,now))
+       keys.add(doc.date+'/'+doc.phase);
+   }
+ }
+ return [...keys].sort().reverse().slice(0,batch).map(value=>{
+   const [date,phase]=value.split('/');
+   return {date,phase:Number(phase)};
+ });
+}

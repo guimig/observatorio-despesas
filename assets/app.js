@@ -372,6 +372,78 @@ function showContractAssociations(doc){
   if(matches.length>8)slot.append(element('p','small-muted',
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
+function summarizeItemOperations(items,issueDate){
+ if(!Array.isArray(items))return 'Histórico ainda não consultado.';
+ const checked=items.filter(item=>item.historyChecked===true).length;
+ if(!checked)return 'Movimentações dos itens ainda não consultadas.';
+ const others=items.flatMap(item=>(item.movements||[])
+   .filter(event=>event.date!==issueDate&&event.type!=='original')
+   .map(event=>({seq:item.seq,date:event.date,operation:event.operation})))
+   .sort((a,b)=>a.date.localeCompare(b.date)||a.seq-b.seq);
+ const coverage='Itens com histórico completo: '+checked+'/'+items.length+'. ';
+ if(!others.length)return coverage+
+   'Nenhuma operação posterior identificada nesses históricos, sem garantia de ausência de alterações em itens pendentes.';
+ return coverage+'Operações posteriores identificadas: '+
+   others.slice(0,12).map(x=>'seq. '+String(x.seq).padStart(3,'0')+
+     ' · '+localDate(x.date)+' · '+x.operation).join('; ')+
+   (others.length>12?' e mais '+(others.length-12)+' operação(ões) nos itens.':'')+
+   '. A data de emissão do empenho permanece independente dessas operações.';
+}
+function renderSiafiItems(target,items){
+ target.replaceChildren();
+ const groups=new Map();
+ for(const item of items||[]){
+   const key=(item.sub||'sem-codigo')+'|'+(item.subdesc||'');
+   if(!groups.has(key))groups.set(key,[]);
+   groups.get(key).push(item);
+ }
+ for(const [key,group] of groups){
+   const [code,description]=key.split('|');
+   const section=element('section','item-subgroup');
+   const heading=element('h3','item-subgroup-heading',
+     'Subelemento '+(code==='sem-codigo'?'não informado':code)+
+     (description?' — '+description:''));
+   section.append(heading);
+   for(const item of group){
+     const block=element('div','relation-item item-detail-card');
+     const title='Seq. '+String(item.seq).padStart(3,'0')+
+       (item.purchaseItem?' · Compra '+item.purchaseItem:'');
+     block.append(element('strong','',title));
+     block.append(element('p','item-full-description',
+       item.description||'Descrição específica não disponibilizada pela fonte'));
+     block.append(element('span','small-muted','Valor atual informado do item: '+
+       (Number.isSafeInteger(item.cents)?fmtMoney(item.cents):'Indisponível')));
+     if(item.historyChecked===true){
+       const movements=item.movements||[];
+       const info=element('details','item-history');
+       const caption=element('summary','',
+         'Movimentações do item ('+movements.length+')');
+       info.append(caption);
+       if(!movements.length)info.append(element('p','small-muted',
+         'Consulta concluída, sem movimentações disponíveis na API CGU.'));
+       for(const event of movements){
+         const movement=element('div','item-history-row');
+         movement.append(element('strong','',
+           localDate(event.date)+' · '+event.operation));
+         movement.append(element('span','small-muted',
+           'Quantidade: '+event.quantity.replace('.',',')+
+           ' · Valor unitário: R$ '+event.unitPrice.replace('.',',')+
+           ' · Valor da operação: '+fmtMoney(event.cents)));
+         info.append(movement);
+       }
+       block.append(info);
+     }else block.append(element('span','small-muted',
+       'Histórico de quantidade, preço unitário e alterações aguardando consulta.'));
+     section.append(block);
+   }
+   const known=group.every(item=>Number.isSafeInteger(item.cents));
+   if(known)section.append(element('p','small-muted',
+     'Soma dos valores atuais dos itens deste subelemento disponíveis no acervo: '+
+     fmtMoney(group.reduce((total,item)=>total+item.cents,0))+
+     '. Não corresponde necessariamente ao saldo histórico.'));
+   target.append(section);
+ }
+}
 function showDocument(doc, monthData = state.data) {
   $('dialog-trajectory-section').hidden=true;
   $('dialog-relations-title').hidden=false;
@@ -403,7 +475,7 @@ function showDocument(doc, monthData = state.data) {
     ['Fonte', 'CGU / Portal da Transparência']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
-  if(doc.phase===1)appendDetailField(fields,'Descrição / observação da nota de empenho',
+  appendDetailField(fields,'Descrição / observação do documento SIAFI',
     doc.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
   const relationsMap=new Map();
@@ -448,6 +520,8 @@ function showDocument(doc, monthData = state.data) {
       list.append(item);
     }
   }
+  if(doc.phase===1)appendDetailField(fields,'Alterações observadas no histórico dos itens',
+    summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
   const itemSection=$('dialog-items-section');
   itemSection.hidden=doc.phase!==1;
   const details=$('dialog-items');
@@ -459,18 +533,7 @@ function showDocument(doc, monthData = state.data) {
     } else if(!items.length) {
       details.append(element('p','small-muted','Consulta concluída: nenhum item disponível para esta NE.'));
     } else {
-      for(const value of items) {
-        const block=element('div','relation-item');
-        block.append(element('strong','','Item '+value.seq+' · '+(value.description||value.subdesc||value.code||'Descrição não divulgada')));
-        if(value.subdesc||value.sub) {
-          block.append(element('span','small-muted',
-            'Subelemento: '+(value.subdesc||'Não informado')+
-            (value.sub?' ('+value.sub+')':'')));
-        }
-        block.append(element('span','small-muted','Valor atual: '+
-          (Number.isSafeInteger(value.cents)?fmtMoney(value.cents):'Indisponível')));
-        details.append(block);
-      }
+      renderSiafiItems(details,items);
     }
   }
   showContractAssociations(doc);
@@ -576,7 +639,7 @@ function showCommitmentTrajectory(entry){
   const doc=entry.document;
   const entries=[
     ['Documento de empenho',entry.id],
-    ['Data',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
+    ['Data de emissão da NE',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
     ['Processo',doc?.process||'Não informado'],
     ['Valor documental da NE',doc?fmtMoney(doc.cents):'Indisponível: NE não coletada'],
     ['Cobertura documental',!doc?'NE referenciada, mas não coletada':
@@ -591,15 +654,12 @@ function showCommitmentTrajectory(entry){
   appendDetailField(fields,'Descrição / observação da nota de empenho',
     doc?.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
+  appendDetailField(fields,'Alterações observadas no histórico dos itens',
+    summarizeItemOperations(entry.items,doc?.date),{long:true});
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
-  for(const item of entry.items||[]){
-    const block=element('div','relation-item');
-    block.append(element('strong','','Item '+item.seq+' · '+(item.description||item.subdesc||item.code||'Descrição não divulgada')));
-    block.append(element('span','small-muted','Valor atual do item: '+fmtMoney(item.cents)));
-    items.append(block);
-  }
+  renderSiafiItems(items,entry.items||[]);
   renderTrajectoryLinks($('dialog-liquidations'),entry.liquidations,
     'Nenhuma liquidação vinculada identificada no acervo consultado.');
   renderTrajectoryLinks($('dialog-payments'),entry.payments,

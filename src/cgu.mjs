@@ -189,10 +189,8 @@ export function normalizeDocument(row, date, phase) {
   if (Object.keys(nature).length) doc.nature = nature;
   // Nota de empenho: narrativa descritiva da fonte, se segura para publicação.
   // Campo livre não seguro é omitido por inteiro; não se armazena resposta bruta.
-  if(phase===1){
-    const description=publicNarrativeText(row.observacao ?? row.descricaoDocumento ?? row.descricao);
-    if(description)doc.description=description;
-  }
+  const description=publicNarrativeText(row.observacao ?? row.descricaoDocumento ?? row.descricao);
+  if(description)doc.description=description;
   return assertPublicSafe(doc);
 }
 

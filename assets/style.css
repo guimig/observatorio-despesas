@@ -62,3 +62,12 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
 .document-fields .narrative-field dd{white-space:pre-wrap;line-height:1.65;font-weight:480;overflow-wrap:anywhere}
 .document-dialog{overflow-y:auto;overscroll-behavior:contain;scroll-behavior:auto}
 .document-dialog .dialog-content{overflow:visible}
+
+/* Agrupamento de subelementos e historico auditavel dentro das fichas. */
+.item-subgroup{margin:1rem 0 1.25rem}
+.item-subgroup-heading{font-size:1rem;line-height:1.4;margin:0 0 .75rem}
+.item-detail-card{margin-bottom:.65rem}
+.item-full-description{white-space:pre-wrap;overflow-wrap:anywhere;margin:.4rem 0;line-height:1.6}
+.item-history{margin-top:.55rem;border-top:1px solid var(--border,#405569);padding-top:.55rem}
+.item-history summary{cursor:pointer;font-weight:600}
+.item-history-row{display:flex;flex-direction:column;gap:.3rem;padding:.65rem 0;border-bottom:1px solid var(--border,#405569)}

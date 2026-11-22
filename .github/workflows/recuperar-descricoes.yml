@@ -57,6 +57,7 @@ jobs:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           NARRATIVE_BATCH: ${{ inputs.batch || '5' }}
           NARRATIVE_CGU_DAYS: ${{ inputs.cgu_days || '2' }}
+          NARRATIVE_OTHER_PHASE_DAYS: '1'
         run: npm run collect:narratives
       - name: Conferir integridade e privacidade das fichas
         run: npm run check:data

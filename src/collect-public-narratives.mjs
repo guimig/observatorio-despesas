@@ -9,7 +9,7 @@ import {contractDetailUrl} from './pncp-contract-link.mjs';
 import {requestPublicJSON} from './procurement.mjs';
 import {collectDayPhase} from './cgu.mjs';
 import {persistWindow,validateMonth,validatePublishedData} from './store.mjs';
-import {planNarrativeReviews,applyNarrativeReview,planCommitmentNarratives} from './narrative-review.mjs';
+import {planNarrativeReviews,applyNarrativeReview,planCommitmentNarratives,planOtherDocumentNarratives} from './narrative-review.mjs';
 
 async function atomicJson(path,object){
   const tmp=path+'.tmp';
@@ -30,16 +30,18 @@ export async function refreshNarratives({
   root=process.cwd(),now=new Date(),token=process.env.CGU_API_KEY||'',
   noticeDetail=fetchNoticeDetail,contractDetail=async id=>
     requestPublicJSON(contractDetailUrl(id)),
-  collect=collectDayPhase,batch=5,commitmentDays=2,dryRun=false
+  collect=collectDayPhase,batch=5,commitmentDays=2,otherPhaseDays=1,dryRun=false
 }={}){
   const notices=await readNotices(root),contracts=await readProcurement(root);
   const months=await readMonths(root);
   const noticePlan=notices?planNarrativeReviews(notices,{kind:'notice',now,batch}):[];
   const contractPlan=contracts?planNarrativeReviews(contracts,{kind:'contract',now,batch}):[];
   const commitmentPlan=token?planCommitmentNarratives(months,{now,batch:commitmentDays}):[];
+  const otherPlan=token?planOtherDocumentNarratives(months,{now,batch:otherPhaseDays}):[];
   const report={notices:noticePlan.length,contracts:contractPlan.length,
-    commitmentDates:commitmentPlan.length,reviewedNotices:0,reviewedContracts:0,
-    reviewedCommitmentDates:0,failures:0};
+    commitmentDates:commitmentPlan.length,otherDocumentDates:otherPlan.length,
+    reviewedNotices:0,reviewedContracts:0,
+    reviewedCommitmentDates:0,reviewedOtherDocumentDates:0,failures:0};
   if(dryRun)return report;
   let nextNotices=notices,nextContracts=contracts;
   for(const item of noticePlan){
@@ -79,17 +81,30 @@ export async function refreshNarratives({
       report.reviewedCommitmentDates++;
     }catch{report.failures++;}
   }
+  for(const item of otherPlan){
+    try{
+      const patch=await collect(brDate(item.date),item.phase,{token,maxPages:30,maxImpactPages:8});
+      if(patch.coverage.complete!==true||patch.coverage.invalid!==0){
+        report.failures++;continue;
+      }
+      for(const doc of patch.documents)doc.descriptionCheckedAt=now.toISOString().slice(0,10);
+      await persistWindow(root,[patch],now);
+      report.reviewedOtherDocumentDates++;
+    }catch{report.failures++;}
+  }
   await validatePublishedData(root);
   return report;
 }
 async function main(){
   const report=await refreshNarratives({dryRun:process.argv.includes('--dry-run'),
     batch:Number(process.env.NARRATIVE_BATCH||5),
-    commitmentDays:Number(process.env.NARRATIVE_CGU_DAYS||2)});
+    commitmentDays:Number(process.env.NARRATIVE_CGU_DAYS||2),
+    otherPhaseDays:Number(process.env.NARRATIVE_OTHER_PHASE_DAYS||1)});
   console.log('Revisao textual oficial: '+JSON.stringify(report)+
     '. Nenhum texto bruto, CPF, documento SIAFI, nome pessoal ou token nos logs.');
   if(!process.argv.includes('--dry-run') && report.failures &&
-     !report.reviewedNotices&&!report.reviewedContracts&&!report.reviewedCommitmentDates)
+     !report.reviewedNotices&&!report.reviewedContracts&&
+     !report.reviewedCommitmentDates&&!report.reviewedOtherDocumentDates)
     throw Error('Fontes de narrativa indisponiveis; dados anteriores preservados');
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
