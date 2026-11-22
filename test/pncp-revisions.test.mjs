@@ -9,7 +9,7 @@ import {blankNotices,mergeNotices,validateNotices} from '../src/pncp-notices-sto
 import {blankProcurement,mergeProcurement,validateProcurement} from '../src/procurement-store.mjs';
 import {mergePncpRecord} from '../src/pncp-record-revisions.mjs';
 import {planPncpRevisions,applyNoticeRevision,applyContractRevision,
-  recheckPncpRevisions} from '../src/pncp-revision-collector.mjs';
+  recheckPncpRevisions,safePncpFailure} from '../src/pncp-revision-collector.mjs';
 const today=new Date('2026-11-22T19:00:00Z');
 const pncpId='10635424000186-1-000123/2026';
 const contractId='10635424000186-2-000123/2026';
@@ -163,5 +163,27 @@ test('rotina real em diretorio temporario grava so JSONs validados, sem duplicac
   assert.equal(c.contracts.length,1);
   assert.equal(c.contracts[0].amountCents,430000);
   assert.equal((await recheckPncpRevisions({root,now:today,dryRun:true})).noticePlanned,0);
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('classificacao segura revela categoria e etapa sem vazar payload',async()=>{
+ assert.equal(safePncpFailure({status:404,message:'CPF 000.123.456-78'},'fetch'),'http_404');
+ assert.equal(safePncpFailure({status:429},'fetch'),'http_429');
+ assert.equal(safePncpFailure(Error('detalhe incorreto'),'identity'),'identity_mismatch');
+ assert.equal(safePncpFailure(Error('pessoa privada'),'normalize'),'normalization_failed');
+ assert.equal(safePncpFailure(Error('processo privado'),'apply'),'schema_or_provenance');
+ const root=await mkdtemp(join(tmpdir(),'pncp-falhas-'));
+ try{
+  await mkdir(join(root,'data','procurement'),{recursive:true});
+  await writeFile(join(root,'data/procurement/notices.json'),JSON.stringify(notices()));
+  await writeFile(join(root,'data/procurement/contracts.json'),JSON.stringify(contracts()));
+  const result=await recheckPncpRevisions({root,now:today,
+   fetchNotice:async()=>normalizeNotice(noticeRow(),6),
+   fetchContract:async()=>{const e=Error('privado');e.status=429;throw e;}
+  });
+  assert.equal(result.noticeChecked,1);
+  assert.equal(result.contractChecked,0);
+  assert.equal(result.failureKinds.http_429,1);
+  assert.equal(JSON.stringify(result).includes('privado'),false);
  }finally{await rm(root,{recursive:true,force:true});}
 });

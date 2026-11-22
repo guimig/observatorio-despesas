@@ -10,6 +10,15 @@ import {requestPublicJSON,normalizePncp} from './procurement.mjs';
 import {mergePncpRecord} from './pncp-record-revisions.mjs';
 
 const DAY=86400000;
+export function safePncpFailure(error,stage){
+  const status=Number(error?.status);
+  if(Number.isInteger(status)&&status>=400&&status<=599)
+    return 'http_'+status;
+  if(stage==='identity')return 'identity_mismatch';
+  if(stage==='normalize')return 'normalization_failed';
+  if(stage==='apply')return 'schema_or_provenance';
+  return 'network_or_unexpected';
+}
 function frequency(record,kind,now){
   const baseline=kind==='notice'?record.published:record.signed||record.starts||
     record.publishedMonth+'-01';
@@ -70,29 +79,44 @@ export async function recheckPncpRevisions({
   const noticePlan=notices?planPncpRevisions(notices,{kind:'notice',now,batch}):[];
   const contractPlan=contracts?planPncpRevisions(contracts,{kind:'contract',now,batch}):[];
   const report={noticePlanned:noticePlan.length,contractPlanned:contractPlan.length,
-    noticeChecked:0,contractChecked:0,materialChanged:0,stale:0,failed:0};
+    noticeChecked:0,contractChecked:0,materialChanged:0,stale:0,failed:0,
+    failureKinds:{}};
   if(dryRun)return report;
   let nextNotices=notices,nextContracts=contracts;
   for(const item of noticePlan){
+    let stage='fetch';
     try{
       const normalized=await fetchNotice(item.pncpId);
+      stage='apply';
       const result=applyNoticeRevision(nextNotices,item.id,normalized,now);
       nextNotices=result.data;
       if(result.stale)report.stale++;
       else{report.noticeChecked++;if(result.materialChanged)report.materialChanged++;}
-    }catch{report.failed++;}
+    }catch(error){
+      report.failed++;
+      const category=safePncpFailure(error,stage);
+      report.failureKinds[category]=(report.failureKinds[category]||0)+1;
+    }
   }
   for(const item of contractPlan){
+    let stage='fetch';
     try{
       const raw=await fetchContract(item.pncpId);
+      stage='identity';
       if(raw?.numeroControlePNCP!==item.pncpId)throw Error('ID contrato divergente');
+      stage='normalize';
       const normalized=normalizePncp(raw);
       if(!normalized)throw Error('Contrato PNCP invalido');
+      stage='apply';
       const result=applyContractRevision(nextContracts,item.id,normalized,now);
       nextContracts=result.data;
       if(result.stale)report.stale++;
       else{report.contractChecked++;if(result.materialChanged)report.materialChanged++;}
-    }catch{report.failed++;}
+    }catch(error){
+      report.failed++;
+      const category=safePncpFailure(error,stage);
+      report.failureKinds[category]=(report.failureKinds[category]||0)+1;
+    }
   }
   if(notices&&JSON.stringify(notices)!==JSON.stringify(nextNotices)){
     validateNotices(nextNotices);
