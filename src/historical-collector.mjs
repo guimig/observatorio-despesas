@@ -57,8 +57,13 @@ export async function collectHistoricalDate({
     if(!patch?.coverage||patch.coverage.phase!==phase||
        patch.coverage.date!==isoDate(date)||!Array.isArray(patch.documents)||
        !Array.isArray(patch.links))throw Error('Lote CGU sem estrutura valida');
-    // Persistir cada fase concluida ou parcial, sem esperar pelas demais.
-    await persist(patch);
+    // Erro de persistencia e fatal: nunca mascarar falha de esquema/disco como API.
+    try{
+      await persist(patch);
+    }catch(error){
+      logger({date,phase,status:'checkpoint_failed',category:safeFailureCategory(error)});
+      throw error;
+    }
     consulted++;
     documents+=patch.documents.length;
     if(patch.coverage.complete===true&&patch.coverage.invalid===0)completed.add(phase);
