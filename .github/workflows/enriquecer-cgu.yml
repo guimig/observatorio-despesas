@@ -29,6 +29,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/enriquecer-cgu.yml'
+      - 'src/enrich-cgu.mjs'
+      - 'src/item-movements.mjs'
+      - 'src/enrich-month.mjs'
   schedule:
     - cron: '17 12 * * *'
     - cron: '17 22 * * *'
