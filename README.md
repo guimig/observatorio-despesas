@@ -262,3 +262,11 @@ A interface distingue:
 - consulta concluída, pendente e documento relacionado não localizado.
 
 **Limite essencial:** a relação CGU disponível vincula NS e documentos de pagamento às NEs impactadas. Ela não comprova, por si só, que uma OB/DF específica quitou uma NS específica. Portanto a ficha não cria arestas diretas NS→OB/DF, não deduz quitação integral e não calcula saldo contábil. Valores negativos são mantidos como publicados, sem classificá-los automaticamente como anulação. Os somatórios exibidos são apenas somas dos vínculos de cada fase, não total líquido da despesa.
+
+## Replanejamento v0.2 — governança e cobertura real
+
+O desenvolvimento agora segue o [Plano Diretor v0.2](docs/PLANO-DIRETOR.md) e as [instruções para agentes e contribuidores](AGENTS.md). Implementar código, executar um workflow e homologar indicadores contábeis são estágios **distintos**.
+
+`npm run audit:baseline` apresenta agregados de documentos, enriquecimentos e cobertura histórica; `node src/diagnose-coverage.mjs --audit-md` produz um resumo Markdown (sem números de documentos individuais) nos checks de CI e nas recuperações históricas CGU. A auditoria considera meses ainda sem arquivos, dias encerrados ausentes e dias com alguma fase incompleta, usando `2025-01` como limite inicial. Indicadores não permitem concluir que o acervo de pagamentos está conciliado ou que ausência de documento equivale a gasto zero.
+
+A rotina de backfill está programada para dois lotes diários, com três dias elegíveis por lote e possibilidade de execução manual entre um e sete dias; as consultas dependem do Secret `CGU_API_KEY`, dos limites da API e da validação dos checkpoints. O aumento inicial visa recuperar histórico gradualmente sem elevar o tamanho individual das requisições. Monitorar conclusões/erros de Actions antes de ampliar mais.
