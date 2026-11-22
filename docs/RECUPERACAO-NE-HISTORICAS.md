@@ -27,3 +27,11 @@ Em execuções **agendadas**, os dias ainda pendentes são selecionados com rota
 Os logs registram dia, **fase**, categoria segura de erro e quantidade de documentos consultados, nunca identificadores, resposta bruta, CPF, token ou URL individual de documento. Uma resposta vazia, com paginação validada, pode representar consulta documental completa sem registros. Resultado de coleta parcial nunca equivale a ausência de despesa ou total mensal definitivo.
 
 **Critério de estabilidade antes de aumentar frequência:** acompanhar amostras reais, especialmente 08/12/2025 e 10/12/2025, verificar falhas por fase e reprocessar até cobertura completa. Manter um lote diário até três execuções sucessivas com evolução demonstrável e sem falha não diagnosticada. O controle de cobertura, e não a conclusão verde do workflow, determina se uma competência foi integralmente recuperada.
+
+## Colisões de identificador SIAFI entre datas ou fases (22/11/2026)
+
+A recuperação real encontrou rejeição por **documento público inválido ou duplicado** ao tentar gravar a fase 3 em 08/12/2025 (run 45057655056). Como o normalizador CGU já valida o formato SIAFI e a data da consulta, a duplicidade no acervo mensal é uma hipótese fortemente sustentada pela validação no armazenamento. Não se atribui automaticamente culpa à API nem se escolhe qual registro prevalece.
+
+Antes de cada gravação, o coletor compara os documentos da fase com os identificadores já existentes naquela competência. Se o mesmo ID estiver associado a **outra data** ou **outra fase**, a fase inteira é rejeitada sem alterar o checkpoint. O log informa só data da consulta, fase, categoria do conflito e **quantidade de IDs conflitantes**, sem publicar os próprios identificadores. A coleta continua nas demais fases/datas. A fase rejeitada permanece sem cobertura válida e será reconsultada no futuro; o sistema não elimina documentos, não infere valores zero e não marca sucesso indevido.
+
+A solução final da colisão ainda exige estudar o retorno real, a data e a espécie do documento e a semântica de fase na CGU/SIAFI. Não resolver por descarte silencioso, escolha da data mais recente ou redistribuição de valores sem evidência oficial. A issue #88 permanece aberta.

@@ -2,10 +2,32 @@
 import {isoDate} from './cgu.mjs';
 
 const PHASES=[1,2,3];
+
+/** Conta colisões sem divulgar ID SIAFI e sem arbitrar qual data/fase prevalece. */
+export function documentCollisionSummary(existing,patch){
+  const previous=new Map((existing?.documents||[]).map(d=>[d.id,d]));
+  const summary={otherDate:0,otherPhase:0};
+  for(const doc of patch?.documents||[]){
+    const old=previous.get(doc.id);
+    if(!old)continue;
+    if(old.date!==doc.date)summary.otherDate++;
+    else if(old.phase!==doc.phase)summary.otherPhase++;
+  }
+  return summary;
+}
+export function collisionCode(summary){
+  if(summary.otherDate&&summary.otherPhase)return 'CGU_DOC_COLLISION_BOTH';
+  if(summary.otherDate)return 'CGU_DOC_COLLISION_DATE';
+  if(summary.otherPhase)return 'CGU_DOC_COLLISION_PHASE';
+  return null;
+}
 export function safeFailureCategory(error){
   const status=Number(error?.status ?? error?.statusCode);
   if(Number.isInteger(status)&&status>=400&&status<=599)return 'http_'+status;
   const code=String(error?.code||'').toUpperCase();
+  if(code==='CGU_DOC_COLLISION_DATE')return 'document_duplicate_other_date';
+  if(code==='CGU_DOC_COLLISION_PHASE')return 'document_duplicate_other_phase';
+  if(code==='CGU_DOC_COLLISION_BOTH')return 'document_duplicate_date_and_phase';
   if(['CGU_TIMEOUT','ETIMEDOUT','ESOCKETTIMEDOUT','ABORT_ERR'].includes(code) || error?.name==='AbortError')return 'timeout';
   if(['CGU_TRANSPORT','ECONNRESET','ENOTFOUND','EAI_AGAIN','ECONNREFUSED'].includes(code))return 'network';
   if(code==='CGU_INVALID_JSON'||error?.name==='SyntaxError')return 'invalid_json';
@@ -71,8 +93,14 @@ export async function collectHistoricalDate({
     try{
       await persist(patch);
     }catch(error){
-      logger({date,phase,status:'checkpoint_failed',category:safeFailureCategory(error)});
-      throw error;
+      const category=safeFailureCategory(error);
+      if(String(error?.code||'').startsWith('CGU_DOC_COLLISION_')){
+        failures[category]=(failures[category]||0)+1;
+        logger({date,phase,status:'failed',category,count:Number(error?.conflictCount)||0});
+        continue; // Nao incorporar fase de contagem inconciliavel; outras datas continuam.
+      }
+      logger({date,phase,status:'checkpoint_failed',category});
+      throw error; // Erro de disco/esquema nao relacionado continua fatal.
     }
     consulted++;
     documents+=patch.documents.length;
