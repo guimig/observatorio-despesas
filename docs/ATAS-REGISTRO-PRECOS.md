@@ -100,3 +100,7 @@ A tabela de licitacoes apresenta a opcao recolhivel **Ver evidencias documentais
 ### Conferencia historica de NEs sob demanda
 
 O botao **Conferir NEs em todas as competencias** consulta, apenas quando acionado, os JSONs mensais publicos listados no manifesto da UG 158459 e ainda nao carregados no navegador. Cada competencia e validada antes de entrar no cache; arquivos indisponiveis sao contabilizados sem inventar resultados. A competencia financeira exibida no dashboard permanece inalterada. Apos a carga, os vinculos de licitacoes e contratos sao recalculados com o conjunto de documentos disponiveis. O carregamento nao acessa APIs autenticadas, nao produz novos dados, nao comprova inexistencia de despesa e pode consumir rede/memoria em acervos historicos grandes. O controle manual evita custo de carregamento inicial.
+
+### Indicadores de cobertura dos vinculos
+
+A secao de licitacoes apresenta totais de publicacoes PNCP, publicacoes com instrumentos vinculados, com NE 158459 conferida na CGU, com referencia de NE no PNCP sem conferencia, somente com indícios e sem evidencia identificada. As quatro ultimas classes sao exclusivas e priorizam o nivel mais forte disponivel. Os indicadores sao recalculados conforme novas competencias mensais sao carregadas. O painel exibe quantas competencias publicadas foram consultadas. **Sem evidencia** nao significa que nao houve contrato, empenho ou aquisicao; **com instrumento** nao equivale a contrato formal. Os totais nao sao taxas de contratacao nem indicadores de execucao financeira.

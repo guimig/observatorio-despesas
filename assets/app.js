@@ -1,5 +1,6 @@
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
+import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
 import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
@@ -841,8 +842,34 @@ function filteredNotices() {
       .includes(noticesState.query);
   });
 }
+function renderProcurementEvidenceCoverage(){
+ if(!noticesData)return;
+ const total=state.manifest?.months?.length||0;
+ const summary=summarizeProcurementEvidence(noticesData.notices,procurementData?.contracts||[],
+  loadedCguDocuments(),cache.size,total);
+ const metrics=[
+  ['Publicações PNCP',summary.publications],
+  ['Com instrumentos vinculados',summary.withInstruments],
+  ['Com NE conferida CGU',summary.withVerifiedNe],
+  ['Com referência de NE no PNCP',summary.withDeclaredNe],
+  ['Somente indícios',summary.withIndications],
+  ['Sem evidência identificada',summary.withoutEvidence]
+ ];
+ const host=$('procurement-evidence-metrics');host.replaceChildren();
+ for(const [label,value] of metrics){
+  const card=element('div','metric');
+  card.append(element('span','small-muted',label),element('strong','',fmtCount(value)));
+  host.append(card);
+ }
+ $('procurement-evidence-summary').textContent='Competências CGU consultadas: '+
+  fmtCount(summary.loadedMonths)+' de '+fmtCount(summary.totalMonths)+
+  (summary.complete?' · histórico mensal publicado integralmente carregado':
+   ' · cobertura parcial, resultados sujeitos a ampliação')+
+  '. Contagens referentes às publicações PNCP do catálogo, não ao total de contratações do IFC.';
+}
 function renderNotices() {
   if(!noticesData)return;
+  renderProcurementEvidenceCoverage();
   const all=filteredNotices();
   const pages=Math.max(1,Math.ceil(all.length/20));
   noticesState.page=Math.max(0,Math.min(pages-1,noticesState.page));
