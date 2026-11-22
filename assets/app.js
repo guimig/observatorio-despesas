@@ -52,9 +52,11 @@ function summarize(phase) {
   const complete = coverage.length > 0 && coverage.every(entry => entry.complete);
   const invalid = coverage.reduce((n, x) => n + x.invalid, 0);
   const count = coverage.reduce((n, x) => n + x.count, 0);
-  const sum = complete && !invalid && documents.every(doc => Number.isSafeInteger(doc.cents))
+  const overlap=(state.data.phaseObservations||[]).some(obs=>obs.phase===phase);
+  const sum = complete && !invalid && !overlap &&
+    documents.every(doc => Number.isSafeInteger(doc.cents))
     ? documents.reduce((n, doc) => n + doc.cents, 0) : null;
-  return { count, sum, complete, invalid };
+  return { count, sum, complete, invalid, overlap };
 }
 function renderStats() {
   const stats = [1, 2, 3].map(summarize);
@@ -63,8 +65,9 @@ function renderStats() {
     $('amount-' + phase).textContent = fmtMoney(stat.sum);
     const prefix = stat.complete ? '' : 'Pelo menos ';
     $('count-' + phase).textContent = prefix + fmtCount(stat.count) +
-      ' documento(s) nas datas consultadas' +
-      (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponível(is)' : '');
+      ' ocorrência(s) documentais nas datas consultadas' +
+      (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponível(is)' : '')+
+      (stat.overlap ? ' · sobreposição entre fases (total monetário suspenso)' : '');
   });
   const valid = stats.filter(s => Number.isSafeInteger(s.sum));
   const max = Math.max(1, ...valid.map(s => Math.abs(s.sum)));
@@ -102,7 +105,10 @@ function renderQuality() {
     fmtCount(audit.links.negative)+'. Relações com NEs de outros exercícios: '+
     fmtCount(audit.links.crossExercise)+'. Liquidações com valores vinculados diferentes '+
     'do valor documental, para revisão: '+fmtCount(audit.links.liquidationValueReviews)+
-    '. Esses casos não significam automaticamente erro contábil.';
+    '. Documentos em mais de um filtro da CGU: '+
+    fmtCount(audit.phaseObservations?.total||0)+
+    ' (valores divergentes: '+fmtCount(audit.phaseObservations?.amountDisagreements||0)+
+    '). Aparições em fases distintas não comprovam operações financeiras adicionais. Esses casos não significam automaticamente erro contábil.';
   const hasGaps=coverage.status!=='completa',structural=audit.issues.length>0;
   $('coverage-chip').textContent=structural?'Dados exigem revisão':
     coverage.status==='completa'?'Dias encerrados consultados':
@@ -315,7 +321,13 @@ function showDocument(doc, monthData = state.data) {
   const entries = [
     ['Documento SIAFI', doc.id],
     ['Espécie do documento', documentSpecies(doc).label],
-    ['Fase de divulgação', financialPhaseDescription(doc.phase)],
+    ['Fase de divulgação original', financialPhaseDescription(doc.phase)],
+    ['Outros filtros da CGU em que aparece',
+      (monthData.phaseObservations||[]).filter(o=>o.id===doc.id)
+        .map(o=>phaseNames[o.phase]+(o.amountRelation==='different'?
+          ' (valor informado divergente)':o.amountRelation==='unknown'?
+          ' (comparação de valores indisponível)':' (mesmo valor informado)'))
+        .join('; ')||'Nenhum outro filtro identificado'],
     ['Data de emissão', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
     ['Unidade gestora', '158459 · IFC Araquari'],
     ['Favorecido', beneficiaryLabel(doc,monthData)],
