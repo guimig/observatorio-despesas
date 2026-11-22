@@ -172,6 +172,15 @@
         <div id="procurement-evidence-metrics" class="metric-grid"></div>
         <p class="small-muted">Categorias de evidência são mutuamente exclusivas. “Sem evidência” não significa ausência de contratação ou despesa. A contagem de instrumentos não distingue automaticamente contratos formais de outros instrumentos publicados.</p>
       </div>
+      <details class="panel" id="procurement-audit-panel">
+        <summary><strong>Auditoria de referências de empenho</strong></summary>
+        <p id="procurement-audit-status" class="small-muted">Aguardando documentos.</p>
+        <div class="table-scroll"><table class="contracts-table">
+          <thead><tr><th>Instrumento PNCP</th><th>Referência de NE</th><th>Situação documental</th></tr></thead>
+          <tbody id="procurement-audit-rows"><tr><td colspan="3">Nenhuma referência examinada.</td></tr></tbody>
+        </table></div>
+        <p class="small-muted">“Não localizada” significa apenas que a referência não foi encontrada no histórico publicado e carregado. Não demonstra inexistência da despesa, nem irregularidade.</p>
+      </details>
       <div class="filters" aria-label="Cobertura documental histórica">
         <button type="button" id="historical-ne-load" class="button button-secondary">Conferir NEs em todas as competências</button>
         <span id="historical-ne-status" class="small-muted" role="status" aria-live="polite">A conferência de NEs usa inicialmente apenas as competências já abertas.</span>
