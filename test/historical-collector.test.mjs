@@ -50,10 +50,13 @@ test('fase parcial ou valor indisponivel nao se torna completa',async()=>{
  assert.deepEqual(phasesMissingOnDate({coverage:[patch(1).coverage,patch(2,{complete:false}).coverage,patch(3).coverage]},date),[2]);
 });
 
-test('falha na persistencia aborta o lote, sem ocultar erro operacional',async()=>{
+test('falha na persistencia aborta, identifica fase e registra apenas categoria segura',async()=>{
+ const events=[];
  await assert.rejects(collectHistoricalDate({date,
   collect:async(_,phase)=>patch(phase),
-  persist:async()=>{throw Error('disk failure');}}),/disk failure/);
+  persist:async()=>{throw Error('Documento público inválido ou duplicado');},
+  logger:e=>events.push(e)}),/Documento público inválido ou duplicado/);
+ assert.deepEqual(events,[{date,phase:1,status:'checkpoint_failed',category:'invalid_document'}]);
 });
 
 test('falhas de categorias conhecidas nao vazam mensagens ou payloads',()=>{

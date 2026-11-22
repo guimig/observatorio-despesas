@@ -75,6 +75,9 @@ async function main() {
       logger:event=>{
         if(event.status==='failed')
           console.warn(event.date+': fase '+event.phase+' falhou ('+event.category+'); checkpoint preservado.');
+        else if(event.status==='checkpoint_failed')
+          console.error(event.date+': fase '+event.phase+
+            ' falhou ao validar/gravar checkpoint ('+event.category+'); execução abortada.');
         else console.log(event.date+': fase '+event.phase+' '+event.status+
           '; '+event.count+' documento(s) consultado(s).');
       }

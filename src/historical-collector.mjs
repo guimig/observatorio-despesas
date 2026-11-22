@@ -19,6 +19,16 @@ export function safeFailureCategory(error){
     ['Documento público inválido ou duplicado','invalid_document'],
     ['Contagem documental divergente','coverage_inconsistent'],
     ['Vínculo documental inválido','relation_validation'],
+    ['Esquema mensal inválido','month_schema_validation'],
+    ['Documento sem cobertura declarada','document_coverage_missing'],
+    ['Cobertura documental inválida','coverage_validation'],
+    ['Cobertura documental duplicada','coverage_duplicate'],
+    ['Consulta completa com motivo parcial','coverage_flag_conflict'],
+    ['Cadastro público de pessoa jurídica inválido','beneficiary_validation'],
+    ['CNPJ não encontrado no catálogo mensal','beneficiary_reference'],
+    ['CPF em formato diferente do mascaramento obrigatório','cpf_mask_validation'],
+    ['Valor monetário inválido','money_validation'],
+    ['Vínculo documental duplicado','relation_duplicate'],
     ['CGU indisponível','network']
   ]);
   return known.get(error?.message)||'validation_or_other';
@@ -57,8 +67,13 @@ export async function collectHistoricalDate({
     if(!patch?.coverage||patch.coverage.phase!==phase||
        patch.coverage.date!==isoDate(date)||!Array.isArray(patch.documents)||
        !Array.isArray(patch.links))throw Error('Lote CGU sem estrutura valida');
-    // Persistir cada fase concluida ou parcial, sem esperar pelas demais.
-    await persist(patch);
+    // Erro de persistencia e fatal: nunca mascarar falha de esquema/disco como API.
+    try{
+      await persist(patch);
+    }catch(error){
+      logger({date,phase,status:'checkpoint_failed',category:safeFailureCategory(error)});
+      throw error;
+    }
     consulted++;
     documents+=patch.documents.length;
     if(patch.coverage.complete===true&&patch.coverage.invalid===0)completed.add(phase);
