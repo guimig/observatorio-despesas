@@ -14,6 +14,7 @@ on:
       - '.github/workflows/atualizar-contratos-pncp.yml'
       - 'src/pncp-delta.mjs'
       - 'src/collect-pncp-delta.mjs'
+      - 'src/recover-pncp-publications.mjs'
   schedule:
     - cron: '47 13 * * *'
 
@@ -52,6 +53,7 @@ jobs:
         env:
           PNCP_DELTA_DAYS: ${{ inputs.days || '3' }}
           PNCP_DELTA_MAX_PAGES: '20'
+          PNCP_RECOVERY_MAX_PAGES: '25'
         run: npm run collect:pncp-delta
       - name: Validar esquema e privacidade apos consulta
         run: npm run check:data
