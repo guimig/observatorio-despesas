@@ -50,7 +50,7 @@ export function planPncpDelta(catalog,{now=new Date(),days=3}={}){
  const last=catalog.pncpDelta?.through;
  if(last&&last>latest)throw problem('checkpoint_in_future');
  if(last===latest)return null;
- const from=last||addDays(latest,1-days);
+ const from=last?(days===1?addDays(last,1):last):addDays(latest,1-days);
  const to=last?[addDays(from,days-1),latest].sort()[0]:latest;
  if(!isDate(from)||!isDate(to)||from>to)
    throw problem('invalid_window');
@@ -145,7 +145,7 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
     !(now instanceof Date)||!Number.isFinite(now.getTime()))
    throw problem('invalid_batch');
  const last=previous.pncpDelta?.through;
- if((last&&plan.from!==last)||(!last&&plan.initial!==true)||
+ if((last&&![last,addDays(last,1)].includes(plan.from))||(!last&&plan.initial!==true)||
     (last&&plan.to<=last))
    throw problem('checkpoint_conflict');
  const next=structuredClone(previous);
