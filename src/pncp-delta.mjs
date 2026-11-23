@@ -171,8 +171,11 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
      const position=index.get(record.id);
      if(position===undefined){
        summary.unmatched++;
-       if(pending.has(record.id))summary.alreadyPending++;
-       else{
+       if(pending.has(record.id)){
+         if(pending.get(record.id).publishedMonth!==record.publishedMonth)
+           throw problem('pending_month_changed');
+         summary.alreadyPending++;
+       }else{
          if(pending.size>=500)throw problem('pending_limit');
          pending.set(record.id,{id:record.id,publishedMonth:record.publishedMonth});
          summary.newlyQueued++;
