@@ -87,25 +87,27 @@ export function chooseNeBatch(targets,{limit=3,slot=0}={}){
 export function normalizeOriginalDetail(id,payload,{now=new Date()}={}){
  if(!NOTE.test(id)||!payload||typeof payload!=='object'||
     Array.isArray(payload)||!(now instanceof Date)||
-    !Number.isFinite(now.getTime()))throw Error('Detalhe de NE invalido');
+    !Number.isFinite(now.getTime()))throw coded('detail_invalid');
  if(payload.documento!==id||String(payload.codigoUg)!=='158459')
-   throw Error('Identidade do detalhe CGU divergente');
+   throw coded('identity_mismatch');
  const phase=typeof payload.fase==='string'?payload.fase.trim().toLowerCase()
    .normalize('NFD').replace(/[\u0300-\u036f]/g,''):payload.fase;
  if(![1,'1','empenho','empenhos','1 - empenho'].includes(phase))
-   throw Error('Fase NE nao confirmada pela CGU');
+   throw coded('phase_unverified');
  const issued=dateFromSource(payload.data);
  if(!issued||issued.slice(0,4)!==NOTE.exec(id)[1]||
     issued>dayBeforeToday(now))
-   throw Error('Data de emissao CGU nao confirmada');
+   throw coded('issue_date_unverified');
  if(payload.dataEmissao!==undefined&&
    dateFromSource(payload.dataEmissao)!==issued)
-   throw Error('Datas oficiais divergentes');
+   throw coded('issue_date_conflict');
  const [year,month,day]=issued.split('-');
  const br=day+'/'+month+'/'+year;
- const doc=normalizeDocument(payload,br,1);
+ let doc;
+ try{doc=normalizeDocument(payload,br,1);}
+ catch{throw coded('normalization_invalid');}
  if(doc.id!==id||doc.date!==issued||doc.phase!==1)
-   throw Error('Normalizacao NE divergente');
+   throw coded('normalization_mismatch');
  return doc;
 }
 function categorize(error){
@@ -115,7 +117,14 @@ function categorize(error){
      'authentication_required':status===429?'rate_limited':status>=500?
        'source_unavailable':'http_other';
  const code=error?.code;
- if(['invalid_shape','too_large','network','invalid_json'].includes(code))return code;
+ if(['invalid_shape','too_large','network','invalid_json',
+   'detail_invalid','identity_mismatch','phase_unverified',
+   'issue_date_unverified','issue_date_conflict',
+   'normalization_invalid','normalization_mismatch'].includes(code))
+   return code;
+ // Categorias literais, nunca nomes de pessoas/IDs/valores da resposta.
+ if(error?.message==='Dia CGU ja completo sem NE individual: revisar fonte')
+   return 'coverage_conflict';
  return 'validation_or_network';
 }
 function coded(reason){const e=Error('Consulta individual CGU indisponivel');e.code=reason;return e;}
