@@ -48,10 +48,31 @@ export function validateProcurement(data){
   // Checkpoint pequeno da leitura por data de atualizacao, nao cobertura de
   // publicacao mensal nem prova de execucao financeira SIAFI.
   if(data.pncpDelta!==undefined){
-    exactKeys(data.pncpDelta,['since','through']);
+    exactKeys(data.pncpDelta,['since','through','pendingPublications']);
     if(!date(data.pncpDelta.since)||!date(data.pncpDelta.through)||
        data.pncpDelta.since>data.pncpDelta.through)
       throw Error('Checkpoint PNCP incremental invalido');
+    // Fila bounded de IDs PNCP PUBLICOS desconhecidos, nunca documentos CGU.
+    // A pendencia so e removida quando o mesmo ID e recuperado pelo mes oficial.
+    const pending=data.pncpDelta.pendingPublications;
+    if(pending!==undefined){
+      if(!Array.isArray(pending)||pending.length>500)
+        throw Error('Fila PNCP fora do limite');
+      const seenPending=new Set();
+      let previous='';
+      for(const item of pending){
+        exactKeys(item,['id','publishedMonth']);
+        const key=item.publishedMonth+'/'+item.id;
+        if(typeof item.id!=='string'||!item.id.startsWith('pncp:')||
+           !PNCP_ID.test(item.id.slice(5))||
+           ![CAMPUS_CNPJ,REITORIA_CNPJ].includes(item.id.slice(5,19))||
+           !MONTH.test(item.publishedMonth)||key<=previous||
+           seenPending.has(item.id))
+          throw Error('Fila PNCP com identidade ou ordem invalida');
+        previous=key;
+        seenPending.add(item.id);
+      }
+    }
   }
   const unique=new Set();
   for(const contract of data.contracts){

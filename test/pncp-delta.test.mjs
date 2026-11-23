@@ -135,7 +135,10 @@ test('merge atualiza revisao por ID, preserva NE e jamais soma contratos a despe
  assert.equal(result.data.contracts.length,orig.contracts.length);
  assert.equal(result.data.contracts.find(c=>c.pncpId===ifcId).amountCents,140000);
  assert.deepEqual(result.data.contracts.find(c=>c.pncpId===ifcId).commitmentRefs,[ne]);
- assert.deepEqual(result.data.pncpDelta,{since:'2026-11-20',through:'2026-11-22'});
+ assert.deepEqual(result.data.pncpDelta,{
+   since:'2026-11-20',through:'2026-11-22',
+   pendingPublications:[{id:'pncp:'+otherId,publishedMonth:'2026-09'}]
+ });
  assert.deepEqual(result.data.coverage,orig.coverage);
  assert.equal(JSON.stringify(result.summary).includes(ne),false);
  assert.equal(JSON.stringify(result.summary).includes(ifcId),false);

@@ -232,6 +232,16 @@ export function instrumentProbeWindow(now=new Date()){
    .toISOString().slice(0,10);
  return {initial:yesterday,final:yesterday};
 }
+/** Dia util encerrado mais proximo; nao afirma que exista cobranca na data. */
+export function instrumentControlWindow(now=new Date()){
+ const first=instrumentProbeWindow(now).final;
+ let day=new Date(first+'T00:00:00Z');
+ while([0,6].includes(day.getUTCDay())){
+   day=new Date(day.getTime()-86400000);
+ }
+ const date=day.toISOString().slice(0,10);
+ return {initial:date,final:date};
+}
 export async function main(){
  const root=process.cwd();
  const manifest=JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8'));
@@ -247,6 +257,18 @@ export async function main(){
      instrumentProbeWindow(new Date()):base;
    const result=await probePncp(item.kind,window.initial,window.final,archive);
    console.log('Amostra PNCP publica: '+JSON.stringify({...result,window}));
+   // Distingue 404 de um domingo/feriado de indisponibilidade mais ampla.
+   // Uma janela de controle em dia util e apenas sondagem, nao dado de pagamento.
+   if(item.kind==='instrumentos_inclusao' &&
+      ['http_404','network_unavailable'].includes(result.status)){
+     const control=instrumentControlWindow(new Date());
+     if(control.final!==window.final){
+       const second=await probePncp(item.kind,control.initial,control.final,
+         archive,{maxPages:1});
+       console.log('Controle de acesso PNCP cobranca (sem IDs): '+
+         JSON.stringify({...second,window:control}));
+     }
+   }
  }
  const access=await probeContratosGov();
  console.log('Acesso anonimo Contratos.gov: '+JSON.stringify(access));

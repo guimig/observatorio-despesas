@@ -150,9 +150,12 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
    throw problem('checkpoint_conflict');
  const next=structuredClone(previous);
  const index=new Map(next.contracts.map((x,i)=>[x.id,i]));
+ const pending=new Map((previous.pncpDelta?.pendingPublications||[])
+   .map(item=>[item.id,item]));
  const seen=new Set(),summary={
    scanned:0,matched:0,unmatched:0,changedRecords:0,
-   materialChanges:0,stale:0,pages:0
+   materialChanges:0,stale:0,pages:0,newlyQueued:0,
+   alreadyPending:0,resolved:0,pendingPublications:0
  };
  for(const org of PNCP_DELTA_ORGS){
    const scan=scans.find(s=>s.org===org);
@@ -166,7 +169,20 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
         seen.has(record.id))throw problem('invalid_or_repeated_id');
      seen.add(record.id);summary.scanned++;
      const position=index.get(record.id);
-     if(position===undefined){summary.unmatched++;continue;}
+     if(position===undefined){
+       summary.unmatched++;
+       if(pending.has(record.id)){
+         if(pending.get(record.id).publishedMonth!==record.publishedMonth)
+           throw problem('pending_month_changed');
+         summary.alreadyPending++;
+       }else{
+         if(pending.size>=500)throw problem('pending_limit');
+         pending.set(record.id,{id:record.id,publishedMonth:record.publishedMonth});
+         summary.newlyQueued++;
+       }
+       continue;
+     }
+     if(pending.delete(record.id))summary.resolved++;
      const old=next.contracts[position];
      if(old.sourceUpdatedAt&&!record.sourceUpdatedAt)
        throw problem('missing_update_date');
@@ -180,9 +196,13 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
      }
    }
  }
+ const pendingPublications=[...pending.values()].sort((a,b)=>
+   a.publishedMonth.localeCompare(b.publishedMonth)||a.id.localeCompare(b.id));
+ summary.pendingPublications=pendingPublications.length;
  next.pncpDelta={
    since:previous.pncpDelta?.since||plan.from,
-   through:plan.to
+   through:plan.to,
+   ...(pendingPublications.length?{pendingPublications}:{})
  };
  if(canonical(next)===canonical(previous))
    return {changed:false,data:previous,summary};

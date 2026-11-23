@@ -6,6 +6,7 @@ import {readProcurement,validateProcurement} from './procurement-store.mjs';
 import {requestPublicJSON} from './procurement.mjs';
 import {PNCP_DELTA_ORGS,planPncpDelta,scanPncpDelta,applyPncpDelta}
  from './pncp-delta.mjs';
+import {recoverPncpPending} from './recover-pncp-publications.mjs';
 
 function safeErrorCode(error){
  if(Number.isInteger(error?.status)&&error.status>=400&&error.status<=599)
@@ -15,7 +16,8 @@ function safeErrorCode(error){
    'count_mismatch','invalid_contract','invalid_batch','checkpoint_conflict',
    'incomplete_source','invalid_or_repeated_id','missing_update_date',
    'invalid_date','invalid_clock','invalid_window','invalid_window_days',
-   'checkpoint_in_future','invalid_page_limit']);
+   'checkpoint_in_future','invalid_page_limit','pending_limit',
+   'pending_month_changed']);
  return allowed.has(error?.code)?error.code:'network_or_schema_failure';
 }
 function optionsCount(value,defaultCount,max){
@@ -65,6 +67,20 @@ async function main(){
    });
    console.log('Atualizacao incremental PNCP: '+JSON.stringify(result)+
      '. Apenas publicacoes PNCP; dados CGU e saldos de RAP inalterados.');
+   // Recuperacao nao deve impedir versionamento de checkpoint ja verificado.
+   // A fila e mantida se a API mensal estiver indisponivel.
+   let recovery;
+   try{
+     recovery=await recoverPncpPending({
+       root:resolve(process.cwd()),
+       dryRun:process.argv.includes('--dry-run'),
+       maxPages:optionsCount(process.env.PNCP_RECOVERY_MAX_PAGES,25,40)
+     });
+   }catch{
+     recovery={status:'unexpected_failure',changed:false};
+   }
+   console.log('Recuperacao mensal PNCP: '+JSON.stringify(recovery)+
+     '. Pendencias sem sucesso permanecem para proxima execucao.');
  }catch(error){
    console.error('Atualizacao PNCP bloqueada sem checkpoint: '+safeErrorCode(error));
    process.exitCode=1;
