@@ -74,6 +74,7 @@ test('não soma exercícios e modalidades distintos como se fossem uma conta',()
 });
 test('rejeita montantes fora do limite seguro e campos desconhecidos',()=>{
  const x=fixture();x.rows[0].balanceCents=Number.MAX_SAFE_INTEGER;
+ x.rows[1].balanceCents=1;
  assert.equal(check(x).reason,'amount_overflow');
  const y=fixture();y.controls[0].nota='valor qualquer';
  assert.equal(check(y).reason,'unexpected_control_field');
