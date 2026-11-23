@@ -236,3 +236,35 @@ test('rodízio por dia não fica preso no mesmo mês em três agendamentos',()=>
    orderMonths(months,{priority:'round_robin',slot:first+1}));
  assert.throws(()=>scheduledMonthSlot('invalid'));
 });
+
+test('prioriza ultimo item de NE parcialmente concluida sem bloquear outros empenhos',()=>{
+ const existing=wrap([result(ne,1),result(ne2,1)]);
+ let data=applyDocumentEnrichment(existing,ne,{kind:'items',items:[
+  {seq:1,cents:100},{seq:2,cents:200},{seq:3,cents:300},{seq:4,cents:400}
+ ]}).data;
+ data=applyDocumentEnrichment(data,ne2,{kind:'items',items:[
+  {seq:1,cents:100},{seq:2,cents:200},{seq:3,cents:300}
+ ]}).data;
+ for(const seq of [1,2,3]){
+  data=applyDocumentEnrichment(data,ne,{kind:'itemHistory',seq,
+   movements:[{date:'2026-11-18',operation:'INCLUSAO',type:'original',
+     quantity:'1.00',unitPrice:'1.00',cents:100}]}).data;
+ }
+ const plan=planEnrichment(data,{maxItems:1,maxItemHistories:3,slot:400});
+ assert.deepEqual(plan.itemHistories[0],{id:ne,seq:4});
+ assert.equal(plan.itemHistories.length,3);
+ assert.equal(plan.itemHistories.filter(x=>x.id===ne2).length,2);
+ assert.deepEqual(planEnrichment(data,{maxItems:1,maxItemHistories:1,slot:0})
+   .itemHistories,[{id:ne,seq:4}]);
+});
+
+test('nenhuma nota parcialmente concluida deixa todos os slots em rodizio',()=>{
+ let data=wrap([result(ne,1)]);
+ data=applyDocumentEnrichment(data,ne,{kind:'items',items:[
+  {seq:1,cents:100},{seq:2,cents:200},{seq:3,cents:300}
+ ]}).data;
+ const first=planEnrichment(data,{maxItemHistories:2,slot:0}).itemHistories;
+ const second=planEnrichment(data,{maxItemHistories:2,slot:1}).itemHistories;
+ assert.deepEqual(first,[{id:ne,seq:1},{id:ne,seq:2}]);
+ assert.deepEqual(second,[{id:ne,seq:3},{id:ne,seq:1}]);
+});
