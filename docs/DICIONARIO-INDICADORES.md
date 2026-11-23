@@ -33,3 +33,7 @@ Status: **proposta metodológica, não homologada**. Escopo UG 158459. Não publ
 ## Pendências de homologação
 
 Obter relatórios SIAFI/Tesouro Gerencial autorizados, confirmar layouts e contas utilizadas, validar fórmulas e amostras com CEOF e Contratos. Esta documentação não afirma que a conciliação já foi realizada.
+
+## Porta adicional — pré-validação de dados contábeis
+
+Um demonstrativo SIAFI/Tesouro Gerencial submetido à rotina `src/rap-accounting-preflight.mjs` pode receber `ok:true` apenas quanto ao **formato, granularidade e controles declarados**. Esse resultado **não habilita** publicação: `publishEligible` permanece sempre `false`. O indicador RAP a pagar segue indisponível até validação das contas, da extração completa, dos saldos, da data-base e da classificação RPP/RPNP pela CEOF. A base anual do Relatório de Avaliação dos Restos a Pagar da STN, sem identidade SIAFI individual e UG executora verificadas, não fornece saldo de RAP por NE da UG 158459.
