@@ -87,3 +87,46 @@ test('acervo da main possui notas anteriores que podem entrar na amostragem',asy
  assert.ok(rows.some(x=>x.year===2025));
  assert.ok(rows.every(x=>x.id.startsWith(prefix)));
 });
+
+test('janelas deterministicas alternam NEs sem repeti-las na mesma consulta',()=>{
+ const docs=Array.from({length:18},(_,i)=>({
+   id:prefix+'2025NE'+String(i+1).padStart(6,'0'),phase:1}));
+ const source={month:'2026-11',data:{documents:docs,relations:[]}};
+ const a=planHistoricalNeProbes([source],{max:4,window:0});
+ const b=planHistoricalNeProbes([source],{max:4,window:1});
+ assert.equal(a.length,4);
+ assert.equal(b.length,4);
+ assert.notDeepEqual(a.map(x=>x.id),b.map(x=>x.id));
+ assert.deepEqual(b,planHistoricalNeProbes([source],{max:4,window:1}));
+ assert.equal(new Set(b.map(x=>x.id)).size,4);
+ assert.throws(()=>planHistoricalNeProbes([source],{window:-1}));
+});
+test('ano de controle deriva dos meses consultados em vez de ano fixo',()=>{
+ const source={month:'2027-01',data:{documents:[
+  {id:prefix+'2027NE000001',phase:1},
+  {id:prefix+'2026NE000001',phase:1}],relations:[]}};
+ const plan=planHistoricalNeProbes([source],{max:5});
+ assert.equal(plan.find(x=>x.year===2027)?.cohort,'current_control');
+ assert.equal(plan.find(x=>x.year===2026)?.cohort,'older_origin');
+});
+test('historicos somente amostrados nao equivalem a cobertura total da NE',async()=>{
+ const sample={id:old,year:2025,cohort:'older_origin'};
+ const audit=await auditHistoricalNe(sample,{token:'FAKE',
+   resolveItemsFn:async()=>({ok:true,items:[
+    {seq:1,cents:100},{seq:2,cents:100},{seq:3,cents:100},{seq:4,cents:100}]}),
+   resolveHistoryFn:async()=>({ok:true,movements:[
+    {date:'2025-01-01',type:'other'},
+    {date:'2026-01-01',type:'other'},
+    {date:'unexpected',type:'other'}]}),
+   maxItems:3});
+ assert.equal(audit.status,'sampled_only');
+ assert.equal(audit.itemsSampled,3);
+ assert.equal(audit.itemsNotSampled,1);
+ assert.equal(audit.otherDates.same,3);
+ assert.equal(audit.otherDates.later,3);
+ assert.equal(audit.otherDates.invalid,3);
+ const summary=summarizeNeAudits([audit]);
+ assert.equal(summary.cohorts.older_origin.status.sampled_only,1);
+ assert.equal(summary.cohorts.older_origin.itemsNotSampled,1);
+ assert.equal(JSON.stringify(summary).includes(old),false);
+});
