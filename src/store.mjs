@@ -186,7 +186,7 @@ export function validateMonth(data) {
       !phases.has(c.phase) || typeof c.complete !== 'boolean' ||
       !Number.isSafeInteger(c.count) || c.count < 0 ||
       !Number.isSafeInteger(c.invalid) || c.invalid < 0 || c.invalid > c.count ||
-      (c.reason !== undefined && !['limite_paginas', 'pagina_repetida'].includes(c.reason)) ||
+      (c.reason !== undefined && !['limite_paginas', 'pagina_repetida', 'consulta_individual'].includes(c.reason)) ||
       (c.unlinked !== undefined && (!Number.isSafeInteger(c.unlinked) || c.unlinked < 0))) {
       throw Error('Cobertura documental inválida');
     }
@@ -353,6 +353,65 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
   return { changed: true, data: next };
 }
 
+/**
+ * Acrescenta uma NE cuja identidade e data de emissao foram verificadas
+ * por consulta individual CGU. NAO declara o dia como consulta completa.
+ * Nao apaga outros documentos da fase, itens, relacoes ou fornecedores.
+ */
+export function applyTargetedOriginal(existing,document,now=new Date()){
+  if(!document||document.phase!==1||!NE_RE.test(document.id)||
+     !DATE_RE.test(document.date)||document.id.slice(11,15)!==document.date.slice(0,4)||
+     !(now instanceof Date)||!Number.isFinite(now.getTime()))
+    throw Error('NE individual sem identidade e data verificadas');
+  const month=document.date.slice(0,7);
+  const original=validateMonth(structuredClone(existing||emptyMonth(month)));
+  if(original.month!==month)throw Error('Competencia individual divergente');
+  const old=original.documents.find(d=>d.id===document.id);
+  if(old){
+    if(old.date!==document.date||old.phase!==1)
+      throw Error('NE individual com data ou fase divergente');
+    return {changed:false,data:original};
+  }
+  const next=structuredClone(original);
+  const coverage=next.coverage.find(c=>c.date===document.date&&c.phase===1);
+  // Se a fonte ja afirma cobertura integral do dia e a NE nao consta,
+  // existe conflito real de origem; nunca sobrescrever o dia validado.
+  if(coverage?.complete===true)
+    throw Error('Dia CGU ja completo sem NE individual: revisar fonte');
+  const doc=structuredClone(document);
+  if(doc.beneficiary?.type==='pj'){
+    const {id,name}=doc.beneficiary;
+    if(!/^\d{14}$/.test(id))throw Error('Fornecedor de NE invalido');
+    next.beneficiaries ||= {};
+    next.beneficiaries[id]=name||next.beneficiaries[id]||'';
+    doc.partyRef=id;
+  }else if(doc.beneficiary?.type==='pf'){
+    doc.cpfMasked=doc.beneficiary.id;
+  }else if(doc.beneficiary){
+    throw Error('Beneficiario de NE individual invalido');
+  }
+  delete doc.beneficiary;
+  next.documents.push(doc);
+  next.documents.sort((a,b)=>a.date.localeCompare(b.date)||
+    a.phase-b.phase||a.id.localeCompare(b.id));
+  if(coverage){
+    coverage.count++;
+    if(doc.cents===null)coverage.invalid++;
+    coverage.reason ||= 'consulta_individual';
+  }else{
+    next.coverage.push({date:doc.date,phase:1,complete:false,count:1,
+      invalid:doc.cents===null?1:0,reason:'consulta_individual'});
+    next.coverage.sort((a,b)=>a.date.localeCompare(b.date)||a.phase-b.phase);
+  }
+  if(next.beneficiaries){
+    next.beneficiaries=Object.fromEntries(Object.entries(next.beneficiaries)
+      .sort(([a],[b])=>a.localeCompare(b)));
+  }
+  validateMonth(next);
+  next.updated_at=now.toISOString();
+  return {changed:true,data:next};
+}
+
 /** Atualiza detalhes independentes da consulta documental, com idempotência. */
 export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   const original=validateMonth(structuredClone(existing));
@@ -446,6 +505,30 @@ async function atomicWrite(path, data) {
     await unlink(tmp).catch(() => {});
     throw error;
   }
+}
+
+/** Arquivo mensal + manifesto canonico, sem marcar cobertura integral. */
+export async function persistTargetedOriginal(root,document,now=new Date()){
+  if(!document||typeof document.date!=='string')
+    throw Error('NE individual invalida');
+  const month=document.date.slice(0,7);
+  if(!MONTH_RE.test(month))throw Error('Mes de origem invalido');
+  const base=join(root,'data'),folder=join(base,'months');
+  const manifestPath=join(base,'manifest.json');
+  const manifest=validateManifest(await readJson(manifestPath,emptyManifest()));
+  const path=join(folder,month+'.json');
+  const existing=await readJson(path,null);
+  const outcome=applyTargetedOriginal(existing,document,now);
+  if(!outcome.changed)return {changed:false,month};
+  const months=[...new Set([...manifest.months,month])].sort();
+  const nextManifest={schema_version:VERSION,unit:UG,status:'dados_publicados',
+    months,updated_at:now.toISOString()};
+  validateManifest(nextManifest);
+  await mkdir(folder,{recursive:true});
+  await atomicWrite(path,JSON.stringify(outcome.data)+'\n');
+  if(JSON.stringify(nextManifest)!==JSON.stringify(manifest))
+    await atomicWrite(manifestPath,JSON.stringify(nextManifest,null,2)+'\n');
+  return {changed:true,month};
 }
 
 export async function persistWindow(root, patches, now = new Date()) {
