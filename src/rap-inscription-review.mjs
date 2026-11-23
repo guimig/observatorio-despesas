@@ -18,7 +18,7 @@ export function inscriptionLabelEvidence(operation){
  const name=canonical(operation);
  if(name===null)return 'missing';
  if(name==='inscricao')return 'exact';
- if(/^(inscricao (de|em) restos? a pagar|inscricao (em )?rp)$/.test(name))
+ if(/^(inscricao (de|em) restos? a pagar|inscricao (de|em )?rp)$/.test(name))
    return 'qualified';
  if(/\binscri(cao|cao\b)/.test(name))return 'other_with_hint';
  return 'not_inscription';
