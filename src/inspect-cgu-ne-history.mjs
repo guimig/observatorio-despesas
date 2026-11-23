@@ -13,6 +13,16 @@ const NE=/^158459\d{5}(20\d{2})NE\d{6}$/;
 const EXPENDITURE=/^158459\d{5}(20\d{2})(NS|OB|DF)\d{6}$/;
 const TYPES=['original','reinforcement','annulment','cancellation','reversal','other','unknown'];
 const COHORTS=['cross_year_payment','cross_year_liquidation','older_origin','current_control'];
+const COHORT_QUOTAS={cross_year_payment:5,cross_year_liquidation:3,
+ older_origin:4,current_control:2};
+const YEARS=['previous','same','later','invalid'];
+const emptyYearCounts=()=>Object.fromEntries(YEARS.map(x=>[x,0]));
+function eventYearGroup(date,year){
+ const match=typeof date==='string'&&/^(20\d{2})-\d{2}-\d{2}$/.exec(date);
+ if(!match)return 'invalid';
+ const eventYear=Number(match[1]);
+ return eventYear<year?'previous':eventYear===year?'same':'later';
+}
 const FAILURES=new Set(['consulta_indisponivel','resposta_invalida','pagina_repetida',
  'limite_paginacao','item_invalido','movimentacao_invalida',
  'sequencial_duplicado_divergente','impacto_nao_identificado','acesso_negado',
@@ -22,8 +32,9 @@ const safeReason=reason=>FAILURES.has(reason)?reason:'other_failure';
 const yearOf=id=>Number(NE.exec(id)?.[1]||0);
 
 /** Vinculos em fases posteriores sao criterios amostrais, nao prova de RP. */
-export function planHistoricalNeProbes(months,{max=14}={}){
- if(!Array.isArray(months)||!Number.isSafeInteger(max)||max<1||max>20)
+export function planHistoricalNeProbes(months,{max=14,window=0}={}){
+ if(!Array.isArray(months)||!Number.isSafeInteger(max)||max<1||max>20||
+    !Number.isSafeInteger(window)||window<0)
    throw Error('Amostragem historica invalida');
  const originals=new Map(),payment=new Set(),liquidation=new Set();
  for(const source of months){
@@ -47,12 +58,21 @@ export function planHistoricalNeProbes(months,{max=14}={}){
      }
    }
  }
+ const referenceYear=months.length?Math.max(...months.map(x=>Number(x.month.slice(0,4)))):0;
  const pools={
    cross_year_payment:[...payment].filter(x=>NE.test(x)).sort(),
    cross_year_liquidation:[...liquidation].filter(x=>NE.test(x)).sort(),
-   older_origin:[...originals].filter(([,y])=>y<2026).map(([id])=>id).sort(),
-   current_control:[...originals].filter(([,y])=>y>=2026).map(([id])=>id).sort()
+   older_origin:[...originals].filter(([,y])=>y<referenceYear).map(([id])=>id).sort(),
+   current_control:[...originals].filter(([,y])=>y===referenceYear).map(([id])=>id).sort()
  };
+ // Rotacao deterministica por execucao: uma reexecucao consulta outra faixa,
+ // sem aumentar o numero de chamadas nem registrar identificadores.
+ for(const cohort of COHORTS){
+   const pool=pools[cohort];
+   if(!pool.length)continue;
+   const shift=((window%pool.length)*COHORT_QUOTAS[cohort])%pool.length;
+   pools[cohort]=pool.slice(shift).concat(pool.slice(0,shift));
+ }
  const chosen=[],seen=new Set();
  const cycle=['cross_year_payment','cross_year_liquidation','older_origin',
    'cross_year_payment','older_origin','current_control'];
@@ -94,9 +114,10 @@ export function pickHistoricalItems(items,{max=3}={}){
  return selected;
 }
 function emptyAudit(cohort){
- return {cohort,status:'complete',itemsAvailable:0,historiesCompleted:0,
+ return {cohort,status:'complete',itemsAvailable:0,itemsSampled:0,
+   itemsNotSampled:0,historiesCompleted:0,
    historiesUnavailable:0,movements:emptyCounts(),
-   cancellationDates:{previous:0,same:0,later:0,invalid:0},
+   cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
    cancellationItems:0,reasonCounts:{}};
 }
 function addReason(result,reason){
@@ -124,6 +145,8 @@ export async function auditHistoricalNe(sample,{
  let chosen;
  try{chosen=pickHistoricalItems(items.items,{max:maxItems});}
  catch{result.status='items_invalid';return result;}
+ result.itemsSampled=chosen.length;
+ result.itemsNotSampled=items.items.length-chosen.length;
  for(const item of chosen){
    let outcome;
    try{outcome=await resolveHistoryFn(sample.id,item.seq,{token,limit:4});}
@@ -139,19 +162,16 @@ export async function auditHistoricalNe(sample,{
    for(const event of outcome.movements){
      const type=TYPES.includes(event?.type)?event.type:'unknown';
      result.movements[type]++;
+     if(type==='other')result.otherDates[eventYearGroup(event.date,sample.year)]++;
      if(type!=='cancellation')continue;
      cancellationSeen=true;
-     const date=typeof event.date==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(event.date)
-       ?event.date:null;
-     const year=date?Number(date.slice(0,4)):null;
-     const group=year===null?'invalid':year<sample.year?'previous':
-       year===sample.year?'same':'later';
-     result.cancellationDates[group]++;
+     result.cancellationDates[eventYearGroup(event.date,sample.year)]++;
    }
    if(cancellationSeen)result.cancellationItems++;
  }
  if(result.historiesUnavailable)result.status='partial';
  else if(!result.historiesCompleted)result.status='no_history';
+ else if(result.itemsNotSampled)result.status='sampled_only';
  return result;
 }
 export function summarizeNeAudits(audits){
@@ -159,8 +179,9 @@ export function summarizeNeAudits(audits){
  const output={sampled:audits.length,cohorts:{}};
  for(const cohort of COHORTS){
    output.cohorts[cohort]={notes:0,status:{},itemsAvailable:0,
+     itemsSampled:0,itemsNotSampled:0,
      historiesCompleted:0,historiesUnavailable:0,movements:emptyCounts(),
-     cancellationDates:{previous:0,same:0,later:0,invalid:0},
+     cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
      cancellationItems:0,reasons:{}};
  }
  for(const row of audits){
@@ -168,11 +189,14 @@ export function summarizeNeAudits(audits){
    const bucket=output.cohorts[row.cohort];
    bucket.notes++;
    bucket.status[row.status]=(bucket.status[row.status]||0)+1;
-   for(const k of ['itemsAvailable','historiesCompleted','historiesUnavailable','cancellationItems'])
+   for(const k of ['itemsAvailable','itemsSampled','itemsNotSampled',
+     'historiesCompleted','historiesUnavailable','cancellationItems'])
      bucket[k]+=row[k];
    for(const kind of TYPES)bucket.movements[kind]+=row.movements[kind];
-   for(const k of Object.keys(bucket.cancellationDates))
+   for(const k of YEARS){
      bucket.cancellationDates[k]+=row.cancellationDates[k];
+     bucket.otherDates[k]+=row.otherDates[k];
+   }
    for(const [key,value] of Object.entries(row.reasonCounts)){
      const label=safeReason(key);
      bucket.reasons[label]=(bucket.reasons[label]||0)+value;
@@ -185,18 +209,23 @@ async function main(){
  if(!token)throw Error('CGU_API_KEY ausente');
  const root=process.cwd();
  const manifest=JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8'));
- const months=await Promise.all([...manifest.months].sort().reverse().slice(0,6)
+ const months=await Promise.all([...manifest.months].sort().reverse()
    .map(async month=>({month,data:JSON.parse(await readFile(
       join(root,'data/months',month+'.json'),'utf8'))})));
- const plan=planHistoricalNeProbes(months,{max:14});
+ // GITHUB_RUN_NUMBER se mantem em rerun e avanca na execucao seguinte.
+ const window=Number(process.env.GITHUB_RUN_NUMBER||0);
+ const plan=planHistoricalNeProbes(months,{max:14,window});
  const audits=[];
  for(const [index,item] of plan.entries()){
    if(index)await new Promise(done=>setTimeout(done,700));
    audits.push(await auditHistoricalNe(item,{token,maxItems:3}));
  }
  const summary=summarizeNeAudits(audits);
+ console.log('Janela de amostragem de NE (sem IDs): '+window);
  console.log('Diagnostico historico de NE CGU: '+JSON.stringify(summary));
  console.log('Amostras nao representam universo das NEs. '+
+   'Historico completo de itens amostrados nao prova conferencia da NE inteira. '+
+   'Operacoes "other" exigem validacao da semantica na fonte. '+
    'Cancelamento por item nao prova saldo de RP nem abrange outros registros contabeis. '+
    'Nenhum documento, valor, texto livre, CPF ou token registrado.');
  const consulted=audits.filter(x=>x.historiesCompleted>0).length;
