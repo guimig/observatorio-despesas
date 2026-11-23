@@ -1,5 +1,7 @@
 # Protocolo de homologação contábil de restos a pagar — UG 158459
 
+**Decisão superveniente de 23/11/2026:** o protocolo e o módulo de preflight são apenas referência futura, **sem integração prevista por ora com Tesouro Gerencial**. A prioridade é buscar APIs oficiais com atualização ao longo do exercício; ver [fontes candidatas por API](FONTES-API-PRIORIDADES.md). A base anual da STN não serve para o acompanhamento individual dinâmico exigido pelo Observatório.
+
 **Estado em 23/11/2026:** especificação preparatória, **sem integração SIAFI/Tesouro Gerencial implementada**, sem fonte de saldo validada e sem indicador público homologado. Referência do trabalho: [issue #29](https://github.com/guimig/observatorio-despesas/issues/29).
 
 ## 1. Separação das evidências
