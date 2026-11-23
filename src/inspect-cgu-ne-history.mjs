@@ -8,6 +8,8 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {resolveItems} from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
+import {reviewInscriptionTextEvent,emptyInscriptionEvidence,
+ addInscriptionEvidence,mergeInscriptionEvidence} from './rap-inscription-review.mjs';
 import {otherOperationHint,emptyOperationHints,planLinkedNeEvidence,
  inspectLinkedNeEvidence,summarizeLinkedNeEvidence} from './ne-trajectory-evidence.mjs';
 
@@ -120,7 +122,8 @@ function emptyAudit(cohort){
    itemsNotSampled:0,historiesCompleted:0,
    historiesUnavailable:0,movements:emptyCounts(),
    cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
-   otherHints:emptyOperationHints(),cancellationItems:0,reasonCounts:{}};
+   otherHints:emptyOperationHints(),inscriptionReview:emptyInscriptionEvidence(),
+   cancellationItems:0,reasonCounts:{}};
 }
 function addReason(result,reason){
  const code=safeReason(reason);
@@ -167,6 +170,8 @@ export async function auditHistoricalNe(sample,{
      if(type==='other'){
        result.otherDates[eventYearGroup(event.date,sample.year)]++;
        result.otherHints[otherOperationHint(event.operation)]++;
+       addInscriptionEvidence(result.inscriptionReview,
+         reviewInscriptionTextEvent(event,sample.year));
      }
      if(type!=='cancellation')continue;
      cancellationSeen=true;
@@ -187,7 +192,8 @@ export function summarizeNeAudits(audits){
      itemsSampled:0,itemsNotSampled:0,
      historiesCompleted:0,historiesUnavailable:0,movements:emptyCounts(),
      cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
-     otherHints:emptyOperationHints(),cancellationItems:0,reasons:{}};
+     otherHints:emptyOperationHints(),inscriptionReview:emptyInscriptionEvidence(),
+     cancellationItems:0,reasons:{}};
  }
  for(const row of audits){
    if(!COHORTS.includes(row?.cohort))throw Error('Categoria de NE invalida');
@@ -200,6 +206,7 @@ export function summarizeNeAudits(audits){
    for(const kind of TYPES)bucket.movements[kind]+=row.movements[kind];
    for(const hint of Object.keys(bucket.otherHints))
      bucket.otherHints[hint]+=row.otherHints[hint];
+   mergeInscriptionEvidence(bucket.inscriptionReview,row.inscriptionReview);
    for(const k of YEARS){
      bucket.cancellationDates[k]+=row.cancellationDates[k];
      bucket.otherDates[k]+=row.otherDates[k];
