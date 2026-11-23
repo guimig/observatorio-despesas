@@ -238,7 +238,10 @@ test('rodízio por dia não fica preso no mesmo mês em três agendamentos',()=>
 });
 
 test('prioriza ultimo item de NE parcialmente concluida sem bloquear outros empenhos',()=>{
- const existing=wrap([result(ne,1),result(ne2,1)]);
+ const existing=mergeMonth(wrap([result(ne,1)]),'2026-11',[{
+  documents:[{id:ne2,date:'2026-11-19',phase:1,cents:1000}],
+  links:[],coverage:{date:'2026-11-19',phase:1,count:1,invalid:0,complete:true}
+ }]).data;
  let data=applyDocumentEnrichment(existing,ne,{kind:'items',items:[
   {seq:1,cents:100},{seq:2,cents:200},{seq:3,cents:300},{seq:4,cents:400}
  ]}).data;
