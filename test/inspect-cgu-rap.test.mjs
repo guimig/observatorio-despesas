@@ -77,7 +77,7 @@ test('API vazia nao significa sem RP; limite, repeticao e falha sao parciais',as
   request:async()=>{const e=Error('private CPF');e.status=429;throw e;}});
  assert.equal(fail.reason,'http_429');
  assert.equal(JSON.stringify(fail).includes('CPF'),false);
- assert.throws(()=>inspectRapImpacts(old,2,base));
+ await assert.rejects(inspectRapImpacts(old,2,base));
 });
 test('amostra real do acervo contem referencias de ano anterior',async()=>{
  const month=JSON.parse(await readFile(new URL('../data/months/2026-11.json',import.meta.url),'utf8'));
