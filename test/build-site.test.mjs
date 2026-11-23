@@ -27,6 +27,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'trajectory.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'dialog-scroll.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'siafi-movement-audit.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'siafi-movement-reconciliation.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'style.css'), 'body{}');
     await writeFile(join(root, 'data', 'manifest.json'), JSON.stringify({
       schema_version: 1, unit: '158459', status: 'aguardando_primeira_coleta', months: []
