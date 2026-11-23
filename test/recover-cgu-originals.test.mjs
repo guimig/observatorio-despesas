@@ -63,7 +63,7 @@ async function temporary(callback){
 }
 test('11 NEs antigas são selecionadas por relacao CGU e não pelo montante',()=>{
  const more=Array.from({length:8},(_,i)=>prefix+'2025NE'+
-   String(i+1).padStart(6,'0'));
+   String(i+10).padStart(6,'0'));
  const origins=references();
  for(const target of more)origins[0].relations.push({from:ob,to:target,cents:0});
  const selected=missingReferencedNe(origins);
