@@ -57,3 +57,16 @@ test('somente fontes documentadas e timeout limitado podem ser inspecionados',as
    url:'https://other.host/path',routes:['/saldos']}));
  await assert.rejects(inspectOfficialCatalog(source,{timeoutMs:120000}));
 });
+
+test('OpenAPI informa somente limites numericos seguros dos parametros',()=>{
+ const pncp=API_CATALOG.find(s=>s.name==='PNCP');
+ const api={paths:{'/v1/contratos/atualizacao':{get:{parameters:[
+   {name:'tamanhoPagina',in:'query',required:false,
+     schema:{type:'integer',minimum:10,maximum:500,description:'CPF 123'}},
+   {name:'pagina',in:'query',required:true,schema:{minimum:-2,maximum:200000}},
+ ]}}}};
+ const r=summarizeOpenApi(api,pncp);
+ assert.deepEqual(r.routes[0].query,[{name:'tamanhoPagina',required:false,
+   minimum:10,maximum:500},{name:'pagina',required:true}]);
+ assert.equal(JSON.stringify(r).includes('CPF'),false);
+});

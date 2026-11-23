@@ -31,7 +31,14 @@ const SAFE_NAME=/^[a-zA-Z0-9_-]{1,60}$/;
 function paramShape(param){
  if(param?.in!=='query'||typeof param.name!=='string'||!SAFE_NAME.test(param.name))
    return null;
- return {name:param.name,required:param.required===true};
+ const value={name:param.name,required:param.required===true};
+ // Restricao NUMERICA publicada na especificacao, sem mensagens livres.
+ for(const key of ['minimum','maximum']){
+   const limit=param.schema?.[key];
+   if(Number.isSafeInteger(limit)&&limit>=0&&limit<=100000)
+     value[key]=limit;
+ }
+ return value;
 }
 
 /** Nenhuma chave nao selecionada, exemplo, responseBody ou dado pessoal e retornado. */

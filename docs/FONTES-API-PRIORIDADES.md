@@ -47,7 +47,7 @@ O script `src/probe-official-apis.mjs` e workflow `sondar-fontes-oficiais.yml` i
 
 ## Segunda etapa — prova pequena de acesso aos dados (23/11/2026)
 
-Foi preparado o experimento **somente leitura** `src/probe-official-data.mjs` no workflow `sondar-dados-oficiais.yml`, disparado manualmente ou por alteração do próprio código. Ele consulta, sem token, **apenas as duas rotas públicas PNCP** de contratos/empenhos atualizados por data e instrumentos de cobrança inseridos. Janela móvel de 14 dias, filtrada pelo CNPJ publicador do IFC `10635424000186`, com **até duas páginas de cinco registros por rota**. Resultado com paginação remanescente fica `sample_incomplete`, nunca `complete`.
+Foi preparado o experimento **somente leitura** `src/probe-official-data.mjs` no workflow `sondar-dados-oficiais.yml`, disparado manualmente ou por alteração do próprio código. Ele consulta, sem token, **apenas as duas rotas públicas PNCP** de contratos/empenhos atualizados por data e instrumentos de cobrança inseridos. Janela móvel de 14 dias, filtrada pelo CNPJ publicador do IFC `10635424000186`, com **até duas páginas de dez registros por rota**. Resultado com paginação remanescente fica `sample_incomplete`, nunca `complete`.
 
 A sondagem compara somente identificadores PNCP `-2-` exatos com o catálogo já coletado e, quando existir campo explícito `numeroEmpenho` contendo a **NE SIAFI integral da UG 158459**, verifica presença da mesma identidade no conjunto canônico CGU. Sem número integral, a correspondência financeira permanece **não verificada**. Também conta publicações anteriores à janela de atualização, sem presumir que houve modificação contábil ou pagamento. O teste de instrumentos de cobrança mede apenas a presença de referências oficiais PNCP, não notas liquidadas nem saldos.
 
@@ -56,3 +56,9 @@ A indisponibilidade do OpenAPI do Contratos.gov.br será investigada com quatro 
 Todos os retornos são limitados em memória, o diagnóstico descarta payloads e registra apenas categorias/contagens; nenhuma resposta pessoal, CNPJ de fornecedor, CPF, número de NE, valor monetário, JSON novo ou credencial será publicada. Limites e formato foram cobertos por testes unitários. Os resultados observados no runner devem ser adicionados abaixo após a execução, sem afirmar validação de uma fonte ainda não testada.
 
 **Aceite técnico:** CI, workflow read-only real, observação da paginação, controle de sobreposição e garantia de sigilo. **Aceite de integração:** exige evidência de cobertura da UG financeira, NEs substitutivas e cronologia dos eventos, além de validação semântica de RP. Não habilitar indicadores nem alterar o coletor regular.
+
+## Verificacao real inicial e ajuste conservador (23/11/2026)
+
+O [workflow #45229486002](https://github.com/guimig/observatorio-despesas/actions/runs/45229486002) executou chamadas reais sem credenciais. As duas rotas PNCP retornaram **HTTP 400 antes da primeira pagina** com `tamanhoPagina=5`; nao foi consultado nenhum registro, portanto todas as contagens de correspondencia ficaram em zero **por ausencia de leitura, nao por ausencia de dados**. No Contratos.gov.br, as quatro consultas de acesso (HTML, OpenAPI, GET de RP sem parametros e GET da UG apenas para status) terminaram com `network_unavailable` no runner. Isso nao permite concluir que as rotas exigem JWT ou que os dados nao existem.
+
+A etapa de diagnóstico seguinte adotou `tamanhoPagina=10` (ate 20 registros por endpoint) e passou a informar limites numericos publicados no OpenAPI, quando disponiveis. Trata-se de uma **hipótese de validacao do parametro**, ainda sem resultado real da nova tentativa. Nenhuma chamada é repetida automaticamente em HTTP 400 e o motivo exato permanece pendente de verificacao por schema oficial.
