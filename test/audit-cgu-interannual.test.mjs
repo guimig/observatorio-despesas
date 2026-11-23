@@ -59,7 +59,7 @@ test('ids e datas documentais divergentes nao entram em relacoes fabricadas',()=
  const bad=[...two,{documents:[{id:ns,phase:2,date:'2026-11-11'}],
    relations:[],itemsByDocument:{}}];
  assert.throws(()=>auditInterannualCgu(bad),/divergente/);
- assert.throws(()=>auditInterannualCgu([{documents:[],relations:[]}]),
+ assert.throws(()=>auditInterannualCgu([{documents:[],relations:{}}]),
    /Competencia documental/);
  assert.equal(auditInterannualCgu([]).earlierYearNeDistinct,0);
 });
