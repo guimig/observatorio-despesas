@@ -20,9 +20,11 @@ export function planPncpRecovery(catalog,{now=new Date()}={}){
  const month=queue[0].publishedMonth;
  if(!MONTH.test(month))throw Error('Mes pendente invalido');
  // A data de publicacao precisa ser consultavel, nunca marcar mes futuro.
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',
-   year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
- if(month>today.slice(0,7))return {status:'future_month'};
+ const parts=new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',
+   year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+ const values=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+ const currentMonth=values.year+'-'+values.month;
+ if(month>currentMonth)return {status:'future_month'};
  return {status:'ready',month,pendingInMonth:queue.filter(x=>
    x.publishedMonth===month).length};
 }
