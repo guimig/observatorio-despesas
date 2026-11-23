@@ -24,7 +24,7 @@ test('parametros de consulta sao limitados a PNCP, CNPJ institucional e 2 pagina
  const url=new URL(pncpProbeUrl('contratos_atualizacao',windowStart,windowEnd));
  assert.equal(url.hostname,'pncp.gov.br');
  assert.equal(url.searchParams.get('cnpjOrgao'),'10635424000186');
- assert.equal(url.searchParams.get('tamanhoPagina'),'5');
+ assert.equal(url.searchParams.get('tamanhoPagina'),'10');
  assert.equal(url.searchParams.get('dataInicial'),'20261110');
  assert.throws(()=>pncpProbeUrl('contratos_atualizacao',windowEnd,windowStart));
  assert.throws(()=>pncpProbeUrl('contratos_atualizacao','2026-01-01',windowEnd));
