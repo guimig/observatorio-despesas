@@ -31,7 +31,7 @@ test('workflow Pages usa artefato distinto por run/attempt em upload e deploy',a
  const {readFile}=await import('node:fs/promises');
  const workflow=await readFile('.github/workflows/publicar-pages.yml','utf8');
  const key='pages-'+ '$'+'{{ github.run_id }}-'+ '$'+'{{ github.run_attempt }}';
- assert.equal(workflow.split('name: '+key).length-1,1);
- assert.equal(workflow.split('artifact_name: '+key).length-1,3);
+ assert.equal(workflow.split('\n').filter(line=>line.trim()==='name: '+key).length,1);
+ assert.equal(workflow.split('\n').filter(line=>line.trim()==='artifact_name: '+key).length,3);
  assert.match(workflow,/cancel-in-progress: false/);
 });
