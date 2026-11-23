@@ -6,6 +6,7 @@ import {readProcurement,validateProcurement} from './procurement-store.mjs';
 import {requestPublicJSON} from './procurement.mjs';
 import {PNCP_DELTA_ORGS,planPncpDelta,scanPncpDelta,applyPncpDelta}
  from './pncp-delta.mjs';
+import {recoverPncpPending} from './recover-pncp-publications.mjs';
 
 function safeErrorCode(error){
  if(Number.isInteger(error?.status)&&error.status>=400&&error.status<=599)
@@ -65,6 +66,20 @@ async function main(){
    });
    console.log('Atualizacao incremental PNCP: '+JSON.stringify(result)+
      '. Apenas publicacoes PNCP; dados CGU e saldos de RAP inalterados.');
+   // Recuperacao nao deve impedir versionamento de checkpoint ja verificado.
+   // A fila e mantida se a API mensal estiver indisponivel.
+   let recovery;
+   try{
+     recovery=await recoverPncpPending({
+       root:resolve(process.cwd()),
+       dryRun:process.argv.includes('--dry-run'),
+       maxPages:optionsCount(process.env.PNCP_RECOVERY_MAX_PAGES,25,40)
+     });
+   }catch{
+     recovery={status:'unexpected_failure',changed:false};
+   }
+   console.log('Recuperacao mensal PNCP: '+JSON.stringify(recovery)+
+     '. Pendencias sem sucesso permanecem para proxima execucao.');
  }catch(error){
    console.error('Atualizacao PNCP bloqueada sem checkpoint: '+safeErrorCode(error));
    process.exitCode=1;
