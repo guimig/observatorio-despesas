@@ -29,3 +29,15 @@ O workflow [#45097137828](https://github.com/guimig/observatorio-despesas/action
 - O plano e os resumos seguem efemeros, sem novos JSONs publicos, novos Secrets ou saldo de RAP presumido.
 
 **Aceite tecnico:** testes de rotacao, ausencia de duplicacao na janela, atualizacao do ano de referencia, status de amostragem incompleta, categorizacao temporal e privacidade; CI e sondagem autenticada apos merge. **Aceite contabil:** pendente de evidencia oficial do significado das operacoes desconhecidas e dos eventos de RP; a issue #29 permanece aberta.
+
+## Cruzamento documental efemero da janela rotativa — 23/11/2026
+
+A [execucao autenticada #45161073355](https://github.com/guimig/observatorio-despesas/actions/runs/45161073355) concluiu com sucesso: **14 NEs examinadas**, com 4 movimentos `other`, todos posteriores ao exercicio da NE. Dois empenhos tinham itens nao amostrados; por isso historicos dos itens selecionados completos nao equivalem a conferencia do empenho inteiro. Nenhuma operacao `cancellation` ou `reversal` foi identificada nessa janela.
+
+A nova etapa busca **pistas**, sem mudar a classificacao oficial: o texto `operacao` das movimentacoes `other` e confrontado somente em memoria com um vocabulário fechado (inscricao, reinscricao, restos a pagar, baixa, liquidacao, pagamento, transferencia, exclusao, retificacao, ajuste ou sem pista). Sao impressas apenas **contagens por classe**, nunca a frase original ou IDs de NE. Pista lexical nao confirma evento contábil, semantica nem sinal.
+
+Para NEs com `other` em exercicio posterior, o diagnostico cruza as **relacoes explicitas ja armazenadas** com documentos NS/OB/DF posteriores, em no maximo quatro NEs e oito documentos, ate dois documentos de fases diferentes por NE (priorizando fase 3 e depois fase 2). Documentos N:M podem atender varias NEs, sem duplicar a consulta; nenhuma aresta NS→OB e fabricada. Os endpoints CGU `/despesas/empenhos-impactados` sao consultados de modo autenticado, com quatro paginas por documento e identificacao de NE SIAFI **integral** na propria linha retornada. O cruzamento exige que a NE integral tambem esteja no conjunto de vinculos explicitos da consulta.
+
+Somente apos pagina terminal vazia e esquema valido, os campos `valorRestoInscrito`, `valorRestoCancelado`, `valorRestoPago`, `valorPago` e `valorLiquidado` sao resumidos por presenca, sinal e especie documental. IDs, valores, descricoes, CPF e respostas brutas nao saem do runner. Se houver falta de paginacao, timeout ou resposta invalida, os campos parciais sao descartados e o status permanece `partial` ou `unavailable`. `empty` e `no_match` nao significam RP inexistente.
+
+**Aceite tecnico:** teste de operacao lexical, N:M, chave NE integral, fases, paginas, respostas vazias, 429/erro e sigilo; CI, Pages e auditoria autenticada na main. **Aceite contabil:** nao realizado. Uma linha com `valorRestoPago` positivo e evidencia de campo documental da CGU, nao prova saldo contábil, situacao processado/nao processado nem inscricao. Nao somar linhas, documentos ou instrumentos PNCP; nao habilitar cards monetarios. Conciliação oficial e conferencia CEOF seguem pendentes.
