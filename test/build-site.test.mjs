@@ -82,6 +82,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','quality.js'),'');
     await writeFile(join(root,'assets','trajectory.js'),'');
     await writeFile(join(root,'assets','dialog-scroll.js'),'');
+    await writeFile(join(root,'assets','siafi-movement-audit.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
     await mkdir(join(root,'data','months'),{recursive:true});
     await writeFile(join(root,'data','manifest.json'),JSON.stringify({
@@ -107,7 +108,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js','dialog-scroll.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
