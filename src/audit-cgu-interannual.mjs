@@ -17,7 +17,9 @@ export function auditInterannualCgu(sources){
  const checked={liquidation:0,payment:0},pending={liquidation:0,payment:0};
  for(const data of sources){
    if(!data||!Array.isArray(data.documents)||!Array.isArray(data.relations)||
-      !data.itemsByDocument||typeof data.itemsByDocument!=='object')
+      (data.itemsByDocument!==undefined&&
+       (!data.itemsByDocument||typeof data.itemsByDocument!=='object'||
+         Array.isArray(data.itemsByDocument))))
      throw Error('Competencia documental invalida');
    for(const doc of data.documents){
      if(NE.test(doc.id)&&doc.phase===1) originals.add(doc.id);
@@ -38,7 +40,7 @@ export function auditInterannualCgu(sources){
      if(DOC.test(rel?.from)&&NE.test(rel?.to))
        edges.add(rel.from+'|'+rel.to);
    }
-   for(const items of Object.values(data.itemsByDocument)){
+   for(const items of Object.values(data.itemsByDocument||{})){
      for(const item of items){
        if(item.historyChecked===true){
          checkedHistory++;
