@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pncpProbeUrl,probePncp,probeContratosGov}
+import {pncpProbeUrl,probePncp,probeContratosGov,instrumentProbeWindow}
  from '../src/probe-official-data.mjs';
 
 const archived='10635424000186-2-000111/2026';
@@ -120,4 +120,10 @@ test('falhas de rede dos quatro testes de acesso nao vazam URL ou CPF',async()=>
  assert.equal(result.length,4);
  assert.ok(result.every(x=>x.status==='network_unavailable'));
  assert.equal(JSON.stringify(result).includes('12345678900'),false);
+});
+
+test('instrumentos de cobranca sondados em um unico dia encerrado',()=>{
+ const short=instrumentProbeWindow(new Date('2026-11-23T15:00:00Z'));
+ assert.deepEqual(short,{initial:'2026-11-22',final:'2026-11-22'});
+ assert.ok(short.initial===short.final);
 });
