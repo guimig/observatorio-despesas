@@ -115,9 +115,9 @@ test('historicos somente amostrados nao equivalem a cobertura total da NE',async
    resolveItemsFn:async()=>({ok:true,items:[
     {seq:1,cents:100},{seq:2,cents:100},{seq:3,cents:100},{seq:4,cents:100}]}),
    resolveHistoryFn:async()=>({ok:true,movements:[
-    {date:'2025-01-01',type:'other'},
-    {date:'2026-01-01',type:'other'},
-    {date:'unexpected',type:'other'}]}),
+    {date:'2025-01-01',type:'other',operation:'Baixa de registro'},
+    {date:'2026-01-01',type:'other',operation:'Reinscrição'},
+    {date:'unexpected',type:'other',operation:'Movimento desconhecido'}]}),
    maxItems:3});
  assert.equal(audit.status,'sampled_only');
  assert.equal(audit.itemsSampled,3);
@@ -125,6 +125,9 @@ test('historicos somente amostrados nao equivalem a cobertura total da NE',async
  assert.equal(audit.otherDates.same,3);
  assert.equal(audit.otherDates.later,3);
  assert.equal(audit.otherDates.invalid,3);
+ assert.equal(audit.otherHints.baixa,3);
+ assert.equal(audit.otherHints.reinscricao,3);
+ assert.equal(audit.otherHints.sem_pista,3);
  const summary=summarizeNeAudits([audit]);
  assert.equal(summary.cohorts.older_origin.status.sampled_only,1);
  assert.equal(summary.cohorts.older_origin.itemsNotSampled,1);

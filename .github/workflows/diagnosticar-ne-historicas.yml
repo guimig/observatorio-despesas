@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/diagnosticar-ne-historicas.yml'
       - 'src/inspect-cgu-ne-history.mjs'
+      - 'src/ne-trajectory-evidence.mjs'
 permissions:
   contents: read
 jobs:
