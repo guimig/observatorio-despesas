@@ -8,6 +8,8 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {resolveItems} from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
+import {otherOperationHint,emptyOperationHints,planLinkedNeEvidence,
+ inspectLinkedNeEvidence,summarizeLinkedNeEvidence} from './ne-trajectory-evidence.mjs';
 
 const NE=/^158459\d{5}(20\d{2})NE\d{6}$/;
 const EXPENDITURE=/^158459\d{5}(20\d{2})(NS|OB|DF)\d{6}$/;
@@ -118,7 +120,7 @@ function emptyAudit(cohort){
    itemsNotSampled:0,historiesCompleted:0,
    historiesUnavailable:0,movements:emptyCounts(),
    cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
-   cancellationItems:0,reasonCounts:{}};
+   otherHints:emptyOperationHints(),cancellationItems:0,reasonCounts:{}};
 }
 function addReason(result,reason){
  const code=safeReason(reason);
@@ -162,7 +164,10 @@ export async function auditHistoricalNe(sample,{
    for(const event of outcome.movements){
      const type=TYPES.includes(event?.type)?event.type:'unknown';
      result.movements[type]++;
-     if(type==='other')result.otherDates[eventYearGroup(event.date,sample.year)]++;
+     if(type==='other'){
+       result.otherDates[eventYearGroup(event.date,sample.year)]++;
+       result.otherHints[otherOperationHint(event.operation)]++;
+     }
      if(type!=='cancellation')continue;
      cancellationSeen=true;
      result.cancellationDates[eventYearGroup(event.date,sample.year)]++;
@@ -182,7 +187,7 @@ export function summarizeNeAudits(audits){
      itemsSampled:0,itemsNotSampled:0,
      historiesCompleted:0,historiesUnavailable:0,movements:emptyCounts(),
      cancellationDates:emptyYearCounts(),otherDates:emptyYearCounts(),
-     cancellationItems:0,reasons:{}};
+     otherHints:emptyOperationHints(),cancellationItems:0,reasons:{}};
  }
  for(const row of audits){
    if(!COHORTS.includes(row?.cohort))throw Error('Categoria de NE invalida');
@@ -193,6 +198,8 @@ export function summarizeNeAudits(audits){
      'historiesCompleted','historiesUnavailable','cancellationItems'])
      bucket[k]+=row[k];
    for(const kind of TYPES)bucket.movements[kind]+=row.movements[kind];
+   for(const hint of Object.keys(bucket.otherHints))
+     bucket.otherHints[hint]+=row.otherHints[hint];
    for(const k of YEARS){
      bucket.cancellationDates[k]+=row.cancellationDates[k];
      bucket.otherDates[k]+=row.otherDates[k];
@@ -221,10 +228,25 @@ async function main(){
    audits.push(await auditHistoricalNe(item,{token,maxItems:3}));
  }
  const summary=summarizeNeAudits(audits);
+ const targets=plan.flatMap((item,index)=>{
+   const later=audits[index].otherDates.later;
+   return later?[{id:item.id,year:item.year,otherLater:later}]:[];
+ });
+ const evidencePlan=planLinkedNeEvidence(months,targets,{
+   maxNotes:4,maxDocuments:8,maxPerNe:2
+ });
+ const relatedAudits=[];
+ for(const [index,document] of evidencePlan.documents.entries()){
+   if(index)await new Promise(done=>setTimeout(done,650));
+   relatedAudits.push(await inspectLinkedNeEvidence(document,{token,maxPages:4}));
+ }
+ const evidence=summarizeLinkedNeEvidence(evidencePlan,relatedAudits);
  console.log('Janela de amostragem de NE (sem IDs): '+window);
  console.log('Diagnostico historico de NE CGU: '+JSON.stringify(summary));
+ console.log('Evidencia documental relacionada (sem IDs): '+JSON.stringify(evidence));
  console.log('Amostras nao representam universo das NEs. '+
    'Historico completo de itens amostrados nao prova conferencia da NE inteira. '+
+   'Pistas lexicais de operacoes other nao confirmam eventos contabeis. '+
    'Operacoes "other" exigem validacao da semantica na fonte. '+
    'Cancelamento por item nao prova saldo de RP nem abrange outros registros contabeis. '+
    'Nenhum documento, valor, texto livre, CPF ou token registrado.');
