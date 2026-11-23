@@ -29,6 +29,7 @@ npm run check:data
 npm run build:site        # gera dist/ com interface e JSONs publicos
 npm run enrich:plan       # simula vínculos de liquidações, pagamentos e itens de NE
 npm run contracts:plan    # simula consulta PNCP/Compras sem requisicoes
+npm run pncp-delta:plan   # planeja atualizacoes PNCP sem chamar fonte externa
 npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
 npm run collect:cgu
@@ -339,3 +340,7 @@ O cancelamento de item (como operação CGU `CANCELAMENTO`) é distinguido da `A
 A reconsulta de `/documentos/{codigo}` para verificar a data formal de emissão e a versão do documento permanece pendente de confirmar no payload oficial um campo independente do `date` da listagem. Essa data **não** será fabricada a partir da data de inclusão do item. Mesmo quando uma reconstituição de valor de item é possível, ela **não representa** valores inscritos/cancelados/pagos de restos a pagar, saldo a liquidar, saldo a pagar ou conciliação contábil SIAFI. O próximo marco exige amostras reais de RP e fonte oficial apropriada antes de disponibilizar indicadores financeiros.
 
 A sondagem autenticada `src/inspect-cgu-siafi.mjs` também foi ampliada para comparar **apenas booleanamente** o campo `data` de `/documentos/{codigo}` com a data da listagem CGU e a primeira inclusão dos itens. A sondagem não imprime nem persiste datas individuais, IDs ou payload. Ainda não se confunde automaticamente o campo de data do detalhe com emissão formal SIAFI: após analisar a comparação e a documentação, o modelo poderá distinguir data oficial do documento, data da publicação e data dos movimentos.
+
+### Atualização incremental PNCP por data global
+
+O workflow [`atualizar-contratos-pncp.yml`](.github/workflows/atualizar-contratos-pncp.yml) consulta diariamente os registros de contratos/empenhos publicados pela Reitoria ou Campus e **atualizados** na janela posterior à última consulta integral. Usa o mesmo `data/procurement/contracts.json`, com `pncpDelta` mínimo para checkpoint. Só atualiza **instrumentos com ID PNCP já cadastrado**; os novos IDs vão para a fila de recuperação mensal. Uma falha ou paginação excedida impede alteração de dados ou checkpoint. A integração é documental: **não** transforma PNCP em saldo financeiro ou RAP. Veja [critérios e cobertura](docs/FONTES-API-PRIORIDADES.md).
