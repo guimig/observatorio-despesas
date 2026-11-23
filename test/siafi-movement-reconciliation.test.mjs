@@ -62,7 +62,8 @@ test('operacoes ambiguas, cancelamento e estorno nao recebem sinal presumido',()
  for(const type of ['reversal','cancellation','other','unknown']){
   const a=check([item(100,[event('original',100),event(type,50)])],100);
   assert.equal(a.status,'unavailable');
-  assert.equal(a.reason,'ambiguous_movement');
+  assert.equal(a.reason,type==='cancellation'?
+   'cancellation_year_unverified':'ambiguous_movement');
  }
 });
 
