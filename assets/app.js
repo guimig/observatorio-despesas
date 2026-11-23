@@ -8,6 +8,7 @@ import { MODALITIES } from './pncp-modalities.js';
 import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } from './instrument-types.js';
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import {showDialogFromTop} from './dialog-scroll.js';
+import {auditSiafiItemMovements} from './siafi-movement-audit.js';
 import { auditMonth } from './quality.js';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
@@ -372,6 +373,29 @@ function showContractAssociations(doc){
   if(matches.length>8)slot.append(element('p','small-muted',
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
+function explainSiafiMovementAudit(items,doc){
+ const a=auditSiafiItemMovements(items,{issueDate:doc?.date,
+   documentCents:doc?.cents});
+ if(a.status==='unavailable')return 'Itens ainda não consultados; sem condições de conferir os movimentos.';
+ const coverage='Históricos de itens consultados: '+a.checked+'/'+a.totalItems+'. ';
+ const amount=a.documentAmountMatch===true?
+   'A soma dos valores atuais dos itens coincide com o valor documental da NE. ':
+   a.documentAmountMatch===false?
+   'A soma dos itens difere do valor documental da NE e exige revisão. ':
+   'Comparação dos valores totais indisponível. ';
+ if(a.status==='partial')return coverage+amount+
+   'Há itens pendentes; não é possível afirmar ausência de reforço ou anulação.';
+ if(a.status==='no_items')return coverage+'Não há itens coletados para esta NE.';
+ if(a.status==='no_movement_evidence')return coverage+amount+
+   'A CGU não retornou operações para pelo menos um item; ausência de movimento não comprovada.';
+ if(a.status==='original_only_consistent')return coverage+amount+
+   'Todos os itens consultados apresentam somente uma inclusão na data de emissão, com valores coincidentes. Isso é conferência documental, não conciliação de saldo contábil.';
+ return coverage+amount+
+   'Movimentações classificadas: inclusões '+a.counts.original+
+   ', reforços '+a.counts.reinforcement+', anulações '+a.counts.annulment+
+   ', outras '+(a.counts.cancellation+a.counts.reversal+a.counts.other+a.counts.unknown)+
+   '. Conferência do efeito financeiro e dos sinais ainda necessária; não foi calculado saldo.';
+}
 function summarizeItemOperations(items,issueDate){
  if(!Array.isArray(items))return 'Histórico ainda não consultado.';
  const checked=items.filter(item=>item.historyChecked===true).length;
@@ -522,6 +546,8 @@ function showDocument(doc, monthData = state.data) {
   }
   if(doc.phase===1)appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
+  if(doc.phase===1)appendDetailField(fields,'Conferência documental do empenho',
+    explainSiafiMovementAudit(monthData.itemsByDocument?.[doc.id],doc),{long:true});
   const itemSection=$('dialog-items-section');
   itemSection.hidden=doc.phase!==1;
   const details=$('dialog-items');
@@ -656,6 +682,8 @@ function showCommitmentTrajectory(entry){
     {long:true});
   appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(entry.items,doc?.date),{long:true});
+  appendDetailField(fields,'Conferência documental do empenho',
+    explainSiafiMovementAudit(entry.items,doc),{long:true});
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
