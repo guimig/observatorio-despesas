@@ -26,3 +26,12 @@ test('CDN divergente, indisponível ou caminho inesperado falham fechados',async
   await assert.rejects(comparePublication('http://example.org/',expected));
   await assert.rejects(comparePublication('https://example.org/',{'../secret':'x'}));
 });
+
+test('workflow Pages usa artefato distinto por run/attempt em upload e deploy',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const workflow=await readFile('.github/workflows/publicar-pages.yml','utf8');
+ const key='pages-'+ '$'+'{{ github.run_id }}-'+ '$'+'{{ github.run_attempt }}';
+ assert.equal(workflow.split('name: '+key).length-1,1);
+ assert.equal(workflow.split('artifact_name: '+key).length-1,3);
+ assert.match(workflow,/cancel-in-progress: false/);
+});
