@@ -87,3 +87,21 @@ A [sondagem real #45230126287](https://github.com/guimig/observatorio-despesas/a
 5. Preservar a CGU como fonte da identidade financeira, inclusive NEs substitutivas e N:M. Não publicar `RAP a pagar` sem prova de saldo.
 
 As mudanças técnicas de sondagem não alteraram `data/months`, `data/procurement` ou o dashboard: apenas PRs, código e workflows de diagnóstico read-only.
+
+## Coletor incremental PNCP por atualização global — 23/11/2026
+
+**Escopo implantado:** consulta de `GET /api/consulta/v1/contratos/atualizacao` com os CNPJs oficiais da **Reitoria** (`10635424000186`) e do **Campus** (`10635424000348`). Filtro de data de atualização global, **não** de publicação nem execução financeira. O módulo `src/pncp-delta.mjs` reutiliza `normalizePncp`, `validateProcurement` e `mergePncpRecord`; a orquestração fica em `src/collect-pncp-delta.mjs`.
+
+A cada execução automática, o coletor seleciona até **três dias civis encerrados**, conforme a data de São Paulo. Na primeira execução, inicia com os três dias completos anteriores; depois avança a partir do checkpoint `data/procurement/contracts.json.pncpDelta`, revisitando um dia de fronteira. O arquivo permanece **o mesmo catálogo existente**; o checkpoint mínimo `{since,through}` indica a **janela de atualização PNCP consultada**, **não** cobertura histórica por mês de publicação nem prova de execução financeira. O sistema não considera dias anteriores a `since` integralmente cobertos.
+
+O coletor percorre **todas as páginas retornadas pela API** (`tamanhoPagina=100`, até **20 páginas por CNPJ e janela**). Uma resposta com mais páginas, erro HTTP, timeout, mudança de total, ID PNCP duplicado, CNPJ divergente ou resposta inválida **impede integralmente** a atualização do catálogo e o avanço do checkpoint. O workflow usa o mesmo grupo de concorrência das outras coletas, com gravação atômica, testes e validação de privacidade. Nenhuma mudança é salva ao primeiro erro; não existe persistência parcial escondida.
+
+**Política inicial de integração conservadora:** aplica apenas alterações de instrumentos **já existentes no catálogo** e identificados pelo número PNCP oficial. O código preserva campos quando a API omite informações, recusa versões anteriores, invalida referências de empenho quando a identidade do instrumento muda e usa o comparador de revisões já existente. Novos IDs PNCP são contabilizados como **não catalogados**, sem inserção automática: a coleta mensal/backfill de publicação é responsável por incluí-los com controle adequado de cobertura. O número de registros desconhecidos não prova falta de contratação nem saldo de despesa.
+
+O checkpoint só avança após janela integralmente verificada para **ambos os CNPJs**. O commit do GitHub contém somente revisão oficial de dados ou **novo intervalo de fonte confirmado** (informação material de cobertura); executar duas vezes na mesma data, sem novo dia, não gera outro commit nem outra consulta. O workflow `.github/workflows/atualizar-contratos-pncp.yml` executa diariamente às **13:47 UTC**, ou manualmente (1, 3 ou 7 dias por lote), sem novas credenciais e sem backend.
+
+O experimento `src/probe-official-data.mjs` permanece **independente e somente leitura**; a rota PNCP de instrumentos de cobrança passou a ser sondada apenas para o **último dia UTC encerrado**, com máximo de 2 páginas de 10 registros. Essa consulta não grava instrumentos, não presume que nota fiscal seja liquidação nem cria pagamento/SIAFI a partir de PNCP.
+
+**Observação operacional:** se a janela inteira exigir mais de 20 páginas para qualquer CNPJ, o lote não é marcado completo. A solução apropriada será reduzir o período por execução ou ampliar o teto apenas após aferir volumes e limites da fonte — nunca avançar o checkpoint após truncamento. O campo `pncpDelta` é metadata de leitura, não fonte de saldo de RAP.
+
+**Rollback:** reverter a PR do coletor, retirar o workflow novo e deixar o catálogo anterior intacto; versões de JSON com `pncpDelta` são válidas somente no schema estendido. Não reescrever histórico Git nem apagar checkpoints de forma destrutiva.

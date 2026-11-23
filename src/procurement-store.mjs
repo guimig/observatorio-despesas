@@ -39,12 +39,20 @@ function date(value){
 }
 export function validateProcurement(data){
   assertPublicSafe(data);
-  exactKeys(data,['schema_version','unit','contracts','coverage','updated_at']);
+  exactKeys(data,['schema_version','unit','contracts','coverage','updated_at','pncpDelta']);
   if(data.schema_version!==1||data.unit!==CAMPUS_UG||
      !Array.isArray(data.contracts)||!Array.isArray(data.coverage))throw Error('Catálogo inválido');
   if(data.updated_at!==undefined &&
      (typeof data.updated_at!=='string'||!Number.isFinite(Date.parse(data.updated_at))))
     throw Error('Carimbo de atualização inválido');
+  // Checkpoint pequeno da leitura por data de atualizacao, nao cobertura de
+  // publicacao mensal nem prova de execucao financeira SIAFI.
+  if(data.pncpDelta!==undefined){
+    exactKeys(data.pncpDelta,['since','through']);
+    if(!date(data.pncpDelta.since)||!date(data.pncpDelta.through)||
+       data.pncpDelta.since>data.pncpDelta.through)
+      throw Error('Checkpoint PNCP incremental invalido');
+  }
   const unique=new Set();
   for(const contract of data.contracts){
     exactKeys(contract,FIELDS);

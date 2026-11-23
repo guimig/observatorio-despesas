@@ -142,7 +142,7 @@ function countRows(rows,kind,ctx,initial,acc){
  }
 }
 /**
- * MAX 2 paginas de 5 registros por fonte. Se nao chegou ao fim, amostra
+ * MAX 2 paginas de 10 registros por fonte. Se nao chegou ao fim, amostra
  * parcial e explicitamente rotulada; jamais declarar ausencia ou completude.
  */
 export async function probePncp(kind,initial,final,archives,{
@@ -226,6 +226,12 @@ function lastDates(now=new Date()){
  return {initial:new Date(day.getTime()-13*86400000).toISOString().slice(0,10),
    final:end};
 }
+export function instrumentProbeWindow(now=new Date()){
+ const {final}=lastDates(now);
+ const yesterday=new Date(Date.parse(final+'T00:00:00Z')-86400000)
+   .toISOString().slice(0,10);
+ return {initial:yesterday,final:yesterday};
+}
 export async function main(){
  const root=process.cwd();
  const manifest=JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8'));
@@ -233,10 +239,14 @@ export async function main(){
  const months=await Promise.all(manifest.months.map(async month=>
    JSON.parse(await readFile(join(root,'data/months',month+'.json'),'utf8'))));
  const archive={contracts:contracts.contracts,months};
- const {initial,final}=lastDates();
+ const base=lastDates();
  for(const item of PROBES){
-   const result=await probePncp(item.kind,initial,final,archive);
-   console.log('Amostra PNCP publica: '+JSON.stringify({...result,window:{initial,final}}));
+   // Instrumentos de cobranca: dia anterior encerrado para reduzir timeout
+   // e distinguir latencia de volume da fonte.
+   const window=item.kind==='instrumentos_inclusao'?
+     instrumentProbeWindow(new Date()):base;
+   const result=await probePncp(item.kind,window.initial,window.final,archive);
+   console.log('Amostra PNCP publica: '+JSON.stringify({...result,window}));
  }
  const access=await probeContratosGov();
  console.log('Acesso anonimo Contratos.gov: '+JSON.stringify(access));
