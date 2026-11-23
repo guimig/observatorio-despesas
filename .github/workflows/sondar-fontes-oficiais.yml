@@ -1,0 +1,27 @@
+name: Sondar catalogos oficiais de APIs - somente metadados
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/probe-official-apis.mjs'
+      - '.github/workflows/sondar-fontes-oficiais.yml'
+permissions:
+  contents: read
+jobs:
+  sondagem:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar sintaxe e testes do projeto
+        run: |
+          npm run check:syntax
+          npm test
+      - name: Consultar apenas documentacao OpenAPI publica
+        run: node src/probe-official-apis.mjs

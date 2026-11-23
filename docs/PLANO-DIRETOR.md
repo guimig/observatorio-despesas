@@ -1,5 +1,7 @@
 # Plano diretor v0.2 — Observatório de Despesas Públicas
 
+**Diretriz superveniente de 23/11/2026:** adiar a integração Tesouro Gerencial e priorizar prospecção de **APIs oficiais com consulta atualizável** (CGU/Portal da Transparência, Contratos.gov.br e PNCP). A base anual da STN não servirá para inferir saldos de RP dinâmicos. A prioridade de desenvolvimento está detalhada em [Fontes API e critérios de validação](FONTES-API-PRIORIDADES.md). Esta decisão prevalece sobre propostas anteriores de importação contábil imediata.
+
 Revisão de 22/11/2026. **Plano executável**, sujeito a validação funcional, jurídica e contábil. A `UG 158459` é o Campus Araquari; a `UO 26422` é o IFC institucional, e não um sinônimo da UG. Este projeto **não** é sistema oficial nem substitui SIAFI/Tesouro Gerencial.
 
 ## Decisão de produto
@@ -43,7 +45,7 @@ Estas quantidades são instantâneas. Para uma fotografia atual, execute `npm ru
 | P0-B | **v0.2/Histórico CGU** | Cobertura real por mês/dia/fase, recuperação retomável, NEs referenciadas, enriquecimento proporcional | Aumentar dias completos; reduzir lacunas e pendências por exercício; respeitar limites CGU |
 | P1-C | **v0.2/Contratações** | Histórico PNCP, reconsulta de atualizações, atribuição UG verificável, itens/resultados/atas | Sem dupla contagem; amostras de vínculos oficiais auditadas; erros de API visíveis |
 | P1-D | **v0.2/Experiência pública** | Consulta e filtros integrados; fontes/cobertura visíveis; páginas responsivas; índices sob demanda | Desempenho medido; usabilidade; exportações com proteção contra formula injection |
-| P2-E | **v0.3/Contabilidade** | Fontes oficiais para créditos, NE líquida, liquidado/pago e RAP a pagar | Reconciliação com SIAFI/Tesouro e aceite da CEOF; sem cards monetários definitivos antes disso |
+| P2-E | **v0.3/Contabilidade — suspenso** | Pesquisa de alternativas por API pública; sem integrar Tesouro Gerencial agora | Sem cards monetários definitivos de RP e sem criar backend de extratos; validar fonte e cobertura primeiro |
 | P2-F | **v0.3/Operação** | Documentação, observabilidade, retenção, alerta e recuperação | Aprovação de responsabilidades, segurança e procedimentos de contingência |
 
 Etapas P0-A e P0-B são prioridade imediata; P1-C pode avançar em paralelo sem competir pelo limite CGU. As demais **não** estão homologadas só porque existem componentes de interface ou testes unitários.

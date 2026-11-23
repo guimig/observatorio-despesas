@@ -6,7 +6,7 @@ Aplicação pública independente para consulta e rastreabilidade de documentos 
 
 Projeto em implantação por etapas. Primeiro módulo: documentos de empenho, liquidação e pagamento do **Portal da Transparência/CGU**, com armazenamento mensal incremental, controle de cobertura, testes e interface estática. A primeira expansão inclui identificação segura de favorecidos, processos e classificação da despesa. A integração inicial de PNCP e Compras.gov.br inclui um catálogo contratual separado, com classificação entre IFC institucional e Campus Araquari; SIOP, SIDRA e fontes complementares serão incorporados progressivamente.
 
-O projeto não consulta, altera nem substitui os relatórios do Tesouro Gerencial e não depende do EmailBackupHub. Nenhum dado histórico é considerado completo antes da coleta e da validação correspondentes.
+O projeto não consulta, altera nem substitui os relatórios do Tesouro Gerencial e não depende do EmailBackupHub. A integração com o Tesouro Gerencial está suspensa por decisão de 23/11/2026: a prioridade passou a ser [ampliar a pesquisa e validação de APIs oficiais dinâmicas](docs/FONTES-API-PRIORIDADES.md), preservando a CGU como fonte principal. Nenhum dado histórico é considerado completo antes da coleta e da validação correspondentes.
 
 ## Segurança e privacidade
 
