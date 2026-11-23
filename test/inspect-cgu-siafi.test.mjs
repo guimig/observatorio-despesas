@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {
   docType,detailUrl,relatedUrl,impactUrl,itemHistoryUrl,
   structuralFields,classifyMovement,summarizeItems,summarizeImpacts,
-  selectSamples,inspectDocumentDetails,inspectCguSample
+  selectSamples,inspectDocumentDetails,inspectCguSample,safeDocumentDateComparison
 } from '../src/inspect-cgu-siafi.mjs';
 const prefix='158459264222026';
 const ne=prefix+'NE000111';
@@ -158,4 +158,26 @@ test('entrypoint executa mesmo sem credencial e falha explicitamente, sem chamad
   const output=outcome.stdout+outcome.stderr;
   assert.match(output,/Secret CGU_API_KEY ausente/);
   assert.equal(output.includes('undefined'),false);
+});
+
+test('auditoria de data do detalhe CGU nao a confunde com emissao formal da NE',()=>{
+ const compare=safeDocumentDateComparison({data:'16/01/2026'},{
+  listingDate:'2026-11-17',firstItemDate:'2026-01-16'});
+ assert.deepEqual(compare,{dateFieldPresent:true,validDate:true,
+  matchesListing:false,matchesFirstItemInclusion:true});
+ assert.equal(JSON.stringify(compare).includes('2026'),false);
+ const missing=safeDocumentDateComparison({valor:'100'},{
+  listingDate:'2026-11-17'});
+ assert.equal(missing.validDate,false);
+ assert.equal(missing.matchesListing,null);
+});
+test('detalhe CGU inclui somente comparacoes booleanas de datas autenticadas',async()=>{
+ const reply=await inspectDocumentDetails(ne,{token:'teste',listingDate:'2026-11-17',
+  firstItemDate:'2026-01-16',fetcher:async()=>({ok:true,json:async()=>({
+   documento:ne,data:'2026-01-16',cpf:'000.123.456-78'
+  })})});
+ assert.equal(reply.dateComparison.matchesListing,false);
+ assert.equal(reply.dateComparison.matchesFirstItemInclusion,true);
+ assert.equal(JSON.stringify(reply).includes(ne),false);
+ assert.equal(JSON.stringify(reply).includes('000.123.456-78'),false);
 });
