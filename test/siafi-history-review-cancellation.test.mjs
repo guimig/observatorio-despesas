@@ -19,10 +19,10 @@ const withHistory=()=>applyDocumentEnrichment(
  applyDocumentEnrichment(base(),ne,{kind:'items',items:[item]}).data,
  ne,{kind:'itemHistory',seq:1,movements:[included],checkedAt:'2026-10-01'}).data;
 
-test('historico concluido antigo volta a fila, mas nao entra antes de 30 dias',()=>{
+test('historico concluido de NE antiga entra na fila apos sete dias',()=>{
  const data=withHistory();
- assert.equal(planEnrichment(data,{now:new Date('2026-10-15T12:00:00Z')}).itemRechecks.length,0);
- assert.deepEqual(planEnrichment(data,{now:new Date('2026-11-02T12:00:00Z')}).itemRechecks,
+ assert.equal(planEnrichment(data,{now:new Date('2026-10-06T12:00:00Z')}).itemRechecks.length,0);
+ assert.deepEqual(planEnrichment(data,{now:new Date('2026-10-08T12:00:00Z')}).itemRechecks,
   [{id:ne,seq:1}]);
 });
 test('reconsulta idempotente atualiza checkpoint sem criar duplicatas',()=>{

@@ -271,3 +271,61 @@ test('nenhuma nota parcialmente concluida deixa todos os slots em rodizio',()=>{
  assert.deepEqual(first,[{id:ne,seq:1},{id:ne,seq:2}]);
  assert.deepEqual(second,[{id:ne,seq:3},{id:ne,seq:1}]);
 });
+
+test('historico CGU inicialmente vazio volta a ser consultado quando completar 14 dias',()=>{
+ let d=wrap([result(ne,1)]);
+ d=applyDocumentEnrichment(d,ne,{kind:'items',items:[
+   {seq:1,cents:100},{seq:2,cents:200},{seq:3,cents:300}
+ ]}).data;
+ d=applyDocumentEnrichment(d,ne,{kind:'itemHistory',seq:1,
+   movements:[],checkedAt:'2026-11-01'}).data;
+ d=applyDocumentEnrichment(d,ne,{kind:'itemHistory',seq:2,
+   movements:[],checkedAt:'2026-11-17'}).data;
+ d=applyDocumentEnrichment(d,ne,{kind:'itemHistory',seq:3,
+   movements:[]}).data;
+ const plan=planEnrichment(d,{now:new Date('2026-11-23T13:00:00Z'),
+   slot:0,maxHistoryRechecks:2});
+ assert.deepEqual(plan.itemRechecks,[{id:ne,seq:3},{id:ne,seq:1}]);
+ assert.deepEqual(plan.itemHistories,[]);
+ assert.equal(plan.itemRechecks.some(x=>x.seq===2),false);
+ // Reconsulta vazia bem sucedida atualiza apenas a data de comprovacao;
+ // nenhuma operacao nem saldo financeiro e inventado.
+ const outcome=applyDocumentEnrichment(d,ne,{kind:'itemHistory',seq:1,
+   movements:[],checkedAt:'2026-11-23'},new Date('2026-11-23T13:00:00Z'));
+ assert.equal(outcome.changed,true);
+ assert.deepEqual(outcome.data.itemsByDocument[ne][0].movements,[]);
+ assert.equal(outcome.data.itemsByDocument[ne][0].historyCheckedAt,'2026-11-23');
+ assert.equal(applyDocumentEnrichment(outcome.data,ne,{kind:'itemHistory',seq:1,
+   movements:[],checkedAt:'2026-11-23'}).changed,false);
+});
+test('NE de exercicio anterior exige revisao apos 7 dias, nao apenas 30',()=>{
+ const oldNe='158459000012025NE000012';
+ const source=mergeMonth(emptyMonth('2025-12'),'2025-12',[{
+   documents:[{id:oldNe,date:'2025-12-18',phase:1,cents:1000}],
+   links:[],coverage:{date:'2025-12-18',phase:1,count:1,invalid:0,complete:true}
+ }]).data;
+ let d=applyDocumentEnrichment(source,oldNe,{kind:'items',
+   items:[{seq:1,cents:1000},{seq:2,cents:2000}]}).data;
+ d=applyDocumentEnrichment(d,oldNe,{kind:'itemHistory',seq:1,
+   movements:[],checkedAt:'2026-11-16'}).data;
+ d=applyDocumentEnrichment(d,oldNe,{kind:'itemHistory',seq:2,
+   movements:[],checkedAt:'2026-11-18'}).data;
+ const plan=planEnrichment(d,{now:new Date('2026-11-23T15:00:00Z'),slot:0});
+ assert.deepEqual(plan.itemRechecks,[{id:oldNe,seq:1}]);
+ assert.deepEqual(plan.itemHistories,[]);
+ const previous=planEnrichment(d,{now:new Date('2026-11-22T15:00:00Z'),slot:0});
+ assert.deepEqual(previous.itemRechecks,[]);
+});
+test('reconsulta com resultado incompleto nao pode eliminar eventos confirmados',()=>{
+ let d=wrap([result(ne,1)]);
+ d=applyDocumentEnrichment(d,ne,{kind:'items',items:[{seq:1,cents:1000}]}).data;
+ const movement={date:'2026-11-18',operation:'INCLUSAO',type:'original',
+   quantity:'1',unitPrice:'10',cents:1000};
+ d=applyDocumentEnrichment(d,ne,{kind:'itemHistory',seq:1,
+   movements:[movement],checkedAt:'2026-11-01'}).data;
+ assert.throws(()=>applyDocumentEnrichment(d,ne,{kind:'itemHistory',
+   seq:1,movements:[],checkedAt:'2026-11-23'}),
+ /Reconsulta vazia/);
+ assert.equal(d.itemsByDocument[ne][0].historyCheckedAt,'2026-11-01');
+ assert.deepEqual(d.itemsByDocument[ne][0].movements,[movement]);
+});

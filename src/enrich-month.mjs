@@ -59,19 +59,31 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
   }
   if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw Error('Data de revisao invalida');
   const today=now.toISOString().slice(0,10);
+  const nowDay=Date.parse(today+'T00:00:00Z');
+  const referenceYear=Number(today.slice(0,4));
   const rechecks=[];
   for(const doc of month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)){
+    // A CGU pode registrar movimentacoes posteriores ao exercicio da NE;
+    // por isso as NEs antigas precisam de revisao mais frequente.
+    const commitmentYear=Number(doc.id.slice(11,15));
+    const intervalDays=commitmentYear<referenceYear?7:14;
     for(const item of month.itemsByDocument?.[doc.id]||[]){
-      if(item.historyChecked!==true||!(item.movements||[]).length)continue;
+      if(item.historyChecked!==true)continue;
       const last=item.historyCheckedAt;
-      // Ausencia de checkpoint em dados legados: reconsulta uma vez.
-      if(!last||Date.parse(today+'T00:00:00Z')-
-        Date.parse(last+'T00:00:00Z')>=30*86400000)
-        rechecks.push({id:doc.id,seq:item.seq});
+      const lastDay=last?Date.parse(last+'T00:00:00Z'):NaN;
+      // Historico inicialmente vazio NAO e final: a CGU pode atualiza-lo.
+      // Checkpoints legados sem data ou invalidos tambem sao elegiveis.
+      if(!last||!Number.isFinite(lastDay)||
+         nowDay-lastDay>=intervalDays*86400000)
+        rechecks.push({id:doc.id,seq:item.seq,last:last||''});
     }
   }
-  rechecks.sort((a,b)=>a.id.localeCompare(b.id)||a.seq-b.seq);
-  const selectedRechecks=rotatePending(rechecks,bounded(maxHistoryRechecks,2,8),slot);
+  // Revisar primeiro checkpoints antigos/sem data, com rodizio para
+  // que uma consulta permanentemente indisponivel nao monopolize a fila.
+  rechecks.sort((a,b)=>a.last.localeCompare(b.last)||
+    a.id.localeCompare(b.id)||a.seq-b.seq);
+  const selectedRechecks=rotatePending(rechecks,
+    bounded(maxHistoryRechecks,2,8),slot).map(({id,seq})=>({id,seq}));
   return {liquidations:selectedLiquidations,payments:selectedPayments,
     items:selectedItems,itemHistories:selectedHistories,itemRechecks:selectedRechecks};
 }

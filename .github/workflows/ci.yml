@@ -25,6 +25,8 @@ jobs:
         run: npm test
       - name: Validar privacidade e esquema dos JSONs versionados
         run: npm run check:data
+      - name: Validar diagnostico interanual CGU contra dados canonicos
+        run: npm run audit:cgu-interannual
       - name: Validar artefato de publicacao (sem secrets e codigo-fonte)
         run: npm run build:site
       - name: Validar planejamento de coleta historica

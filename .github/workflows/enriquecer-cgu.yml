@@ -32,6 +32,7 @@ on:
       - 'src/enrich-cgu.mjs'
       - 'src/item-movements.mjs'
       - 'src/enrich-month.mjs'
+      - 'src/audit-cgu-interannual.mjs'
   schedule:
     - cron: '17 12 * * *'
     - cron: '17 22 * * *'
@@ -78,7 +79,10 @@ jobs:
         run: |
           npm test
           npm run check:data
-      - name: Consultar somente documentos sem enriquecimento concluido
+      - name: Auditar cruzamentos interanuais existentes (so contagens)
+        if: steps.credential.outputs.enabled == 'true'
+        run: npm run audit:cgu-interannual
+      - name: Consultar documentos pendentes e revisar historicos vencidos
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
