@@ -20,7 +20,7 @@ export const API_CATALOG=Object.freeze([
    '/api/v2/empenho',
    '/api/v1/empenho/ano/{ano}/ug/{unidade}',
    '/api/v1/empenho/ug/{unidade}']},
- {name:'PNCP',url:'https://pncp.gov.br/api/consulta/pncp-consulta/v3/api-docs',
+ {name:'PNCP',url:'https://pncp.gov.br/api/consulta/v3/api-docs',
   routes:[
    '/v1/contratos/atualizacao',
    '/v1/instrumentoscobranca/inclusao']}
