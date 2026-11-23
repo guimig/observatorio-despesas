@@ -110,7 +110,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
