@@ -41,6 +41,7 @@ test('reconstroi valor atualizado com reforcos e anulacoes de tipo declarado',()
  assert.equal(a.initialCents,20000000);
  assert.equal(a.reinforcementCents,78999893);
  assert.equal(a.annulmentCents,39508841);
+ assert.equal(a.cancellationCents,0);
  assert.equal(a.reconstructedCents,59491052);
  assert.equal(a.originalDate,'2026-01-16');
  assert.equal(a.originalDateMatchesListing,false);
