@@ -15,6 +15,21 @@ const FASES={NE:1,NS:2,OB:3,DF:3};
 const safeField=/^[a-zA-Z][a-zA-Z0-9_]{0,55}$/;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
+export function safeDocumentDateComparison(payload,{listingDate=null,firstItemDate=null}={}){
+ const raw=payload?.data;
+ const parse=v=>{
+   if(typeof v!=='string')return null;
+   let match=/^(20\d{2}-\d{2}-\d{2})/.exec(v);
+   if(match)return match[1];
+   match=/^(\d{2})\/(\d{2})\/(20\d{2})/.exec(v);
+   return match?match[3]+'-'+match[2]+'-'+match[1]:null;
+ };
+ const source=parse(raw);
+ return {dateFieldPresent:typeof raw==='string',validDate:Boolean(source),
+   matchesListing:source&&parse(listingDate)?source===parse(listingDate):null,
+   matchesFirstItemInclusion:source&&parse(firstItemDate)?
+     source===parse(firstItemDate):null};
+}
 export function docType(id) {
   const match=typeof id==='string'&&DOC.exec(id);
   return match ? match[1] : null;
@@ -114,9 +129,16 @@ export function selectSamples(month){
     let options=month.documents.filter(row=>docType(row.id)===kind &&
       row.phase===FASES[kind]);
     if(kind==='NE'){
-      options=options.sort((a,b)=>
-        Number((month.itemsByDocument?.[b.id]||[]).length>0)-
-        Number((month.itemsByDocument?.[a.id]||[]).length>0));
+      options=options.sort((a,b)=>{
+        const priority=doc=>{
+          const items=month.itemsByDocument?.[doc.id]||[];
+          const originals=items.flatMap(item=>(item.movements||[])
+            .filter(m=>m.type==='original').map(m=>m.date));
+          return originals.length&&originals.sort()[0]!==doc.date?2:
+            items.length?1:0;
+        };
+        return priority(b)-priority(a);
+      });
     }
     if(kind==='NS'){
       options=options.sort((a,b)=>
@@ -129,7 +151,12 @@ export function selectSamples(month){
     const row=options[0];
     if(row){
       const item=month.itemsByDocument?.[row.id]?.[0];
+      const firstItemDate=kind==='NE'?
+        (month.itemsByDocument?.[row.id]||[]).flatMap(i=>(i.movements||[])
+          .filter(m=>m.type==='original').map(m=>m.date)).sort()[0]:null;
       documents.push({id:row.id,phase:row.phase,kind,
+        ...(row.date?{listingDate:row.date}:{}),
+        ...(firstItemDate?{firstItemDate}:{}),
         ...(kind==='NE'&&Number.isSafeInteger(item?.seq)?{seq:item.seq}:{})});
     }
   }
@@ -150,7 +177,7 @@ async function listSummary(url,{token,request=getCguArray,mode='related'}={}){
   }catch(error){return {status:statusOf(error)};}
 }
 export async function inspectDocumentDetails(id,{
-  token,fetcher=fetch
+  token,fetcher=fetch,listingDate=null,firstItemDate=null
 }={}){
   if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
   const url=detailUrl(id);
@@ -167,7 +194,8 @@ export async function inspectDocumentDetails(id,{
     const data=await resp.json();
     if(!data||typeof data!=='object'||Array.isArray(data))
       return {status:'indisponivel/formato'};
-    return {status:'ok',fields:structuralFields(data)};
+    return {status:'ok',fields:structuralFields(data),
+      dateComparison:safeDocumentDateComparison(data,{listingDate,firstItemDate})};
   }catch{return {status:'indisponivel/formato'};}
 }
 export async function inspectCguSample(sample,{
@@ -176,7 +204,8 @@ export async function inspectCguSample(sample,{
   if(!sample||docType(sample.id)!==sample.kind ||
      sample.phase!==FASES[sample.kind])throw Error('Amostra não reconhecida');
   const result={kind:sample.kind,
-    details:await detail(sample.id,{token})};
+    details:await detail(sample.id,{token,listingDate:sample.listingDate,
+      firstItemDate:sample.firstItemDate})};
   result.related=await listSummary(relatedUrl(sample.id,sample.phase),
     {token,request});
   if(sample.phase===2||sample.phase===3){
