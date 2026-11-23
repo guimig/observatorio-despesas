@@ -9,6 +9,7 @@ import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } f
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import {showDialogFromTop} from './dialog-scroll.js';
 import {auditSiafiItemMovements} from './siafi-movement-audit.js';
+import {reconcileSiafiCommitment} from './siafi-movement-reconciliation.js';
 import { auditMonth } from './quality.js';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
@@ -373,6 +374,36 @@ function showContractAssociations(doc){
   if(matches.length>8)slot.append(element('p','small-muted',
     'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
 }
+function explainSiafiReconciliation(items,doc){
+ const a=reconcileSiafiCommitment(items,{listingDate:doc?.date,
+   documentCents:doc?.cents});
+ if(a.status==='partial')return 'Reconstrução ainda pendente: apenas '+
+   a.checked+'/'+a.total+' itens com histórico completo. Nenhum saldo inferido.';
+ if(a.status==='unavailable')return 'Reconstrução não disponível ('+({
+   items_not_collected:'itens ainda não coletados',
+   empty_item_catalog:'nenhum item retornado',
+   no_movement_evidence:'movimentações não retornadas',
+   ambiguous_movement:'tipo, sinal ou data não suficientemente identificado',
+   multiple_originals:'mais de uma inclusão original para o mesmo item',
+   original_missing:'sem inclusão original',
+   movement_before_original:'movimento anterior à inclusão original',
+   arithmetic_or_sequence_invalid:'sequência ou valor aritmético incoerente',
+   aggregate_overflow:'total fora do limite numérico seguro',
+   item_amount_invalid:'valor atual do item indisponível'
+ }[a.reason]||'dados insuficientes')+'). Não foi calculado saldo.';
+ const listing=a.originalDateMatchesListing===false?
+   ' A data da primeira inclusão identificada no histórico ('+localDate(a.originalDate)+
+   ') difere da data informada na listagem ('+localDate(doc?.date)+').':
+   ' Primeira inclusão identificada: '+localDate(a.originalDate)+'.';
+ return 'Base da inclusão: '+fmtMoney(a.initialCents)+
+   ' · Reforços: '+fmtMoney(a.reinforcementCents)+
+   ' · Anulações: '+fmtMoney(a.annulmentCents)+
+   ' · Valor reconstruído por operações: '+fmtMoney(a.reconstructedCents)+
+   ' · Valor atual dos itens informado pela CGU: '+fmtMoney(a.reportedCents)+
+   '. '+(a.status==='reconciled'?
+     'Conferência aritmética coincidente.':'Divergência aritmética: revisão necessária.')+
+   listing+' Trata-se do valor atual reconstruído dos itens, não do saldo a liquidar, saldo a pagar ou restos a pagar.';
+}
 function explainSiafiMovementAudit(items,doc){
  const a=auditSiafiItemMovements(items,{issueDate:doc?.date,
    documentCents:doc?.cents});
@@ -484,7 +515,7 @@ function showDocument(doc, monthData = state.data) {
           ' (valor informado divergente)':o.amountRelation==='unknown'?
           ' (comparação de valores indisponível)':' (mesmo valor informado)'))
         .join('; ')||'Nenhum outro filtro identificado'],
-    ['Data de emissão', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
+    ['Data informada na listagem CGU', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
     ['Unidade gestora', '158459 · IFC Araquari'],
     ['Favorecido', beneficiaryLabel(doc,monthData)],
     ['Processo administrativo', doc.process || 'Não informado'],
@@ -548,6 +579,8 @@ function showDocument(doc, monthData = state.data) {
     summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
   if(doc.phase===1)appendDetailField(fields,'Conferência documental do empenho',
     explainSiafiMovementAudit(monthData.itemsByDocument?.[doc.id],doc),{long:true});
+  if(doc.phase===1)appendDetailField(fields,'Reconstrução aritmética das movimentações',
+    explainSiafiReconciliation(monthData.itemsByDocument?.[doc.id],doc),{long:true});
   const itemSection=$('dialog-items-section');
   itemSection.hidden=doc.phase!==1;
   const details=$('dialog-items');
@@ -665,7 +698,7 @@ function showCommitmentTrajectory(entry){
   const doc=entry.document;
   const entries=[
     ['Documento de empenho',entry.id],
-    ['Data de emissão da NE',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
+    ['Data informada na listagem CGU',doc?.date?localDate(doc.date):'Não coletada na base mensal'],
     ['Processo',doc?.process||'Não informado'],
     ['Valor documental da NE',doc?fmtMoney(doc.cents):'Indisponível: NE não coletada'],
     ['Cobertura documental',!doc?'NE referenciada, mas não coletada':
@@ -684,6 +717,8 @@ function showCommitmentTrajectory(entry){
     summarizeItemOperations(entry.items,doc?.date),{long:true});
   appendDetailField(fields,'Conferência documental do empenho',
     explainSiafiMovementAudit(entry.items,doc),{long:true});
+  appendDetailField(fields,'Reconstrução aritmética das movimentações',
+    explainSiafiReconciliation(entry.items,doc),{long:true});
   $('dialog-relations').replaceChildren();
   $('dialog-items-section').hidden=!entry.itemsChecked;
   const items=$('dialog-items');items.replaceChildren();
