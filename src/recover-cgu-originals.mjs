@@ -228,8 +228,9 @@ export async function recoverReferencedNe({
 async function main(){
  try{
    const max=Number(process.env.CGU_ORIGINAL_LIMIT??3);
-   const slot=process.env.CGU_ORIGINAL_SLOT===undefined
-     ?Math.floor(Date.now()/86400000):Number(process.env.CGU_ORIGINAL_SLOT);
+   const slot=process.env.CGU_ORIGINAL_SLOT===undefined||
+     process.env.CGU_ORIGINAL_SLOT===''?
+       Math.floor(Date.now()/86400000):Number(process.env.CGU_ORIGINAL_SLOT);
    const result=await recoverReferencedNe({root:resolve(process.cwd()),
      token:process.env.CGU_API_KEY,limit:max,slot,
      dryRun:process.argv.includes('--dry-run')});
