@@ -16,7 +16,8 @@ function safeErrorCode(error){
    'count_mismatch','invalid_contract','invalid_batch','checkpoint_conflict',
    'incomplete_source','invalid_or_repeated_id','missing_update_date',
    'invalid_date','invalid_clock','invalid_window','invalid_window_days',
-   'checkpoint_in_future','invalid_page_limit']);
+   'checkpoint_in_future','invalid_page_limit','pending_limit',
+   'pending_month_changed']);
  return allowed.has(error?.code)?error.code:'network_or_schema_failure';
 }
 function optionsCount(value,defaultCount,max){
