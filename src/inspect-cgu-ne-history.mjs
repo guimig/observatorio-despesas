@@ -170,7 +170,7 @@ export function summarizeNeAudits(audits){
    bucket.status[row.status]=(bucket.status[row.status]||0)+1;
    for(const k of ['itemsAvailable','historiesCompleted','historiesUnavailable','cancellationItems'])
      bucket[k]+=row[k];
-   for(const kind of TYPES)bucket.movements[k]+=row.movements[kind];
+   for(const kind of TYPES)bucket.movements[kind]+=row.movements[kind];
    for(const k of Object.keys(bucket.cancellationDates))
      bucket.cancellationDates[k]+=row.cancellationDates[k];
    for(const [key,value] of Object.entries(row.reasonCounts)){
