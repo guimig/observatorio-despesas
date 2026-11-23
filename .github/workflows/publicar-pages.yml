@@ -54,6 +54,9 @@ jobs:
       - name: Enviar artefato imutavel para Pages
         uses: actions/upload-pages-artifact@v4
         with:
+          # Reexecucoes de um job preservam o run_id e incrementam run_attempt.
+          # Nome unico impede deploy ambiguo de dois artefatos "github-pages".
+          name: pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./dist
       # O artefato pode demorar a aparecer na API do GitHub Actions,
       # mesmo após upload bem-sucedido. Retentativas são apenas de deploy:
@@ -62,6 +65,8 @@ jobs:
         id: deployment
         continue-on-error: true
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Aguardar propagacao do artefato
         if: steps.deployment.outcome == 'failure'
         run: sleep 20
@@ -70,6 +75,8 @@ jobs:
         id: deployment_retry
         continue-on-error: true
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Aguardar segunda propagacao
         if: steps.deployment.outcome == 'failure' && steps.deployment_retry.outcome == 'failure'
         run: sleep 40
@@ -77,6 +84,8 @@ jobs:
         if: steps.deployment.outcome == 'failure' && steps.deployment_retry.outcome == 'failure'
         id: deployment_final
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Confirmar arquivos efetivamente servidos pelo Pages
         env:
           SITE_BASE: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url || steps.deployment_final.outputs.page_url }}
