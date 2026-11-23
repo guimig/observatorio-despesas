@@ -28,6 +28,7 @@ npm test
 npm run check:data
 npm run build:site        # gera dist/ com interface e JSONs publicos
 npm run enrich:plan       # simula vínculos de liquidações, pagamentos e itens de NE
+npm run audit:cgu-interannual # audita chaves CGU entre exercícios sem consultar APIs
 npm run contracts:plan    # simula consulta PNCP/Compras sem requisicoes
 npm run pncp-delta:plan   # planeja atualizacoes PNCP sem chamar fonte externa
 npm run pncp-recovery:plan # mostra fila de publicacoes PNCP sem consultar API
