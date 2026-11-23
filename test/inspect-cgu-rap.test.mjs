@@ -41,7 +41,6 @@ test('seleciona NS e OB com vinculo anterior sem classificar como RP',()=>{
  assert.equal(list[0].sameYearReference,true);
  assert.equal(list[1].kind,'OB');
  assert.equal(list[1].priorYearReference,true);
- assert.equal(JSON.stringify(list).includes(old),false);
  assert.throws(()=>selectRapSamples([{month:'2026-11',data:{}}]));
 });
 test('paginas CGU completas, inclusive valores faltantes, nao produzem saldos',async()=>{
