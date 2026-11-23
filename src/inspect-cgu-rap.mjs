@@ -15,6 +15,26 @@ export const IMPACT_FIELDS=Object.freeze([
  'valorLiquidado','valorPago','valorRestoInscrito','valorRestoCancelado','valorRestoPago'
 ]);
 const kinds={NS:2,OB:3,DF:3};
+const YEARS=['prior','same','future','unknown'];
+const emptyCohorts=()=>Object.fromEntries(YEARS.map(year=>
+ [year,{rows:0,fields:emptyStats()}]));
+function addFieldCounts(target,source){
+ for(const key of IMPACT_FIELDS){
+   for(const category of Object.keys(target[key]))
+     target[key][category]+=source[key][category];
+ }
+}
+
+/** Exige codigo completo do empenho, nao deduz o exercicio pelo nome reduzido. */
+export function impactCommitmentYearGroup(row,documentYear){
+ const raw=typeof row?.empenho==='string'?row.empenho:
+   typeof row?.empenho?.documento==='string'?row.empenho.documento:'';
+ const match=COMMITMENT.exec(raw);
+ if(!match||!Number.isInteger(documentYear)||documentYear<2000||documentYear>2099)
+   return 'unknown';
+ const year=Number(match[1]);
+ return year<documentYear?'prior':year>documentYear?'future':'same';
+}
 const emptyStats=()=>Object.fromEntries(IMPACT_FIELDS.map(k=>
  [k,{missing:0,invalid:0,negative:0,zero:0,positive:0}]));
 
@@ -26,20 +46,26 @@ function fieldCategory(value){
 }
 
 /** Apenas cobertura por campo/sinal. Nao agrega valores nem classifica a natureza contábil. */
-export function summarizeImpactFields(rows){
+export function summarizeImpactFields(rows,{documentYear=null}={}){
  if(!Array.isArray(rows))throw Error('Amostra de impactos invalida');
- const fields=emptyStats();
+ const fields=emptyStats(),byCommitmentYear=emptyCohorts();
  for(const row of rows){
    if(!row||typeof row!=='object'||Array.isArray(row))
      throw Error('Linha de impacto invalida');
-   for(const key of IMPACT_FIELDS)fields[key][fieldCategory(row[key])]++;
+   const group=byCommitmentYear[impactCommitmentYearGroup(row,documentYear)];
+   group.rows++;
+   for(const key of IMPACT_FIELDS){
+     const category=fieldCategory(row[key]);
+     fields[key][category]++;
+     group.fields[key][category]++;
+   }
  }
- return {rows:rows.length,fields};
+ return {rows:rows.length,fields,byCommitmentYear};
 }
 
-/** Seleciona ate quatro perfis por vinculos documentais ja publicados, sem supor RP. */
+/** Estratifica documentos sem duplicar ID entre competencias e sem assumir que sejam RP. */
 export function selectRapSamples(months,{max=4}={}){
- if(!Array.isArray(months)||!Number.isSafeInteger(max)||max<1||max>8)
+ if(!Array.isArray(months)||!Number.isSafeInteger(max)||max<1||max>24)
    throw Error('Amostragem invalida');
  const records=[];
  for(const source of months){
@@ -65,25 +91,30 @@ export function selectRapSamples(months,{max=4}={}){
        priorYearReference:link.previous>0,sameYearReference:link.current>0});
    }
  }
- records.sort((a,b)=>b.month.localeCompare(a.month)||
-   a.id.localeCompare(b.id));
- const groups=[
-   x=>x.priorYearReference&&x.kind==='NS',
-   x=>x.priorYearReference&&x.kind!=='NS',
-   x=>!x.priorYearReference&&x.kind==='NS',
-   x=>!x.priorYearReference&&x.kind!=='NS'
- ];
- const chosen=[];
- for(const match of groups){
-   const record=records.find(x=>match(x)&&!chosen.includes(x));
-   if(record)chosen.push(record);
-   if(chosen.length>=max)return chosen;
- }
+ records.sort((a,b)=>b.month.localeCompare(a.month)||a.id.localeCompare(b.id));
+ const seen=new Set();
+ const groups=Object.fromEntries(['NS','OB','DF'].flatMap(kind=>
+   [kind+'_prior',kind+'_current'].map(key=>[key,[]])));
  for(const record of records){
-   if(chosen.length>=max)break;
-   if(!chosen.includes(record))chosen.push(record);
+   if(seen.has(record.id))continue;
+   seen.add(record.id);
+   groups[record.kind+'_'+(record.priorYearReference?'prior':'current')].push(record);
  }
- return chosen;
+ // Duas vagas de vinculo interanual para cada vaga de controle contemporaneo.
+ // A rodada inclui NS, OB e DF, preservando diversidade e volume moderado.
+ const schedule=['NS_prior','OB_prior','DF_prior',
+   'NS_prior','OB_prior','DF_prior','NS_current','OB_current','DF_current'];
+ const selected=[];
+ while(selected.length<max){
+   let additions=0;
+   for(const name of schedule){
+     if(selected.length>=max)break;
+     const next=groups[name].shift();
+     if(next){selected.push(next);additions++;}
+   }
+   if(!additions)break;
+ }
+ return selected;
 }
 
 function failureCategory(error){
@@ -91,8 +122,8 @@ function failureCategory(error){
  return Number.isInteger(status)&&status>=400&&status<=599?
    'http_'+status:'source_unavailable';
 }
-function result(status,reason,pages,rows,fields,complete){
- return {status,reason,pages,rows,complete,fields};
+function result(status,reason,pages,rows,fields,complete,byCommitmentYear){
+ return {status,reason,pages,rows,complete,fields,byCommitmentYear};
 }
 
 /** So informa amostra completa apos encontrar pagina terminal vazia.
@@ -105,37 +136,38 @@ export async function inspectRapImpacts(id,phase,{
     !Number.isSafeInteger(maxPages)||maxPages<1||maxPages>8)
    throw Error('Documento/fase para auditoria invalido');
  if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
- const fields=emptyStats(),seen=new Set();
+ const fields=emptyStats(),byCommitmentYear=emptyCohorts(),seen=new Set();
+ const documentYear=Number(DOCUMENT.exec(id)[1]);
  let rows=0,pages=0;
  for(let page=1;page<=maxPages;page++){
    let response;
    try{response=await request(impactUrl(id,phase,page),{token});}
    catch(error){
-     return result('unavailable',failureCategory(error),pages,rows,fields,false);
+     return result('unavailable',failureCategory(error),pages,rows,fields,false,byCommitmentYear);
    }
    if(!Array.isArray(response))
-     return result('unavailable','invalid_response',pages,rows,fields,false);
+     return result('unavailable','invalid_response',pages,rows,fields,false,byCommitmentYear);
    if(!response.length)
      return result(rows?'complete':'empty',rows?'terminal_page':'no_rows',
-       pages,rows,fields,true);
+       pages,rows,fields,true,byCommitmentYear);
    // A impressao digital fica apenas na memoria do processo, nunca no log.
    const fingerprint=JSON.stringify(response);
    if(seen.has(fingerprint))
-     return result('unavailable','repeated_page',pages,rows,fields,false);
+     return result('unavailable','repeated_page',pages,rows,fields,false,byCommitmentYear);
    seen.add(fingerprint);
    let summary;
-   try{summary=summarizeImpactFields(response);}
+   try{summary=summarizeImpactFields(response,{documentYear});}
    catch{
-     return result('unavailable','invalid_row',pages,rows,fields,false);
+     return result('unavailable','invalid_row',pages,rows,fields,false,byCommitmentYear);
    }
    pages++;rows+=summary.rows;
-   for(const key of IMPACT_FIELDS){
-     for(const category of Object.keys(fields[key])){
-       fields[key][category]+=summary.fields[key][category];
-     }
+   addFieldCounts(fields,summary.fields);
+   for(const year of YEARS){
+     byCommitmentYear[year].rows+=summary.byCommitmentYear[year].rows;
+     addFieldCounts(byCommitmentYear[year].fields,summary.byCommitmentYear[year].fields);
    }
  }
- return result('partial','page_limit',pages,rows,fields,false);
+ return result('partial','page_limit',pages,rows,fields,false,byCommitmentYear);
 }
 
 export async function auditRapSample(sample,options={}){
@@ -158,10 +190,11 @@ async function main(){
  const months=await Promise.all([...manifest.months].sort().reverse().slice(0,6)
    .map(async month=>({month,data:JSON.parse(await readFile(
      join(root,'data/months',month+'.json'),'utf8'))})));
- const samples=selectRapSamples(months);
+ const samples=selectRapSamples(months,{max:18});
  console.log('Sondagem de campos de RP CGU: '+samples.length+
    ' documentos da UG 158459. Vinculo com NE anterior NAO prova inscricao em RP.');
- for(const sample of samples){
+ for(const [index,sample] of samples.entries()){
+   if(index)await new Promise(resolve=>setTimeout(resolve,650));
    const audit=await auditRapSample(sample,{token,maxPages:4});
    console.log('Perfil CGU: '+JSON.stringify(audit));
  }
