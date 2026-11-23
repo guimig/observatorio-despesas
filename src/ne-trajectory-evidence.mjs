@@ -168,7 +168,7 @@ export async function inspectLinkedNeEvidence(sample,{
  for(let page=1;page<=maxPages;page++){
    let response;
    try{response=await request(impactUrl(sample.id,sample.phase,page),{token});}
-   catch(error)return incomplete('unavailable',classifyCguFailure(error));
+   catch(error){return incomplete('unavailable',classifyCguFailure(error));}
    if(!Array.isArray(response))return incomplete('unavailable','resposta_invalida');
    if(!response.length){
      return {status:rows?(matchedRows?'complete':'no_match'):'empty',
