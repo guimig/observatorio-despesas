@@ -188,10 +188,10 @@ test('recoleta preserva NS e invalida seus vínculos na retificação',()=>{
 });
 test('planejamento só seleciona documentos pendentes, respeita limites',()=>{
  let d=wrap([result(ne,1),result(ob,3)]);
- assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[ob],items:[ne],itemHistories:[]});
+ assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[ob],items:[ne],itemHistories:[],itemRechecks:[]});
  d=applyDocumentEnrichment(d,ob,{kind:'payment',links:[]}).data;
  d=applyDocumentEnrichment(d,ne,{kind:'items',items:[]}).data;
- assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[],items:[],itemHistories:[]});
+ assert.deepEqual(planEnrichment(d),{liquidations:[],payments:[],items:[],itemHistories:[],itemRechecks:[]});
  assert.throws(()=>planEnrichment(d,{maxPayments:1000}));
 });
 

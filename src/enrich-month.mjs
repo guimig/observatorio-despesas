@@ -17,7 +17,7 @@ export function rotatePending(documents,limit,slot=0){
   const offset=(slot*limit)%documents.length;
   return [...documents.slice(offset),...documents.slice(0,offset)].slice(0,limit);
 }
-export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,slot=0}={}){
+export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,now=new Date(),slot=0}={}){
   validateMonth(month);
   const liquidations=month.documents.filter(doc=>doc.phase===2&&
     doc.liquidationLinksChecked!==true)
@@ -57,8 +57,23 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     selectedHistories.push(...rotatePending(partialHistories.filter(item=>
       !selected.has(item.id+'/'+item.seq)),historyLimit-selectedHistories.length,slot));
   }
+  if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw Error('Data de revisao invalida');
+  const today=now.toISOString().slice(0,10);
+  const rechecks=[];
+  for(const doc of month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)){
+    for(const item of month.itemsByDocument?.[doc.id]||[]){
+      if(item.historyChecked!==true||!(item.movements||[]).length)continue;
+      const last=item.historyCheckedAt;
+      // Ausencia de checkpoint em dados legados: reconsulta uma vez.
+      if(!last||Date.parse(today+'T00:00:00Z')-
+        Date.parse(last+'T00:00:00Z')>=30*86400000)
+        rechecks.push({id:doc.id,seq:item.seq});
+    }
+  }
+  rechecks.sort((a,b)=>a.id.localeCompare(b.id)||a.seq-b.seq);
+  const selectedRechecks=rotatePending(rechecks,bounded(maxHistoryRechecks,2,8),slot);
   return {liquidations:selectedLiquidations,payments:selectedPayments,
-    items:selectedItems,itemHistories:selectedHistories};
+    items:selectedItems,itemHistories:selectedHistories,itemRechecks:selectedRechecks};
 }
 export function scheduledMonthSlot(now=new Date()){
   const date=now instanceof Date?now:new Date(now);
@@ -107,7 +122,8 @@ async function main(){
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7,
-    maxItemHistories:process.env.ENRICH_HISTORY_ITEMS||10
+    maxItemHistories:process.env.ENRICH_HISTORY_ITEMS||10,
+    maxHistoryRechecks:process.env.ENRICH_HISTORY_RECHECKS||2
   };
   const priority=['oldest','newest','round_robin'].includes(process.env.ENRICH_PRIORITY)
     ?process.env.ENRICH_PRIORITY:'newest';
@@ -119,7 +135,8 @@ async function main(){
   for(const monthName of alternatives){
     const data=await readMonth(root,monthName);
     const plan=planEnrichment(data,args);
-    if(plan.liquidations.length||plan.payments.length||plan.items.length||plan.itemHistories.length){
+    if(plan.liquidations.length||plan.payments.length||plan.items.length||
+       plan.itemHistories.length||plan.itemRechecks.length){
       chosen={monthName,plan};break;
     }
   }
@@ -130,7 +147,8 @@ async function main(){
   console.log('Plano de enriquecimento: competência '+chosen.monthName+'; '+
     chosen.plan.liquidations.length+' liquidações; '+chosen.plan.payments.length+
     ' pagamentos; '+chosen.plan.items.length+' empenhos; '+
-    chosen.plan.itemHistories.length+' historicos de itens.');
+    chosen.plan.itemHistories.length+' historicos de itens; '+
+    chosen.plan.itemRechecks.length+' reconsultas historicas.');
   if(process.argv.includes('--dry-run')){
     console.log('Simulação: nenhuma consulta autenticada ou arquivo alterado.');
     return;
@@ -141,7 +159,7 @@ async function main(){
   const failures=[];
   for(const [kind,docs] of [['liquidation',chosen.plan.liquidations],
     ['payment',chosen.plan.payments],['items',chosen.plan.items],
-    ['itemHistory',chosen.plan.itemHistories]]){
+    ['itemHistory',chosen.plan.itemHistories],['itemHistory',chosen.plan.itemRechecks]]){
     for(const item of docs){
       const id=kind==='itemHistory'?item.id:item;
       const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token}):
@@ -154,7 +172,8 @@ async function main(){
         continue;
       }
       const result=kind==='items'?{kind:'items',items:outcome.items}:
-        kind==='itemHistory'?{kind:'itemHistory',seq:item.seq,movements:outcome.movements}:
+        kind==='itemHistory'?{kind:'itemHistory',seq:item.seq,movements:outcome.movements,
+          checkedAt:new Date().toISOString().slice(0,10)}:
           {kind,links:outcome.links};
       try{
         await persistEnrichment(root,chosen.monthName,id,result,new Date());

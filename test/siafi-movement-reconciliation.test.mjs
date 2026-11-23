@@ -41,6 +41,7 @@ test('reconstroi valor atualizado com reforcos e anulacoes de tipo declarado',()
  assert.equal(a.initialCents,20000000);
  assert.equal(a.reinforcementCents,78999893);
  assert.equal(a.annulmentCents,39508841);
+ assert.equal(a.cancellationCents,0);
  assert.equal(a.reconstructedCents,59491052);
  assert.equal(a.originalDate,'2026-01-16');
  assert.equal(a.originalDateMatchesListing,false);
@@ -61,7 +62,8 @@ test('operacoes ambiguas, cancelamento e estorno nao recebem sinal presumido',()
  for(const type of ['reversal','cancellation','other','unknown']){
   const a=check([item(100,[event('original',100),event(type,50)])],100);
   assert.equal(a.status,'unavailable');
-  assert.equal(a.reason,'ambiguous_movement');
+  assert.equal(a.reason,type==='cancellation'?
+   'cancellation_year_unverified':'ambiguous_movement');
  }
 });
 
