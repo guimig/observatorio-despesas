@@ -241,6 +241,13 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       doc.date===coverage.date && doc.phase===coverage.phase);
     const previousById=new Map(previousDocs.map(doc=>[doc.id,doc]));
     const incomingIds=new Set(documents.map(doc=>doc.id));
+    // Coleta diaria parcial nunca elimina NE consultada individualmente,
+    // mesmo quando trouxe mais linhas; somente dia completo pode reconciliar.
+    if(!coverage.complete&&previousDocs.some(doc=>!incomingIds.has(doc.id)))
+      continue;
+    if(coverage.complete&&previous?.reason==='consulta_individual'&&
+       previousDocs.some(doc=>!incomingIds.has(doc.id)))
+      throw Error('Dia completo nao contem NE recuperada individualmente');
     if(previousDocs.some(doc=>!incomingIds.has(doc.id)&&
        (next.phaseObservations||[]).some(item=>item.id===doc.id))){
       throw Error('Documento de origem referenciado por outra fase: revisar retificacao');
