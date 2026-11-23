@@ -158,3 +158,15 @@ test('limite de pendencias impede perda silenciosa de novos IDs',()=>{
    {org:CAMPUS_CNPJ,from:next.from,to:next.to,complete:true,pages:1,records:[]}
  ],{now:NOW}),e=>e.code==='pending_limit');
 });
+
+test('mudanca do mes de publicacao de ID ainda pendente exige revisao',()=>{
+ const first=queued().data,now=new Date('2026-11-24T16:00:00Z');
+ const p=planPncpDelta(first,{now});
+ assert.throws(()=>applyPncpDelta(first,p,[
+   {org:REITORIA_CNPJ,from:p.from,to:p.to,complete:true,pages:1,
+     records:[normalizePncp(raw(UNKNOWN_ID,{published:'2026-10-08',
+       updated:'2026-11-23'}))]},
+   {org:CAMPUS_CNPJ,from:p.from,to:p.to,complete:true,pages:1,records:[]}
+ ],{now}),e=>e.code==='pending_month_changed');
+ assert.equal(first.pncpDelta.pendingPublications[0].publishedMonth,'2026-09');
+});
