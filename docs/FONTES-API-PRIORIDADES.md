@@ -62,3 +62,28 @@ Todos os retornos são limitados em memória, o diagnóstico descarta payloads e
 O [workflow #45229486002](https://github.com/guimig/observatorio-despesas/actions/runs/45229486002) executou chamadas reais sem credenciais. As duas rotas PNCP retornaram **HTTP 400 antes da primeira pagina** com `tamanhoPagina=5`; nao foi consultado nenhum registro, portanto todas as contagens de correspondencia ficaram em zero **por ausencia de leitura, nao por ausencia de dados**. No Contratos.gov.br, as quatro consultas de acesso (HTML, OpenAPI, GET de RP sem parametros e GET da UG apenas para status) terminaram com `network_unavailable` no runner. Isso nao permite concluir que as rotas exigem JWT ou que os dados nao existem.
 
 A etapa de diagnóstico seguinte adotou `tamanhoPagina=10` (ate 20 registros por endpoint) e passou a informar limites numericos publicados no OpenAPI, quando disponiveis. Trata-se de uma **hipótese de validacao do parametro**, ainda sem resultado real da nova tentativa. Nenhuma chamada é repetida automaticamente em HTTP 400 e o motivo exato permanece pendente de verificacao por schema oficial.
+
+## Resultado homologado da sondagem de acesso — 23/11/2026
+
+O [workflow #45230126328](https://github.com/guimig/observatorio-despesas/actions/runs/45230126328) confirmou pelo **OpenAPI oficial**: `tamanhoPagina` admite **10–500** para `GET /v1/contratos/atualizacao` e **10–100** para `GET /v1/instrumentoscobranca/inclusao`. O HTTP 400 da execução anterior (lote 5) era compatível com parâmetro inválido; a [PR #117](https://github.com/guimig/observatorio-despesas/pull/117) passou a usar lote 10, com testes e publicação aprovados.
+
+A [sondagem real #45230126287](https://github.com/guimig/observatorio-despesas/actions/runs/45230126287) retornou:
+
+| Fonte/rota | Observação autenticada no runner | Consequência |
+| --- | --- | --- |
+| PNCP `/v1/contratos/atualizacao` | **2 de 16 páginas**, 20 registros, 20 IDs PNCP válidos, **6 IDs já presentes no catálogo local** e 14 com publicação anterior ao início da janela de atualização; nenhum campo `numeroEmpenho` com NE integral da UG 158459 na amostra | O endpoint está acessível e recupera publicações de datas anteriores que integram atualizações posteriores. Os resultados são **amostrais**, não contagem completa de 16 páginas nem evidência de vínculo com a CGU |
+| PNCP `/v1/instrumentoscobranca/inclusao` | `network_unavailable` **antes da primeira página**; nenhuma linha foi validada | Não inferir ausência de documentos, erro de autenticação ou inexistência do serviço. Reavaliar em janela reduzida e com timeout documentado |
+| Contratos.gov.br (HTML, OpenAPI, RP por período sem parâmetros e UG somente status) | Todos `network_unavailable` no runner, sem leitura de dados de UG | Não concluir que os endpoints exigem JWT, que faltam registros ou que o serviço não está publicado; suspender implementação até disponibilidade efetiva |
+| CGU/Portal da Transparência | Fonte autenticada e principal já em funcionamento | Manter enriquecimento e histórico; não impor vínculos pela publicação PNCP |
+
+**Interpretação obrigatória:** seis correspondências são exclusivamente **IDs de instrumentos PNCP** já catalogados, **não seis notas de empenho conciliadas**. A amostra não demonstrou chave financeira SIAFI integral; não vincular as demais publicações por número abreviado, processo, valor, fornecedor ou CNPJ do publicador.
+
+### Próxima etapa de engenharia
+
+1. Projetar um **coletor incremental PNCP por data de atualização**, usando o formato já validado, com paginação **integral** e status explícito em caso de falha/limite; nenhum JSON financeiro novo. O fluxo deve reconciliar cada ID PNCP com o catálogo existente e atualizar apenas campos oficiais efetivamente alterados, preservando registros de meses antigos e sem duplicar instrumento.
+2. Medir latência, paginação e taxa de novos IDs antes de escolher janela ou agendamento diário; **16 páginas no intervalo de 14 dias não demonstram que o custo será sempre baixo**. Evitar varredura massiva, novos snapshots e commits sem mudança.
+3. Testar separadamente `instrumentoscobranca/inclusao` com janela de um dia, CNPJ institucional e `tamanhoPagina=10`, sem assumir quitação.
+4. Contratos.gov.br: fazer diagnóstico de conectividade e condições de consulta por período somente quando a rede permitir; não criar token/login nem depender dessa API no pipeline.
+5. Preservar a CGU como fonte da identidade financeira, inclusive NEs substitutivas e N:M. Não publicar `RAP a pagar` sem prova de saldo.
+
+As mudanças técnicas de sondagem não alteraram `data/months`, `data/procurement` ou o dashboard: apenas PRs, código e workflows de diagnóstico read-only.
