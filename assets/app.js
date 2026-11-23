@@ -376,7 +376,7 @@ function showContractAssociations(doc){
 }
 function explainSiafiReconciliation(items,doc){
  const a=reconcileSiafiCommitment(items,{listingDate:doc?.date,
-   documentCents:doc?.cents});
+   documentCents:doc?.cents,commitmentYear:doc?.id?.slice(11,15)});
  if(a.status==='partial')return 'Reconstrução ainda pendente: apenas '+
    a.checked+'/'+a.total+' itens com histórico completo. Nenhum saldo inferido.';
  if(a.status==='unavailable')return 'Reconstrução não disponível ('+({
@@ -389,7 +389,9 @@ function explainSiafiReconciliation(items,doc){
    movement_before_original:'movimento anterior à inclusão original',
    arithmetic_or_sequence_invalid:'sequência ou valor aritmético incoerente',
    aggregate_overflow:'total fora do limite numérico seguro',
-   item_amount_invalid:'valor atual do item indisponível'
+   item_amount_invalid:'valor atual do item indisponível',
+   cancellation_year_unverified:'cancelamento de restos a pagar sem ano posterior validado',
+   original_year_mismatch:'inclusão original fora do exercício do empenho'
  }[a.reason]||'dados insuficientes')+'). Não foi calculado saldo.';
  const listing=a.originalDateMatchesListing===false?
    ' A data da primeira inclusão identificada no histórico ('+localDate(a.originalDate)+
@@ -398,6 +400,7 @@ function explainSiafiReconciliation(items,doc){
  return 'Base da inclusão: '+fmtMoney(a.initialCents)+
    ' · Reforços: '+fmtMoney(a.reinforcementCents)+
    ' · Anulações: '+fmtMoney(a.annulmentCents)+
+   (a.cancellationCents?' · Cancelamentos posteriores: '+fmtMoney(a.cancellationCents):'')+
    ' · Valor reconstruído por operações: '+fmtMoney(a.reconstructedCents)+
    ' · Valor atual dos itens informado pela CGU: '+fmtMoney(a.reportedCents)+
    '. '+(a.status==='reconciled'?
