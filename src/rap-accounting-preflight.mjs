@@ -34,7 +34,7 @@ function validDimensions(row,meta){
  return row.unit==='158459'&&
    typeof row.management==='string'&&/^\d{5}$/.test(row.management)&&
    ne&&ne[0].slice(6,11)===row.management&&
-   positiveYear(row.inscriptionYear)&&row.inscriptionYear>Number(ne[1])&&
+   positiveYear(row.inscriptionYear)&&row.inscriptionYear>=Number(ne[1])&&
    MODALITIES.has(row.modality)&&row.asOf===meta.asOf&&
    row.entryType==='saldo'&&TYPES.has(row.entryType)&&cents(row.balanceCents);
 }
