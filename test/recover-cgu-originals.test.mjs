@@ -45,13 +45,7 @@ async function temporary(callback){
    const m=emptyMonth('2026-11');
    const nsDoc={id:ns,date:'2026-11-21',phase:2,cents:100};
    const obDoc={id:ob,date:'2026-11-21',phase:3,cents:200};
-   const source=mergeMonth(m,'2026-11',[{
-     documents:[nsDoc,obDoc],links:[
-       {from:ns,to:note24,cents:100},{from:ob,to:note25,cents:200}
-     ],coverage:{date:'2026-11-21',phase:2,complete:true,count:1,invalid:0}
-   }],now);
-   // One document per phase in canonical archive.
-   // Replace with compatible patches since the previous helper mixes phases.
+   // Uma fase por lote; o acervo real tem cobertura independente.
    const valid=mergeMonth(emptyMonth('2026-11'),'2026-11',[{
      documents:[nsDoc],links:[{from:ns,to:note24,cents:100}],
      coverage:{date:'2026-11-21',phase:2,complete:true,count:1,invalid:0}
