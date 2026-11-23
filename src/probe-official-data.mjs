@@ -27,15 +27,20 @@ function isoDate(value){
  const d=new Date(value+'T00:00:00Z');
  return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===value;
 }
-export function pncpProbeUrl(kind,initial,final,page=1){
+export function pncpProbeUrl(kind,initial,final,page=1,{scope='ifc'}={}){
  const item=PROBES.find(p=>p.kind===kind);
+ // No-filter so serve a diagnosticar a API de cobranca, nao expandir
+ // coletores regulares a outras entidades/contratacoes.
  if(!item||!isoDate(initial)||!isoDate(final)||initial>final||
    (Date.parse(final)-Date.parse(initial))/86400000>30||
-   !Number.isSafeInteger(page)||page<1||page>MAX_PAGES)
+   !Number.isSafeInteger(page)||page<1||page>MAX_PAGES||
+   !['ifc','all_publishers'].includes(scope)||
+   (scope==='all_publishers'&&kind!=='instrumentos_inclusao'))
    throw Error('Parametros PNCP nao autorizados');
  const qs=new URLSearchParams({dataInicial:initial.replaceAll('-',''),
-   dataFinal:final.replaceAll('-',''),cnpjOrgao:REITORIA,
-   pagina:String(page),tamanhoPagina:String(PAGE_SIZE)});
+   dataFinal:final.replaceAll('-',''),pagina:String(page),
+   tamanhoPagina:String(PAGE_SIZE)});
+ if(scope==='ifc')qs.set('cnpjOrgao',REITORIA);
  return PNCP+item.path+'?'+qs.toString();
 }
 function failure(status){
@@ -146,15 +151,16 @@ function countRows(rows,kind,ctx,initial,acc){
  * parcial e explicitamente rotulada; jamais declarar ausencia ou completude.
  */
 export async function probePncp(kind,initial,final,archives,{
- fetchFn=fetch,maxPages=MAX_PAGES
+ fetchFn=fetch,maxPages=MAX_PAGES,scope='ifc'
 }={}){
  if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>MAX_PAGES)
    throw Error('Limite de sondagem invalido');
+ pncpProbeUrl(kind,initial,final,1,{scope});
  const ctx=contextFromArchives(archives),counts=freshCounters();
  const signatures=new Set();
  let pagesDeclared=null,consulted=0;
  for(let page=1;page<=maxPages;page++){
-   const url=pncpProbeUrl(kind,initial,final,page);
+   const url=pncpProbeUrl(kind,initial,final,page,{scope});
    const result=await getOfficialJson(url,{fetchFn});
    if(result.status!=='ok')return {kind,status:result.status,pagesConsulted:consulted,
      counts: freshCounters()};
@@ -242,7 +248,39 @@ export function instrumentControlWindow(now=new Date()){
  const date=day.toISOString().slice(0,10);
  return {initial:date,final:date};
 }
+export const BILLING_HISTORY_DATES=Object.freeze([
+ '2026-10-15','2026-11-13'
+]);
+/**
+ * Compara a MESMA data e a MESMA rota com filtro IFC e sem filtro.
+ * Cada consulta le no maximo 10 linhas e uma pagina, sem guardar qualquer
+ * linha, identificador, CPF, fornecedor, valor ou resposta bruta.
+ * Um 404 e apenas status HTTP, nunca ausencia contábil comprovada.
+ */
+export async function probeBillingHistory({fetchFn=fetch}={}){
+ const context={contracts:[],months:[]},out=[];
+ for(const date of BILLING_HISTORY_DATES){
+   for(const scope of ['ifc','all_publishers']){
+     const result=await probePncp('instrumentos_inclusao',date,date,
+       context,{fetchFn,maxPages:1,scope});
+     out.push({date,scope,status:result.status,
+       pagesConsulted:result.pagesConsulted,
+       ...(result.pagesDeclared===undefined?{}:
+         {pagesDeclared:result.pagesDeclared}),
+       rowsExamined:result.counts.rowsExamined});
+   }
+ }
+ return out;
+}
 export async function main(){
+ if(process.argv.includes('--billing-historical')){
+   const checks=await probeBillingHistory();
+   console.log('Comparacao PNCP cobranca filtrada e geral (sem IDs): '+
+     JSON.stringify(checks));
+   console.log('Consulta historica somente leitura. HTTP 404 nao significa '+
+     'ausencia de cobranças, liquidação, pagamento ou RAP.');
+   return;
+ }
  const root=process.cwd();
  const manifest=JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8'));
  const contracts=JSON.parse(await readFile(join(root,'data/procurement/contracts.json'),'utf8'));

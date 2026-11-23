@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pncpProbeUrl,probePncp,probeContratosGov,instrumentProbeWindow,instrumentControlWindow}
+import {pncpProbeUrl,probePncp,probeContratosGov,instrumentProbeWindow,instrumentControlWindow,probeBillingHistory,BILLING_HISTORY_DATES}
  from '../src/probe-official-data.mjs';
 
 const archived='10635424000186-2-000111/2026';
@@ -135,4 +135,67 @@ test('controle da cobranca usa dia util encerrado, sem tratar 404 como zero',()=
    {initial:'2026-11-23',final:'2026-11-23'});
  const sunday=instrumentProbeWindow(new Date('2026-11-23T15:00:00Z'));
  assert.equal(sunday.final,'2026-11-22');
+});
+
+test('cobranca permite retirar cnpjOrgao somente na sondagem controlada',()=>{
+ const ifc=new URL(pncpProbeUrl('instrumentos_inclusao',
+   '2026-10-15','2026-10-15',1,{scope:'ifc'}));
+ const general=new URL(pncpProbeUrl('instrumentos_inclusao',
+   '2026-10-15','2026-10-15',1,{scope:'all_publishers'}));
+ assert.equal(ifc.searchParams.get('cnpjOrgao'),'10635424000186');
+ assert.equal(general.searchParams.has('cnpjOrgao'),false);
+ assert.equal(general.searchParams.get('tamanhoPagina'),'10');
+ assert.equal(general.searchParams.get('pagina'),'1');
+ assert.equal(general.searchParams.get('dataInicial'),'20261015');
+ assert.throws(()=>pncpProbeUrl('contratos_atualizacao',
+   '2026-10-15','2026-10-15',1,{scope:'all_publishers'}));
+ assert.throws(()=>pncpProbeUrl('instrumentos_inclusao',
+   '2026-10-15','2026-10-15',1,{scope:'external'}));
+ assert.throws(()=>pncpProbeUrl('instrumentos_inclusao',
+   '2026-10-15','2026-10-15',2+1,{scope:'all_publishers'}));
+});
+test('mesma data filtrada 404 e geral 200 nao vira ausencia IFC comprovada',async()=>{
+ let calls=0;
+ const fetchFn=async(url,options)=>{
+   calls++;
+   const query=new URL(url).searchParams;
+   assert.equal(options.redirect,'error');
+   assert.equal(query.get('tamanhoPagina'),'10');
+   assert.equal(query.get('pagina'),'1');
+   if(query.get('dataInicial')==='20261015')
+     return new Response('nao encontrado',{status:404});
+   if(query.has('cnpjOrgao'))
+     return new Response('nao encontrado',{status:404});
+   return new Response(JSON.stringify({data:[
+     {descricao:'Dados de pessoa natural CPF 123.456.789-09',
+       valor:900000,fornecedor:'NAO PUBLICAR'}
+   ],totalPaginas:1}),{headers:{'Content-Type':'application/json'}});
+ };
+ const outputs=await probeBillingHistory({fetchFn});
+ assert.deepEqual(BILLING_HISTORY_DATES,['2026-10-15','2026-11-13']);
+ assert.equal(calls,4);
+ assert.deepEqual(outputs.map(x=>x.status),[
+   'http_404','http_404','http_404','sample_complete']);
+ assert.deepEqual(outputs.map(x=>x.scope),[
+   'ifc','all_publishers','ifc','all_publishers']);
+ assert.deepEqual(outputs.map(x=>x.rowsExamined),[0,0,0,1]);
+ assert.equal(outputs[3].pagesDeclared,1);
+ for(const privateValue of ['CPF','123.456.789-09','NAO PUBLICAR',
+   '900000'])assert.equal(JSON.stringify(outputs).includes(privateValue),false);
+});
+test('200 vazio tem status distinto de 404 e resposta malformada',async()=>{
+ const zero=await probePncp('instrumentos_inclusao','2026-10-15',
+   '2026-10-15',{contracts:[],months:[]},{
+     maxPages:1,scope:'all_publishers',
+     fetchFn:async()=>new Response(JSON.stringify({data:[],totalPaginas:0}))
+   });
+ const denied=await probePncp('instrumentos_inclusao','2026-10-15',
+   '2026-10-15',{contracts:[],months:[]},{
+     maxPages:1,scope:'all_publishers',
+     fetchFn:async()=>new Response('missing',{status:404})
+   });
+ assert.equal(zero.status,'empty_complete');
+ assert.equal(denied.status,'http_404');
+ assert.equal(zero.counts.rowsExamined,0);
+ assert.equal(denied.counts.rowsExamined,0);
 });

@@ -26,3 +26,5 @@ jobs:
           npm run check:data
       - name: Sondar dados sem persistencia ou credenciais
         run: node src/probe-official-data.mjs
+      - name: Comparar instrumento de cobranca historico com e sem filtro IFC
+        run: node src/probe-official-data.mjs --billing-historical
