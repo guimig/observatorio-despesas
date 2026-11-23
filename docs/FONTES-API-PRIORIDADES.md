@@ -56,3 +56,9 @@ A indisponibilidade do OpenAPI do Contratos.gov.br será investigada com quatro 
 Todos os retornos são limitados em memória, o diagnóstico descarta payloads e registra apenas categorias/contagens; nenhuma resposta pessoal, CNPJ de fornecedor, CPF, número de NE, valor monetário, JSON novo ou credencial será publicada. Limites e formato foram cobertos por testes unitários. Os resultados observados no runner devem ser adicionados abaixo após a execução, sem afirmar validação de uma fonte ainda não testada.
 
 **Aceite técnico:** CI, workflow read-only real, observação da paginação, controle de sobreposição e garantia de sigilo. **Aceite de integração:** exige evidência de cobertura da UG financeira, NEs substitutivas e cronologia dos eventos, além de validação semântica de RP. Não habilitar indicadores nem alterar o coletor regular.
+
+## Verificacao real inicial e ajuste conservador (23/11/2026)
+
+O [workflow #45229486002](https://github.com/guimig/observatorio-despesas/actions/runs/45229486002) executou chamadas reais sem credenciais. As duas rotas PNCP retornaram **HTTP 400 antes da primeira pagina** com `tamanhoPagina=5`; nao foi consultado nenhum registro, portanto todas as contagens de correspondencia ficaram em zero **por ausencia de leitura, nao por ausencia de dados**. No Contratos.gov.br, as quatro consultas de acesso (HTML, OpenAPI, GET de RP sem parametros e GET da UG apenas para status) terminaram com `network_unavailable` no runner. Isso nao permite concluir que as rotas exigem JWT ou que os dados nao existem.
+
+A etapa de diagnóstico seguinte adotou `tamanhoPagina=10` (ate 20 registros por endpoint) e passou a informar limites numericos publicados no OpenAPI, quando disponiveis. Trata-se de uma **hipótese de validacao do parametro**, ainda sem resultado real da nova tentativa. Nenhuma chamada é repetida automaticamente em HTTP 400 e o motivo exato permanece pendente de verificacao por schema oficial.
