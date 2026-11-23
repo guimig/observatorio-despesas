@@ -145,3 +145,18 @@ A nova rotina `node src/probe-official-data.mjs --billing-historical` consulta s
 O workflow `sondar-dados-oficiais.yml` executa a comparação **uma única vez após alteração do código** ou por disparo manual, sem cron novo nem Secrets. Os logs guardam somente datas escolhidas, escopo do filtro, status, páginas e contagem de registros. As datas são amostras técnicas, **não datas previamente comprovadas de inclusão de cobrança**. A integração de instrumentos de cobrança continua bloqueada até confirmação da disponibilidade, identidade dos vínculos e semântica dos eventos.
 
 **Aceite técnico:** testes de construção de URL com e sem filtro, impossibilidade de consulta geral de contratos, resposta 200-vazia distinta de 404, limite de uma página e privacidade. **Aceite da fonte:** depende do resultado da execução real, sem extrapolação de cobertura ou valor financeiro.
+
+## Evidência real do teste com e sem filtro — 23/11/2026
+
+O [workflow #45241802339](https://github.com/guimig/observatorio-despesas/actions/runs/45241802339), com código da [PR #123](https://github.com/guimig/observatorio-despesas/pull/123), **concluiu tecnicamente** e produziu os resultados de acesso abaixo (cada amostra exigia só `pagina=1` e `tamanhoPagina=10`):
+
+| Data de inclusão sondada | CNPJ Reitoria informado | Sem `cnpjOrgao` |
+| --- | --- | --- |
+| 15/10/2026 | `http_404` antes da primeira página | `http_404` antes da primeira página |
+| 13/11/2026 | `http_404` antes da primeira página | `http_404` antes da primeira página |
+
+**Inferência limitada:** a retirada do filtro institucional não resolveu o problema nessas duas datas. Isso afasta a hipótese de que *somente* o CNPJ do IFC produziu os retornos anteriores; não demonstra que o endpoint não exista, nem que não haja instrumentos cadastrados em outras datas, nem que zero documentos de cobrança tenham sido emitidos. Ainda não existe retorno válido (HTTP 200) de registros de cobrança, mesmo sem filtro de órgão. A especificação continua listada no OpenAPI oficial.
+
+Na mesma execução, `GET /v1/contratos/atualizacao` apresentou `network_unavailable` em uma chamada amostral, após ter respondido com sucesso em execução anterior. Não há prova de falha persistente do coletor incremental; o workflow normal do Observatório mantém suas regras de falha/checkpoint. O Contratos.gov.br também permaneceu indisponível no executor, sem confirmação de autenticação ou cobertura.
+
+**Próximo critério antes de integrar cobranças:** obter uma janela que contenha instrumento de cobrança comprovadamente publicado no PNCP, ou esclarecimento técnico oficial do comportamento da rota/status HTTP 404; só então testar um endpoint alternativo oficial com resposta verificável. Não repetir sondagens inconclusivas em cron nem ativar coletor de cobrança. A implementação financeira deve continuar concentrada nos documentos e históricos da CGU. Nenhuma consulta desta investigação alterou os JSONs de despesa, o catálogo PNCP, o checkpoint ou o site.
