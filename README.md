@@ -312,3 +312,20 @@ A nova ficha distingue **conferência documental** de **conciliação contábil*
 Estados possíveis: `unavailable` (itens não consultados), `partial` (pelo menos um histórico ainda pendente), `no_movement_evidence` (consulta concluída sem movimento retornado), `original_only_consistent` (coincidência dos dados documentais originais), `additional_operations` (reforço, anulação ou outra operação identificada), `requires_review` (divergência de dados ou insuficiência para atestar inclusão única) e `no_items`. A expressão *consistente* não é sinônimo de saldo contábil conciliado e não comprova inexistência de pagamentos ou restos a pagar.
 
 As datas e valores de operações adicionais permanecem como evidências individuais; não se adota sinal positivo/negativo de reforço/anulação sem validar a semântica oficial, tampouco se soma pagamento ou ARP PNCP como despesa da NE. A [issue #29](https://github.com/guimig/observatorio-despesas/issues/29) continua aberta para conciliação contábil, restos a pagar, versionamento/retificação dos movimentos e auditoria de operações reais complexas.
+
+## Homologação aritmética de reforços e anulações (amostras reais CGU — 22/11/2026)
+
+O acervo publicado `data/months/2026-11.json` contém quatro NEs cujos históricos de itens registram reforços e/ou anulações, com conferência aritmética do valor atual. Uma função pura em `assets/siafi-movement-reconciliation.js` reconstrói **valor atual dos itens a partir de movimentos oficiais**, usando `INCLUSAO + REFORCO - ANULACAO` somente quando todas as seguintes condições estão comprovadas: todos os sequenciais com histórico completo, exatamente uma inclusão original por item, campos de data e valor válidos, operações com semântica reconhecida, valores monetários positivos informados pela fonte e sequência que não resulta em total negativo. Operações de cancelamento, estorno, outras ou tipo desconhecido não têm sinal presumido: a reconstrução fica indisponível. O total reconstruído deve coincidir com o `valorAtual` dos itens; a soma destes deve coincidir com o valor documental quando disponível. Valores divergentes permanecem **divergentes**, não são ajustados.
+
+Amostras da UG 158459, em **reais**, já registradas na CGU e inseridas como teste de regressão (nomes de fornecedores e processos não são utilizados):
+
+| NE 2026 | Primeira inclusão identificada | Base da inclusão | Reforços | Anulações | Valor reconstruído | Valor atual CGU |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 000005 | 16/01/2026 | R$ 200.000,00 | R$ 789.998,93 | R$ 395.088,41 | R$ 594.910,52 | R$ 594.910,52 |
+| 000216 | 10/07/2026 | R$ 28.000,00 | R$ 1.700,00 | R$ 0,00 | R$ 29.700,00 | R$ 29.700,00 |
+| 000258 | 07/10/2026 | R$ 36.125,00 | R$ 37.175,00 | R$ 0,00 | R$ 73.300,00 | R$ 73.300,00 |
+| 000281 | 11/11/2026 | R$ 400,00 | R$ 2.500,00 | R$ 0,00 | R$ 2.900,00 | R$ 2.900,00 |
+
+**Atenção à cronologia:** o campo `date` do acervo é a data retornada no filtro de listagem CGU (nos exemplos, datas de novembro), e **não é prova independente de emissão original da NE**. A primeira inclusão foi obtida do recurso de histórico dos itens, e é identificada como *primeira inclusão no histórico consultado*, não como a emissão documental formalmente comprovada; a conferência da capa/versão SIAFI continua pendente.
+
+**Limites:** os montantes acima são reconstrução documental de `valorAtual` de itens, não saldo de dotação, saldo de empenho a liquidar, saldo a pagar, valor pago, restos a pagar ou saldo financeiro/contábil. Não deve haver soma direta com importâncias de PNCP, liquidações ou pagamentos. Falhas de cobertura ou divergência bloqueiam a reconstrução. O histórico do Git conserva versões de JSON, sem respostas brutas adicionais; a interface mostra esses valores apenas na ficha detalhada de empenho, junto ao alerta de limitação. A issue #29 permanece aberta para conciliação dos saldos e eventos de restos a pagar.
