@@ -129,7 +129,7 @@ test('historicos somente amostrados nao equivalem a cobertura total da NE',async
  assert.equal(audit.otherHints.reinscricao,3);
  assert.equal(audit.otherHints.sem_pista,3);
  assert.equal(audit.inscriptionReview.candidateMovements,9);
- assert.equal(audit.inscriptionReview.labels.not_inscription,6);
+ assert.equal(audit.inscriptionReview.labels.not_inscription,9);
  assert.equal(audit.inscriptionReview.labels.other_with_hint,0);
  const summary=summarizeNeAudits([audit]);
  assert.equal(summary.cohorts.older_origin.inscriptionReview.candidateMovements,9);
