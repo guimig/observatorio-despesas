@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {pncpProbeUrl,probePncp,probeContratosGov,instrumentProbeWindow}
+import {pncpProbeUrl,probePncp,probeContratosGov,instrumentProbeWindow,instrumentControlWindow}
  from '../src/probe-official-data.mjs';
 
 const archived='10635424000186-2-000111/2026';
@@ -126,4 +126,13 @@ test('instrumentos de cobranca sondados em um unico dia encerrado',()=>{
  const short=instrumentProbeWindow(new Date('2026-11-23T15:00:00Z'));
  assert.deepEqual(short,{initial:'2026-11-22',final:'2026-11-22'});
  assert.ok(short.initial===short.final);
+});
+
+test('controle da cobranca usa dia util encerrado, sem tratar 404 como zero',()=>{
+ assert.deepEqual(instrumentControlWindow(new Date('2026-11-23T15:00:00Z')),
+   {initial:'2026-11-20',final:'2026-11-20'});
+ assert.deepEqual(instrumentControlWindow(new Date('2026-11-24T15:00:00Z')),
+   {initial:'2026-11-23',final:'2026-11-23'});
+ const sunday=instrumentProbeWindow(new Date('2026-11-23T15:00:00Z'));
+ assert.equal(sunday.final,'2026-11-22');
 });
