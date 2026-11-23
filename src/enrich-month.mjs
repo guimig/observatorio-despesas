@@ -33,11 +33,30 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
   const selectedItems=rotatePending(items,bounded(maxItems,7,20),slot);
-  const histories=month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)
-    .flatMap(doc=>(month.itemsByDocument?.[doc.id]||[])
-      .filter(item=>item.historyChecked!==true).map(item=>({id:doc.id,seq:item.seq})))
-    .sort((a,b)=>a.id.localeCompare(b.id)||a.seq-b.seq);
-  const selectedHistories=rotatePending(histories,bounded(maxItemHistories,10,30),slot);
+  // Uma nota com historico parcialmente validado deve poder ser concluida
+  // antes de se iniciar uma nova rodada de notas ainda inteiramente pendentes.
+  // Reservar no maximo um terco do lote preserva rodizio e evita monopolizacao.
+  const partialHistories=[],newHistories=[];
+  for(const doc of month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)){
+    const all=month.itemsByDocument?.[doc.id]||[];
+    const pending=all.filter(item=>item.historyChecked!==true);
+    const destination=all.some(item=>item.historyChecked===true)?
+      partialHistories:newHistories;
+    for(const item of pending)destination.push({id:doc.id,seq:item.seq});
+  }
+  const sorter=(a,b)=>a.id.localeCompare(b.id)||a.seq-b.seq;
+  partialHistories.sort(sorter);
+  newHistories.sort(sorter);
+  const historyLimit=bounded(maxItemHistories,10,30);
+  const partialQuota=Math.max(1,Math.floor(historyLimit/3));
+  const prioritized=rotatePending(partialHistories,Math.min(partialQuota,partialHistories.length),slot);
+  const regular=rotatePending(newHistories,historyLimit-prioritized.length,slot);
+  const selectedHistories=[...prioritized,...regular];
+  if(selectedHistories.length<historyLimit){
+    const selected=new Set(selectedHistories.map(item=>item.id+'/'+item.seq));
+    selectedHistories.push(...rotatePending(partialHistories.filter(item=>
+      !selected.has(item.id+'/'+item.seq)),historyLimit-selectedHistories.length,slot));
+  }
   return {liquidations:selectedLiquidations,payments:selectedPayments,
     items:selectedItems,itemHistories:selectedHistories};
 }
