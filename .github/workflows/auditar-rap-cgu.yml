@@ -1,0 +1,31 @@
+name: Auditar evidencias documentais de RP na CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/auditar-rap-cgu.yml'
+      - 'src/inspect-cgu-rap.mjs'
+permissions:
+  contents: read
+jobs:
+  auditoria:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testes, privacidade e integridade
+        run: |
+          npm run check:syntax
+          npm test
+          npm run check:data
+      - name: Auditar somente contagens e estrutura da API autenticada
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/inspect-cgu-rap.mjs
