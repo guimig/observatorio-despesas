@@ -208,3 +208,21 @@ test('falha por documento nao publica origem inventada nem apaga relacoes',async
    assert.deepEqual(manifest.months,['2026-11']);
  });
 });
+
+test('diagnostico separa fase, emissao e identidade sem registrar ID, CPF ou segredo',async()=>{
+ await temporary(async root=>{
+   const scenarios=[
+     {payload:detail(note24,{fase:'Liquidacao'}),reason:'phase_unverified'},
+     {payload:detail(note24,{data:'2026-01-01'}),reason:'issue_date_unverified'},
+     {payload:detail(note24,{codigoUg:'158125'}),reason:'identity_mismatch'}
+   ];
+   for(const scenario of scenarios){
+     const result=await recoverReferencedNe({root,now,token:'SEGREDO_CGU',
+       limit:1,slot:0,fetchFn:async()=>json(scenario.payload),wait:async()=>{}});
+     assert.equal(result.recovered,0);
+     assert.deepEqual(result.failures,{[scenario.reason]:1});
+     assert.equal(JSON.stringify(result).includes('SEGREDO_CGU'),false);
+     assert.equal(JSON.stringify(result).includes(note24),false);
+   }
+ });
+});
