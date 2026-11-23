@@ -1,0 +1,31 @@
+name: Diagnosticar cancelamentos e estornos em historicos CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnosticar-ne-historicas.yml'
+      - 'src/inspect-cgu-ne-history.mjs'
+permissions:
+  contents: read
+jobs:
+  diagnostico:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar sintaxe, testes e dados
+        run: |
+          npm run check:syntax
+          npm test
+          npm run check:data
+      - name: Inspecionar historicos somente em memoria
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/inspect-cgu-ne-history.mjs
