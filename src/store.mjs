@@ -125,7 +125,10 @@ export function validateMonth(data) {
       const sequences=new Set();
       for (const item of items) {
         assertAllowedKeys(item, ['seq','code','sub','subdesc','description','purchaseItem','cents',
-          'movements','historyChecked']);
+          'movements','historyChecked','historyCheckedAt']);
+        if(item.historyCheckedAt!==undefined&&
+          (item.historyChecked!==true||!DATE_RE.test(item.historyCheckedAt)))
+          throw Error('Checkpoint historico invalido');
         if(item.purchaseItem!==undefined&&!/^\d{1,8}$/.test(item.purchaseItem))
           throw Error('Numero de item da compra invalido');
         if(item.historyChecked!==undefined&&item.historyChecked!==true)
@@ -383,6 +386,7 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
       const old=previous.get(item.seq);
       if(old?.historyChecked===true&&old.cents===item.cents){
         item.historyChecked=true;item.movements=structuredClone(old.movements);
+        if(old.historyCheckedAt)item.historyCheckedAt=old.historyCheckedAt;
       }
       return item;
     });
@@ -395,8 +399,16 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
       throw Error('Historico sem item de empenho consultado');
     const item=next.itemsByDocument[id].find(row=>row.seq===result.seq);
     if(!item)throw Error('Sequencial de historico nao encontrado');
+    if(item.historyChecked===true&&Array.isArray(item.movements)&&item.movements.length){
+      if(!result.movements.length)throw Error('Reconsulta vazia nao apaga historico confirmado');
+      const previous=new Set(item.movements.map(m=>JSON.stringify(m)));
+      const current=new Set(result.movements.map(m=>JSON.stringify(m)));
+      if([...previous].some(key=>!current.has(key)))
+        throw Error('Historico divergente exige revisao, sem sobrescrever eventos anteriores');
+    }
     item.historyChecked=true;
     item.movements=structuredClone(result.movements);
+    if(result.checkedAt)item.historyCheckedAt=result.checkedAt;
   }else throw Error('Tipo de enriquecimento não permitido');
   validateMonth(next);
   const withoutTimestamp=value=>{
