@@ -81,8 +81,8 @@ async function boundedJson(response){
 export async function inspectOfficialCatalog(source,{
  fetchFn=fetch,timeoutMs=16000
 }={}){
- if(!API_CATALOG.some(item=>item.name===source?.name&&item.url===source.url))
-   throw Error('Fonte nao autorizada');
+ const matched=API_CATALOG.find(item=>item.name===source?.name&&item.url===source.url);
+ if(!matched)throw Error('Fonte nao autorizada');
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)
    throw Error('Timeout invalido');
  let response;
@@ -92,7 +92,7 @@ export async function inspectOfficialCatalog(source,{
  }catch{return {source:source.name,status:'network_unavailable',routes:[]};}
  const result=await boundedJson(response);
  if(result.status!=='parsed')return {source:source.name,status:result.status,routes:[]};
- return {source:source.name,...summarizeOpenApi(result.data,source)};
+ return {source:matched.name,...summarizeOpenApi(result.data,matched)};
 }
 export async function main(){
  for(const source of API_CATALOG){
