@@ -30,6 +30,7 @@ npm run build:site        # gera dist/ com interface e JSONs publicos
 npm run enrich:plan       # simula vínculos de liquidações, pagamentos e itens de NE
 npm run contracts:plan    # simula consulta PNCP/Compras sem requisicoes
 npm run pncp-delta:plan   # planeja atualizacoes PNCP sem chamar fonte externa
+npm run pncp-recovery:plan # mostra fila de publicacoes PNCP sem consultar API
 npm run backfill:plan     # simula proximo lote de dias do mes anterior
 # opcional, com CGU_API_KEY no ambiente e SEM copiar o valor para logs:
 npm run collect:cgu
@@ -344,3 +345,5 @@ A sondagem autenticada `src/inspect-cgu-siafi.mjs` também foi ampliada para com
 ### Atualização incremental PNCP por data global
 
 O workflow [`atualizar-contratos-pncp.yml`](.github/workflows/atualizar-contratos-pncp.yml) consulta diariamente os registros de contratos/empenhos publicados pela Reitoria ou Campus e **atualizados** na janela posterior à última consulta integral. Usa o mesmo `data/procurement/contracts.json`, com `pncpDelta` mínimo para checkpoint. Só atualiza **instrumentos com ID PNCP já cadastrado**; os novos IDs vão para a fila de recuperação mensal. Uma falha ou paginação excedida impede alteração de dados ou checkpoint. A integração é documental: **não** transforma PNCP em saldo financeiro ou RAP. Veja [critérios e cobertura](docs/FONTES-API-PRIORIDADES.md).
+
+A detecção de IDs PNCP novos em uma janela de atualização agora conserva uma fila pequena de publicações pendentes (`pncpDelta.pendingPublications`) no catálogo existente. Uma competência de publicação é reconsultada por execução, com paginação integral e identificação exata; **só sai da fila se todos os IDs pendentes daquele mês forem confirmados**. HTTP 404, timeout, resposta parcial ou arquivo mensal sem o ID mantêm a pendência e as informações anteriormente publicadas. Essa recuperação nunca cria pagamento, liquidação ou saldo de restos a pagar.
