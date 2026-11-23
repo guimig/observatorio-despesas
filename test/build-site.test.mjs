@@ -84,6 +84,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','trajectory.js'),'');
     await writeFile(join(root,'assets','dialog-scroll.js'),'');
     await writeFile(join(root,'assets','siafi-movement-audit.js'),'');
+    await writeFile(join(root,'assets','siafi-movement-reconciliation.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
     await mkdir(join(root,'data','months'),{recursive:true});
     await writeFile(join(root,'data','manifest.json'),JSON.stringify({
