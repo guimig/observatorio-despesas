@@ -15,7 +15,7 @@ const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const PNCP_ID=/^10635424000186-2-\d{6}\/20\d{2}$/;
 const ISO=/^20\d{2}-\d{2}-\d{2}$/;
 const MAX_BYTES=3*1024*1024;
-const PAGE_SIZE=5;
+const PAGE_SIZE=10;
 const MAX_PAGES=2;
 const PROBES=Object.freeze([
   {kind:'contratos_atualizacao',path:'contratos/atualizacao'},
