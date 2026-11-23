@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {
- IMPACT_FIELDS,summarizeImpactFields,selectRapSamples,inspectRapImpacts,auditRapSample
+ IMPACT_FIELDS,summarizeImpactFields,selectRapSamples,inspectRapImpacts,auditRapSample,impactCommitmentYearGroup
 } from '../src/inspect-cgu-rap.mjs';
 const prefix='158459264222026';
 const ns=prefix+'NS000001';
@@ -84,4 +84,58 @@ test('amostra real do acervo contem referencias de ano anterior',async()=>{
  const samples=selectRapSamples([{month:'2026-11',data:month}]);
  assert.ok(samples.some(s=>s.priorYearReference));
  assert.ok(samples.every(s=>s.phase===2||s.phase===3));
+});
+
+test('coortes exigem codigo SIAFI completo e distinguem exercicios sem deduzir RP',()=>{
+ const same={empenho:current,valorRestoPago:'10,00'};
+ const previous={empenho:old,valorRestoPago:'15,00'};
+ const future={empenho:'158459264222027NE000001',valorRestoPago:'20,00'};
+ const unknown={empenho:'2025NE000001',valorRestoPago:'500,00'};
+ assert.deepEqual([previous,same,future,unknown].map(row=>
+   impactCommitmentYearGroup(row,2026)),['prior','same','future','unknown']);
+ const result=summarizeImpactFields([previous,same,future,unknown],{documentYear:2026});
+ assert.deepEqual(Object.fromEntries(Object.entries(result.byCommitmentYear).map(
+   ([key,value])=>[key,value.rows])),{prior:1,same:1,future:1,unknown:1});
+ assert.equal(result.byCommitmentYear.prior.fields.valorRestoPago.positive,1);
+ assert.equal(JSON.stringify(result).includes('500,00'),false);
+});
+
+test('coortes em varias paginas acumulam somente estatisticas, nunca identificadores',async()=>{
+ let page=0;
+ const result=await inspectRapImpacts(ob,3,{token:'SECRET',
+   request:async()=>{
+     page++;
+     if(page===1)return [{empenho:old,valorRestoPago:'15,00'},
+       {empenho:'NE000001',valorRestoPago:'2,00'}];
+     if(page===2)return [{empenho:current,valorPago:'8,00'}];
+     return [];
+   }
+ });
+ assert.equal(result.status,'complete');
+ assert.equal(result.rows,3);
+ assert.equal(result.byCommitmentYear.prior.rows,1);
+ assert.equal(result.byCommitmentYear.same.rows,1);
+ assert.equal(result.byCommitmentYear.unknown.rows,1);
+ assert.equal(result.byCommitmentYear.prior.fields.valorRestoPago.positive,1);
+ for(const secret of [old,current,'15,00','8,00','SECRET'])
+   assert.equal(JSON.stringify(result).includes(secret),false);
+});
+
+test('amostragem ampliada cobre NS, OB, DF interanuais e controle contemporaneo',()=>{
+ const docs=[],relations=[];
+ for(const kind of ['NS','OB','DF']){
+   for(let i=1;i<=5;i++){
+     const id=prefix+kind+String(i).padStart(6,'0');
+     docs.push({id,phase:kind==='NS'?2:3});
+     relations.push({from:id,to:i<=3?old:current});
+   }
+ }
+ const fixture={month:'2026-11',data:{documents:docs,relations}};
+ const samples=selectRapSamples([fixture],{max:18});
+ assert.equal(samples.length,15);
+ assert.equal(new Set(samples.map(s=>s.id)).size,15);
+ assert.deepEqual([...new Set(samples.map(s=>s.kind))].sort(),['DF','NS','OB']);
+ assert.equal(samples.filter(s=>s.priorYearReference).length,9);
+ assert.equal(samples.filter(s=>!s.priorYearReference).length,6);
+ assert.throws(()=>selectRapSamples([fixture],{max:25}));
 });
