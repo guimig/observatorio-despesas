@@ -1344,14 +1344,14 @@ function renderTenderItems(){
  const q=tenderItemsState.query;
  const filtered=all.filter(item=>
   (tenderItemsState.procedure==='all'||item.pncpId===tenderItemsState.procedure)&&
-  (!q||[item.description,item.pncpId,String(item.number)].some(v=>v.toLowerCase().includes(q))));
+  (!q||[item.description,item.pncpId,String(item.number),...(item.results||[]).flatMap(r=>[r.supplierCnpj||'',r.supplierCpfMasked||''])].some(v=>v.toLowerCase().includes(q))));
  const pages=Math.max(1,Math.ceil(filtered.length/25));
  tenderItemsState.page=Math.max(0,Math.min(tenderItemsState.page,pages-1));
  $('tender-items-page-info').textContent='Página '+(tenderItemsState.page+1)+' de '+pages+' · '+fmtCount(filtered.length)+' itens';
  $('tender-items-prev').disabled=tenderItemsState.page===0;
  $('tender-items-next').disabled=tenderItemsState.page>=pages-1;
  const tbody=$('tender-items-rows');tbody.replaceChildren();
- if(!filtered.length){const tr=element('tr'),td=element('td','', 'Nenhum item encontrado nos procedimentos coletados.');td.colSpan=5;tr.append(td);tbody.append(tr);return;}
+ if(!filtered.length){const tr=element('tr'),td=element('td','', 'Nenhum item encontrado nos procedimentos coletados.');td.colSpan=6;tr.append(td);tbody.append(tr);return;}
  for(const item of filtered.slice(tenderItemsState.page*25,(tenderItemsState.page+1)*25)){
   const tr=element('tr'),link=element('a','doc-code',item.pncpId);
   link.href='https://pncp.gov.br/app/editais/'+item.pncpId.replace('-1-','/') ;
@@ -1363,7 +1363,21 @@ function renderTenderItems(){
   tr.append(element('td','',item.number),element('td','',item.description),
    element('td','align-right',new Intl.NumberFormat('pt-BR',{maximumFractionDigits:4}).format(item.quantity)),
    element('td','',item.checkedAt));
-  tbody.append(tr);
+  const resultCell=element('td');
+  if(!Object.hasOwn(item,'results'))resultCell.textContent='Ainda não consultado';
+  else if(!item.results.length)resultCell.textContent='Consulta sem resultado informado';
+  else{
+   const details=element('details'),summary=element('summary','',fmtCount(item.results.length)+' resultado(s)');
+   details.append(summary);
+   const dec=v=>v===undefined?'Não informado':new Intl.NumberFormat('pt-BR',{maximumFractionDigits:8}).format(Number(v));
+   for(const r of item.results){
+    const vendor=r.supplierCnpj?'CNPJ '+r.supplierCnpj:r.supplierCpfMasked?'CPF '+r.supplierCpfMasked:r.supplierType==='PE'?'Fornecedor estrangeiro':'Fornecedor não identificado publicamente';
+    const description=[vendor,r.status===2?'Cancelado':'Informado','Data: '+localDate(r.date),'Quantidade homologada: '+dec(r.quantity),'Unitário homologado: R$ '+dec(r.unitPrice),r.total!==undefined?'Total informado: R$ '+dec(r.total):null,r.rank?'Classificação SRP: '+r.rank:null,r.reserve===2?'Remanescente':r.reserve===3?'Cadastro de reserva':null,r.cancelledAt?'Cancelado em '+localDate(r.cancelledAt):null].filter(Boolean).join(' · ');
+    details.append(element('p','helper',description));
+   }
+   resultCell.append(details);
+  }
+  tr.append(resultCell);tbody.append(tr);
  }
 }
 async function loadTenderItems(){
@@ -1385,7 +1399,7 @@ async function loadTenderItems(){
   const count=data.procedures.reduce((n,p)=>n+p.items.length,0);
   $('tender-items-coverage').textContent=fmtCount(count)+' itens de '+fmtCount(data.procedures.length)+
    ' licitações coletadas · '+fmtCount((noticesData?.notices||[]).filter(n=>n.srp===true).length)+
-   ' licitações SRP no catálogo. Cobertura parcial; apenas quantidades licitadas institucionais.';
+   ' licitações SRP no catálogo. '+fmtCount(data.procedures.reduce((n,p)=>n+p.items.filter(i=>Object.hasOwn(i,'results')).length,0))+' itens com consulta de resultados. Cobertura parcial; valores homologados não equivalem a execução ou saldo de ata.';
   renderTenderItems();
  }catch{
   $('tender-items-coverage').textContent='Itens ainda indisponíveis; a coleta incremental pode estar em andamento.';

@@ -20,6 +20,7 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
  const missing=[...refs].filter(id=>!origin.has(id));
  const contracts=procurement?.contracts||[],publications=notices?.notices||[];
  const srp=publications.filter(n=>n.srp===true);
+ const tenderItems=(tender?.procedures||[]).flatMap(p=>p.items);
  const ataIds=new Set((atas?.checks||[]).map(c=>c.procurementId));
  const tenderIds=new Set((tender?.procedures||[]).map(c=>c.pncpId));
  const participationIds=new Set((participants?.checks||[]).map(c=>c.ataId));
@@ -69,6 +70,8 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    commitmentLinksPending:contracts.filter(c=>c.source==='pncp'&&c.commitmentStatus!=='complete').length,
    purchaseLinksPending:contracts.filter(c=>c.source==='pncp'&&!c.procurementId).length,
    srp:srp.length,srpAtasChecked:srp.filter(n=>ataIds.has(n.pncpId)).length,srpItemsChecked:srp.filter(n=>tenderIds.has(n.pncpId)).length,
+   tenderItems:tenderItems.length,itemResultsChecked:tenderItems.filter(i=>Object.hasOwn(i,'results')).length,
+   itemResults:tenderItems.reduce((n,i)=>n+(i.results?.length||0),0),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
   years:byYear,months:rows};
 }

@@ -8,7 +8,7 @@ export async function comparePublication(site,expected,{fetcher=fetch}={}){
     throw Error('URL HTTPS do GitHub Pages inválida');
   const base=new URL(site.endsWith('/')?site:site+'/');
   for(const [relative,contents] of Object.entries(expected)){
-    if(!/^(index\.html|assets\/[A-Za-z0-9.-]+|data\/(?:manifest|coverage-index)\.json|data\/months\/20\d{2}-(0[1-9]|1[0-2])\.json)$/.test(relative))
+    if(!/^(index\.html|assets\/[A-Za-z0-9.-]+|data\/(?:manifest|coverage-index)\.json|data\/procurement\/(?:contracts|notices|atas|ata-participants|tender-items)\.json|data\/months\/20\d{2}-(0[1-9]|1[0-2])\.json)$/.test(relative))
       throw Error('Caminho de publicação não permitido');
     const target=new URL(relative,base);
     target.searchParams.set('v',String(Date.now()));
@@ -45,6 +45,9 @@ export async function verifyPublication({
   const paths=['index.html','assets/app.js','assets/quality.js','assets/coverage-panel.js','data/manifest.json','data/coverage-index.json'];
   const expected={};
   for(const path of paths)expected[path]=await readFile(join(dist,path),'utf8');
+  for(const path of ['contracts','notices','atas','ata-participants','tender-items'].map(s=>'data/procurement/'+s+'.json')){
+    try{expected[path]=await readFile(join(dist,path),'utf8')}catch(e){if(e.code!=='ENOENT')throw e}
+  }
   for(const month of monthFiles.slice(0,8))expected[month.path]=month.contents;
   let last=null;
   for(let attempt=1;attempt<=attempts;attempt++){

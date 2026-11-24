@@ -2,11 +2,13 @@ name: Coletar itens licitados PNCP
 on:
   workflow_dispatch:
   schedule:
-    - cron: '43 14 * * 1,3,5'
+    - cron: '43 14 * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/coletar-itens-pncp.yml'
+      - 'src/pncp-item-results.mjs'
+      - 'src/collect-pncp-tender-items.mjs'
 permissions:
   contents: read
 concurrency:
@@ -18,6 +20,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,13 +30,30 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
-      - name: Coletar itens de ate cinco licitacoes SRP
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-results.json
+          key: pncp-results-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pncp-results-v1-
+      - name: Registrar cache anterior
+        id: before
+        run: |
+          file="$RUNNER_TEMP/observatorio-pncp-results.json"
+          if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
+      - name: Coletar itens e resultados PNCP
         env:
           PNCP_TENDER_ITEMS_LIMIT: '5'
-        run: npm run collect:pncp-tender-items
+          PNCP_RESULT_LIMIT: '15'
+          PNCP_RESULT_STATE_PATH: ${{ runner.temp }}/observatorio-pncp-results.json
+        run: |
+          set -o pipefail
+          npm run collect:pncp-tender-items | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npm run check:data
       - name: Persistir catalogo publico minimizado
+        id: commit
         run: |
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
           if [ ! -f data/procurement/tender-items.json ]; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
@@ -40,3 +61,25 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'data: atualizar itens licitados PNCP'
           bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Verificar alteracao de cache
+        id: after
+        env:
+          BEFORE: ${{ steps.before.outputs.digest }}
+        run: |
+          file="$RUNNER_TEMP/observatorio-pncp-results.json"
+          if [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$BEFORE" ]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; else echo 'changed=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/save@v4
+        if: steps.after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-results.json
+          key: pncp-results-v1-${{ github.run_id }}-${{ github.run_attempt }}
+  publicar:
+    needs: coletar
+    if: needs.coletar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
