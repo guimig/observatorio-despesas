@@ -1,5 +1,6 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
@@ -17,7 +18,15 @@ export function rotatePending(documents,limit,slot=0){
   const offset=(slot*limit)%documents.length;
   return [...documents.slice(offset),...documents.slice(0,offset)].slice(0,limit);
 }
-export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,now=new Date(),slot=0}={}){
+export function historyKey(doc,item){
+ return createHash('sha256').update(JSON.stringify([doc.id,doc.cents,item])).digest('hex');
+}
+export function historyCheckpoint(doc,item,state,today){
+ const cached=state[historyKey(doc,item)];
+ return typeof cached==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(cached)&&cached<=today&&cached>(item.historyCheckedAt||'')
+  ?cached:item.historyCheckedAt;
+}
+export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,now=new Date(),slot=0,historyState={}}={}){
   validateMonth(month);
   const liquidations=month.documents.filter(doc=>doc.phase===2&&
     doc.liquidationLinksChecked!==true)
@@ -69,7 +78,7 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     const intervalDays=commitmentYear<referenceYear?7:14;
     for(const item of month.itemsByDocument?.[doc.id]||[]){
       if(item.historyChecked!==true)continue;
-      const last=item.historyCheckedAt;
+      const last=historyCheckpoint(doc,item,historyState,today);
       const lastDay=last?Date.parse(last+'T00:00:00Z'):NaN;
       // Historico inicialmente vazio NAO e final: a CGU pode atualiza-lo.
       // Checkpoints legados sem data ou invalidos tambem sao elegiveis.
@@ -130,7 +139,14 @@ async function main(){
   // Rodadas de seis horas evitam repetir indefinidamente os primeiros IDs
   // sem manter histórico adicional de tentativas em arquivos públicos.
   const slot=Math.floor(Date.now()/21600000);
-  const args={slot,
+  const statePath=process.env.CGU_HISTORY_STATE_PATH;
+  let historyState={};
+  if(statePath){
+    try{historyState=JSON.parse(await readFile(statePath,'utf8'))}
+    catch(e){if(e.code!=='ENOENT')throw e}
+    if(!historyState||typeof historyState!=='object'||Array.isArray(historyState))throw Error('Estado historico invalido');
+  }
+  const args={slot,historyState,
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7,
@@ -188,7 +204,18 @@ async function main(){
           checkedAt:new Date().toISOString().slice(0,10)}:
           {kind,links:outcome.links};
       try{
-        await persistEnrichment(root,chosen.monthName,id,result,new Date());
+        if(statePath&&kind==='itemHistory'){
+          const before=await readMonth(root,chosen.monthName);
+          const old=before.itemsByDocument[id].find(x=>x.seq===item.seq);
+          if(old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements))
+            delete result.checkedAt;
+          await persistEnrichment(root,chosen.monthName,id,result,new Date());
+          const after=await readMonth(root,chosen.monthName);
+          const doc=after.documents.find(d=>d.id===id);
+          const current=after.itemsByDocument[id].find(x=>x.seq===item.seq);
+          delete historyState[historyKey(before.documents.find(d=>d.id===id),old)];
+          historyState[historyKey(doc,current)]=new Date().toISOString().slice(0,10);
+        }else await persistEnrichment(root,chosen.monthName,id,result,new Date());
       }catch{
         failures.push('persistencia_invalida');
         errors++;
@@ -200,6 +227,11 @@ async function main(){
     }
   }
   await validatePublishedData(root);
+  if(statePath){
+    const cutoff=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    const clean=Object.fromEntries(Object.entries(historyState).filter(([k,v])=>/^[a-f0-9]{64}$/.test(k)&&typeof v==='string'&&v>=cutoff&&v<=new Date().toISOString().slice(0,10)));
+    await writeFile(statePath,JSON.stringify(clean)+'\n');
+  }
   console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+
     JSON.stringify(summarizeFailures(failures)));
   console.log('Enriquecimento CGU (liquidações, pagamentos e itens): '+successes+' documento(s) concluído(s), '+

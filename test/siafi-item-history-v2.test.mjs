@@ -132,3 +132,14 @@ test('descricoes longas para NS e OB preservadas apenas quando publicaveis',()=>
   valor:'10,00',observacao:'Contato user@example.com'},'18/11/2026',3);
  assert.equal(unsafe.description,undefined);
 });
+
+import {historyKey,historyCheckpoint} from '../src/enrich-month.mjs';
+test('checkpoint operacional de historico depende do conteudo e nao altera documento',()=>{
+ const doc={id:ne,cents:100};
+ const item={seq:1,cents:100,historyChecked:true,historyCheckedAt:'2026-10-01',movements:[]};
+ const state={[historyKey(doc,item)]:'2026-11-24'};
+ assert.equal(historyCheckpoint(doc,item,state,'2026-11-24'),'2026-11-24');
+ assert.equal(historyCheckpoint({...doc,cents:101},item,state,'2026-11-24'),'2026-10-01');
+ assert.equal(historyCheckpoint(doc,item,state,'2026-11-23'),'2026-10-01');
+ assert.equal(item.historyCheckedAt,'2026-10-01');
+});
