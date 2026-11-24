@@ -178,3 +178,28 @@ test('diagnostico somente leitura nao modifica arquivos do acervo',async()=>{
    assert.equal(await readFile(file,'utf8'),original);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('quando detalhe falha HTTP 429 a pesquisa documental continua sem atribuicao de data',async()=>{
+ const result=await diagnoseCgu2024Chronology({...baseOpts,
+   requestDetail:async()=>{const e=Error('CPF 000.111.222-33');e.status=429;throw e;}
+ });
+ assert.equal(result.status,'observed');
+ assert.equal(result.detailStatus,'unavailable');
+ assert.equal(result.detailFailure,'rate_limited');
+ assert.equal(result.listing.exactMatches,1);
+ assert.equal(result.assessment,'listing_match_detail_unavailable');
+ assert.equal(result.originRecorded,false);
+ assert.equal(JSON.stringify(result).includes('000.111.222-33'),false);
+ assert.equal(JSON.stringify(result).includes(ne),false);
+});
+test('duas rotas CGU indisponiveis preservam classificacao sem vazar erro',async()=>{
+ const result=await diagnoseCgu2024Chronology({...baseOpts,
+   requestDetail:async()=>{const e=Error('TOKEN SECRETO');e.status=404;throw e;},
+   resolveItemsFn:async()=>{throw Error('CPF 123');}
+ });
+ assert.equal(result.status,'items_unavailable');
+ assert.equal(result.detailStatus,'unavailable');
+ assert.equal(result.detailFailure,'http_404');
+ assert.equal(result.reason,'consulta_indisponivel');
+ assert.equal(JSON.stringify(result).includes('TOKEN SECRETO'),false);
+});
