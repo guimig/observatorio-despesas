@@ -3,12 +3,14 @@ import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {scanParticipants} from './pncp-ata-participants.mjs';
 import {assertPublicSafe} from './privacy.mjs';
+import {validateArpDetails} from './arp-details.mjs';
+import {inScopePurchaseId} from './collection-scope.mjs';
 const path='data/procurement/ata-participants.json';
 const empty=()=>({schema_version:1,checks:[]});
 export function validateParticipants(value){
  assertPublicSafe(value);
  if(value?.schema_version!==1||!Array.isArray(value.checks)||
-  Object.keys(value).some(k=>!['schema_version','checks'].includes(k)))throw Error('Catalogo de participacao invalido');
+  Object.keys(value).some(k=>!['schema_version','checks','details'].includes(k)))throw Error('Catalogo de participacao invalido');
  const ids=new Set();
  for(const c of value.checks){
   if(!/^\d{14}-1-\d{6}\/20\d{2}:ata:\d+$/.test(c.ataId)||
@@ -26,13 +28,14 @@ export function validateParticipantReferences(value,atas){
  for(const check of value.checks){
   if(!ids.has(check.ataId))throw Error('Participacao vinculada a ata ausente do catalogo PNCP');
  }
+ if(value.details!==undefined)validateArpDetails(value.details,atas);
  return value;
 }
 export function planParticipants(atas,checks,now=new Date(),limit=12){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
  const last=new Map(checks.map(c=>[c.ataId,c.checkedAt]));
- const eligible=atas.filter(a=>!last.has(a.id)||
-  now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000);
+ const eligible=atas.filter(a=>inScopePurchaseId(a.procurementId)&&(!last.has(a.id)||
+  now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000));
  // Cobrir compras distintas antes de selecionar a segunda ata da mesma compra.
  // Sem isso, um pregão com centenas de atas monopoliza as execuções.
  const groups=new Map();

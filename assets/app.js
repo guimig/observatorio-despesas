@@ -23,6 +23,7 @@ const pageSize = 25;
 let procurementData=null;
 let noticesData=null;
 let atasData=null;
+let arpDetailsById=null;
 const noticesState={query:'',modality:'all',attribution:'likely',srp:'all',minCents:null,maxCents:null,page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',minCents:null,maxCents:null,activeOn:'',page:0};
 const contractsPerPage=20;
@@ -1203,6 +1204,30 @@ function renderNotices() {
       const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
       ataLabel.title='Atas institucionais do órgão publicador. Quantidade licitada, registrada e saldo disponível são indicadores distintos. Não há atribuição automática de quantidades a Araquari nem presunção de compra ou empenho.';
       related.append(ataLabel);
+      if(arpDetailsById){
+        const records=atasData.atas.filter(a=>a.procurementId===notice.pncpId).map(a=>({ata:a,detail:arpDetailsById.get(a.id)})).filter(x=>x.detail);
+        if(records.length){
+          const expanded=element('details'),summary=element('summary','relation-link','Detalhes de '+fmtCount(records.length)+' ata(s)');expanded.append(summary);
+          for(const {ata,detail} of records){
+            const sub=element('details'),head=element('summary','', 'Ata '+(ata.number||ata.sequence));sub.append(head);
+            if(detail.compras){
+              sub.append(element('p','helper','Itens identificados pelo controle oficial da ata no Compras.gov. Quantidades institucionais; não são saldo de Araquari.'));
+              const list=element('ul');for(const i of detail.compras.items){
+                const parts=['Item '+i.number,i.supplierCnpj?'CNPJ '+i.supplierCnpj:'CPF '+i.supplierCpfMasked,i.excluded?'Excluído':null,i.homologatedSupplier!==undefined?'Homologado fornecedor: '+i.homologatedSupplier:null,i.committedQuantity!==undefined?'Quantidade empenhada informada: '+i.committedQuantity:null,i.unitPrice!==undefined?'Unitário informado (R$): '+i.unitPrice:null];
+                list.append(element('li','small-muted',parts.filter(Boolean).join(' · ')));
+              }sub.append(list);
+            }
+            if(Object.hasOwn(detail,'instruments')){
+              sub.append(element('p','helper',detail.instruments.length?'Instrumentos vinculados diretamente pelo PNCP; unidade administrativa não equivale automaticamente à UG SIAFI.':'Consulta sem instrumento IFC identificado.'));
+              for(const i of detail.instruments){
+                const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\\d{14})-2-(\\d{6})\\/(20\\d{2})$/.exec(i.pncpId);
+                if(m){link.href='https://pncp.gov.br/app/contratos/'+m[1]+'/'+m[3]+'/'+Number(m[2]);link.target='_blank';link.rel='noopener noreferrer'}
+                row.append(link,document.createTextNode((i.unitCode?' · Unidade PNCP '+i.unitCode:'')+(i.adhesion===true?' · Adesão':'')));sub.append(row);
+              }
+            }expanded.append(sub);
+          }related.append(expanded);
+        }
+      }
     }else if(notice.srp===true){
       related.append(element('span','small-muted',ataChecked?
         'Nenhuma ata retornada na última consulta PNCP':
@@ -1318,6 +1343,10 @@ async function initNotices() {
     if(response.ok){const parsed=await response.json();
       if(Array.isArray(parsed.atas)&&Array.isArray(parsed.checks))atasData=parsed;}
   }catch{atasData=null;}
+  try{
+    const response=await fetch('./data/procurement/ata-participants.json',{cache:'no-store'});
+    if(response.ok){const parsed=await response.json();if(Array.isArray(parsed.details))arpDetailsById=new Map(parsed.details.map(d=>[d.ataId,d]));}
+  }catch{arpDetailsById=null;}
   try{
     const response=await fetch('./data/procurement/notices.json',{cache:'no-store'});
     if(!response.ok)throw Error('Catálogo ainda não publicado');

@@ -1,0 +1,208 @@
+/** ARP: chaves oficiais PNCP, dados Compras.gov e instrumentos associados.
+ * Fontes: PNCP 2.6 §§6.6,12.12; Compras.gov 2.0 §§11.1–11.4.
+ * Nunca igualar homologacao, registro, saldo de item e execucao SIAFI.
+ */
+import {requestPublicJSON,CAMPUS_CNPJ,REITORIA_CNPJ} from './procurement.mjs';
+import {ataUrl} from './pncp-atas.mjs';
+import {inScopePurchaseId,inScopeDate} from './collection-scope.mjs';
+import {validDay,stateKey} from './operational-state.mjs';
+import {assertPublicSafe,maskCpf} from './privacy.mjs';
+const BASE='https://dadosabertos.compras.gov.br/modulo-arp/';
+const PURCHASE=/^10635424000186-1-\d{6}\/20\d{2}$/;
+const CONTROL=/^(\d{14})-2-\d{6}\/(20\d{2})$/;
+const pos=n=>Number.isSafeInteger(n)&&n>0;
+const day=v=>typeof v==='string'&&validDay(v.slice(0,10))?v.slice(0,10):null;
+const text=v=>typeof v==='string'||typeof v==='number'?String(v).trim():'';
+const decimal=v=>{
+ if(typeof v!=='number'&&typeof v!=='string')return null;
+ const s=String(v);
+ if(!/^\d{1,13}(?:\.\d{1,8})?$/.test(s)||!Number.isFinite(Number(s)))return null;
+ return s.includes('.')?s.replace(/0+$/,'').replace(/\.$/,''):s;
+};
+export function officialAtaId(ata){
+ if(!PURCHASE.test(ata?.procurementId)||!inScopePurchaseId(ata.procurementId)||!pos(ata.sequence)||
+   ata.sequence>999999||ata.id!==ata.procurementId+':ata:'+ata.sequence)throw Error('Ata fora do recorte ou identidade invalida');
+ return ata.procurementId+'-'+String(ata.sequence).padStart(6,'0');
+}
+const query=(path,params)=>BASE+path+'?'+new URLSearchParams(params);
+export function comprasAtaUrls(ata,notice){
+ const id=officialAtaId(ata);
+ if(notice?.pncpId!==ata.procurementId||!['158125','158459'].includes(notice.unitCode)||
+   !inScopeDate(ata.starts)||!validDay(ata.starts)||!/^\d{1,8}$/.test(text(notice.number)))
+   throw Error('Faltam parametros oficiais para pesquisa da ata');
+ const filters={codigoUnidadeGerenciadora:notice.unitCode,dataVigenciaInicialMin:ata.starts,
+  dataVigenciaInicialMax:ata.starts,tamanhoPagina:'100'};
+ return {id,manager:notice.unitCode,header:page=>query('1_consultarARP',{...filters,pagina:String(page)}),
+  items:page=>query('2_consultarARPItem',{...filters,numeroCompra:text(notice.number),pagina:String(page)})};
+}
+/** Completeness: reject missing totals, changed pagination and partial pages. */
+export async function allPages(url,{fetcher=requestPublicJSON,maxPages=8}={}){
+ if(!pos(maxPages)||maxPages>20)throw Error('Limite invalido');
+ const out=[];let total=null,pages=null;
+ for(let page=1;page<=maxPages;page++){
+  const b=await fetcher(url(page));
+  const rows=b?.resultado??b?.data??b?.dados;
+  const n=b?.totalRegistros, p=b?.totalPaginas;
+  // requestPublicJSON maps HTTP 204 to this exact empty envelope.
+  if(page===1&&Array.isArray(rows)&&!rows.length&&p===0&&n===undefined)return [];
+  if(!Array.isArray(rows)||!Number.isSafeInteger(n)||n<0||!Number.isSafeInteger(p)||p<0||
+   (total!==null&&n!==total)||(pages!==null&&p!==pages)||
+   (b.numeroPagina!==undefined&&Number(b.numeroPagina)!==page)||
+   (b.paginasRestantes!==undefined&&Number(b.paginasRestantes)!==Math.max(0,p-page)))
+   throw Error('Paginacao divergente ou sem totais');
+  total=n;pages=p;
+  if(p===0&&n===0&&rows.length===0&&page===1)return [];
+  if(p<page||!rows.length)throw Error('Pagina vazia ou excedente');
+  out.push(...rows);
+  if(out.length>n)throw Error('Contagem excedente');
+  if(page===p){if(out.length!==n)throw Error('Lista incompleta');return out}
+ }
+ throw Error('Limite de paginas; nenhum resultado parcial aceito');
+}
+function match(row,ata,manager){
+ return row?.numeroControlePncpAta===officialAtaId(ata)&&row.numeroControlePncpCompra===ata.procurementId&&
+  text(row.codigoUnidadeGerenciadora)===manager&&day(row.dataVigenciaInicial)===ata.starts;
+}
+function vendor(row){
+ const v=text(row.niFornecedor);
+ if(/^\d{14}$/.test(v))return {supplierCnpj:v};
+ if(/^\d{11}$/.test(v)||/^\*\*\*\.\d{3}\.\d{3}-\*\*$/.test(v))return {supplierCpfMasked:maskCpf(v)};
+ return {};
+}
+const itemKey=i=>[i.number,i.supplierCnpj||i.supplierCpfMasked||''].join('/');
+export function normalizeArpItem(row){
+ const item={number:Number(row.numeroItem),...vendor(row)};
+ if(!pos(item.number)||(!item.supplierCnpj&&!item.supplierCpfMasked))throw Error('Item sem identidade de fornecedor');
+ for(const [src,dst] of [['quantidadeHomologadaItem','homologatedItem'],['quantidadeHomologadaVencedor','homologatedSupplier'],
+  ['quantidadeEmpenhada','committedQuantity'],['valorUnitario','unitPrice'],['valorTotal','totalPrice']]){
+  const value=decimal(row[src]);if(value!==null)item[dst]=value;
+ }
+ if(typeof row.itemExcluido==='boolean')item.excluded=row.itemExcluido;
+ if(Object.keys(item).length<=2)throw Error('Item sem dados materiais');
+ return assertPublicSafe(item);
+}
+export async function scanComprasArp(ata,notice,{fetcher=requestPublicJSON,maxPages=8}={}){
+ const urls=comprasAtaUrls(ata,notice);
+ const headers=await allPages(urls.header,{fetcher,maxPages});
+ const matches=headers.filter(r=>match(r,ata,urls.manager));
+ if(matches.length!==1)return {ok:false,reason:matches.length?'ambiguous_header':'unmatched_header',rows:headers.length};
+ const header=matches[0],number=text(header.numeroAtaRegistroPreco);
+ if(!/^\d{1,10}(?:\/20\d{2})?$/.test(number))return {ok:false,reason:'unsupported_ata_number'};
+ const raw=await allPages(urls.items,{fetcher,maxPages});
+ const matching=raw.filter(r=>match(r,ata,urls.manager)&&text(r.numeroAtaRegistroPreco)===number);
+ if(!matching.length)return {ok:false,reason:'unmatched_items',rows:raw.length};
+ const items=matching.map(normalizeArpItem).sort((a,b)=>a.number-b.number||itemKey(a).localeCompare(itemKey(b)));
+ if(new Set(items.map(itemKey)).size!==items.length)throw Error('Itens duplicados ou fornecedores indistinguiveis');
+ const count=Number(header.quantidadeItens);
+ if(!Number.isSafeInteger(count)||count<1||new Set(items.map(x=>x.number)).size!==count)
+  return {ok:false,reason:'item_count_conflict',rows:matching.length};
+ return {ok:true,data:{control:urls.id,number,manager:urls.manager,items},rows:matching.length};
+}
+/** Sondagem conservadora: os endpoints de saldo/unidade nao devolvem o controle PNCP.
+ * Exigir numero de ata com exercicio. Nao persistir respostas nem afirmar saldo por nome.
+ */
+export async function inspectArpBalances(ata,compras,{fetcher=requestPublicJSON}={}){
+ if(compras.control!==officialAtaId(ata)||!/^\d{1,10}\/20\d{2}$/.test(compras.number)||
+   Number(compras.number.slice(-4))<2024||!['158125','158459'].includes(compras.manager))
+  return {eligible:false,reason:'unqualified_ata_number'};
+ const params={numeroAta:compras.number,unidadeGerenciadora:compras.manager,pagina:'1',tamanhoPagina:'100'};
+ const inspect=async url=>{
+  const body=await fetcher(url);
+  const rows=body?.resultado??body?.data??body?.dados;
+  if(!Array.isArray(rows))throw Error('Resposta nao reconhecida');
+  return {rows:rows.length,pages:body.totalPaginas??null,fields:Object.keys(Object.fromEntries(rows.flatMap(r=>Object.keys(r||{}).filter(k=>/^[a-zA-Z][a-zA-Z0-9]{0,60}$/.test(k)).map(k=>[k,true])))).sort(),
+   exactCampus:rows.filter(r=>text(r.unidade)==='158459'||text(r.codigoUnidadeParticipante)==='158459').length,
+   prefixCampus:rows.filter(r=>/^158459(?:\s|-)/.test(text(r.unidade))).length};
+ };
+ const result={eligible:true};
+ for(const [key,url] of [['units',query('3_consultarUnidadesItem',{...params,numeroItem:String(compras.items[0].number)})],
+  ['balances',query('4_consultarEmpenhosSaldoItem',params)]]){
+  try{result[key]=await inspect(url)}catch(e){result[key]={error:e.status?'http_'+e.status:'format'}}
+ }
+ return result;
+}
+export async function scanAtaInstruments(ata,{fetcher=requestPublicJSON,maxPages=8}={}){
+ officialAtaId(ata);
+ const rows=await allPages(page=>ataUrl(ata.procurementId)+'/'+ata.sequence+'/contratos?pagina='+page+'&tamanhoPagina=100',{fetcher,maxPages});
+ const ids=new Set(),out=[];
+ for(const row of rows){
+  const id=text(row.numeroControle),m=CONTROL.exec(id);
+  if(!m||Number(row.sequencialContrato)!==Number(id.slice(17,23))||text(row.orgaoEntidade?.cnpj)!==m[1])
+   throw Error('Instrumento sem identidade oficial');
+  if(ids.has(id))throw Error('Instrumento duplicado');ids.add(id);
+  if(Number(m[2])<2024||![CAMPUS_CNPJ,REITORIA_CNPJ].includes(m[1]))continue;
+  const r={pncpId:id};
+  const unit=text(row.unidadeExecutora?.codigo);
+  if(/^\d{6}$/.test(unit))r.unitCode=unit;
+  if(typeof row.frutoAdesao==='boolean')r.adhesion=row.frutoAdesao;
+  out.push(r);
+ }
+ return assertPublicSafe(out.sort((a,b)=>a.pncpId.localeCompare(b.pncpId)));
+}
+export function validateArpDetails(details,atas){
+ if(!Array.isArray(details))throw Error('Detalhes ARP invalidos');
+ const byId=new Map(atas.map(a=>[a.id,a])),seen=new Set();
+ for(const d of details){
+  const ata=byId.get(d.ataId);
+  if(!ata||seen.has(d.ataId)||Object.keys(d).some(k=>!['ataId','compras','instruments'].includes(k))||
+    (!d.compras&&!Object.hasOwn(d,'instruments')))throw Error('Evidencia de ata invalida');
+  seen.add(d.ataId);officialAtaId(ata);
+  if(d.compras){
+   const c=d.compras;
+   if(Object.keys(c).some(k=>!['control','number','manager','items'].includes(k))||c.control!==officialAtaId(ata)||
+    !/^\d{1,10}(?:\/20\d{2})?$/.test(c.number)||!['158125','158459'].includes(c.manager)||!Array.isArray(c.items)||!c.items.length)
+    throw Error('Vinculo Compras invalido');
+   const keys=new Set();
+   for(const i of c.items){
+    if(!pos(i.number)||keys.has(itemKey(i))||(!i.supplierCnpj&&!i.supplierCpfMasked)||
+     (i.supplierCnpj!==undefined&&!/^\d{14}$/.test(i.supplierCnpj))||
+     (i.supplierCpfMasked!==undefined&&!/^\*\*\*\.\d{3}\.\d{3}-\*\*$/.test(i.supplierCpfMasked))||
+     (i.supplierCnpj&&i.supplierCpfMasked)||Object.keys(i).some(k=>!['number','supplierCnpj','supplierCpfMasked','homologatedItem','homologatedSupplier','committedQuantity','unitPrice','totalPrice','excluded'].includes(k))||
+     (i.excluded!==undefined&&typeof i.excluded!=='boolean')||
+     ['homologatedItem','homologatedSupplier','committedQuantity','unitPrice','totalPrice'].some(k=>i[k]!==undefined&&(typeof i[k]!=='string'||decimal(i[k])!==i[k])))
+      throw Error('Item ARP invalido');
+    keys.add(itemKey(i));
+   }
+  }
+  if(Object.hasOwn(d,'instruments')){
+   if(!Array.isArray(d.instruments))throw Error('Instrumentos ARP invalidos');
+   const keys=new Set();
+   for(const i of d.instruments){
+    const m=CONTROL.exec(i.pncpId);
+    if(!m||Number(m[2])<2024||![CAMPUS_CNPJ,REITORIA_CNPJ].includes(m[1])||keys.has(i.pncpId)||
+     Object.keys(i).some(k=>!['pncpId','unitCode','adhesion'].includes(k))||
+     (i.unitCode!==undefined&&!/^\d{6}$/.test(i.unitCode))||(i.adhesion!==undefined&&typeof i.adhesion!=='boolean'))
+      throw Error('Instrumento vinculado invalido');
+    keys.add(i.pncpId);
+   }
+  }
+ }
+ return assertPublicSafe(details);
+}
+export function applyArpDetail(previous,ata,kind,value){
+ const old=previous||{ataId:ata.id};
+ if(!['compras','instruments'].includes(kind))throw Error('Tipo de evidencia invalido');
+ if(kind==='instruments'&&old.instruments?.some(i=>!value.some(v=>v.pncpId===i.pncpId)))
+  throw Error('Instrumento confirmado ausente; nao presumir cancelamento');
+ if(kind==='compras'&&old.compras?.items.some(i=>!value.items.some(v=>itemKey(v)===itemKey(i))))
+  throw Error('Item confirmado ausente; nao presumir exclusao');
+ const next={...old,[kind]:value};
+ validateArpDetails([next],[ata]);
+ return JSON.stringify(next)===JSON.stringify(old)?old:next;
+}
+export const arpKey=(ata,kind)=>stateKey(['arp-details',kind,ata]);
+export function planArpDetails(atas,details,{kind,state={},now=new Date(),limit=5,slot=Math.floor(now.getTime()/86400000)}={}){
+ if(!['compras','instruments'].includes(kind)||!pos(limit)||limit>10)throw Error('Plano invalido');
+ const by=new Map(details.map(d=>[d.ataId,d])),today=now.toISOString().slice(0,10),groups=new Map();
+ for(const a of atas){
+  if(!inScopePurchaseId(a.procurementId))continue;
+  const stamp=state[arpKey(a,kind)],known=Object.hasOwn(by.get(a.id)||{},kind);
+  if(validDay(stamp)&&stamp<=today&&now.getTime()-Date.parse(stamp+'T00:00:00Z')<(known?30:7)*86400000)continue;
+  if(!groups.has(a.procurementId))groups.set(a.procurementId,[]);
+  groups.get(a.procurementId).push(a);
+ }
+ const lists=[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([,g])=>g.sort((a,b)=>Number(Object.hasOwn(by.get(a.id)||{},kind))-Number(Object.hasOwn(by.get(b.id)||{},kind))||a.sequence-b.sequence));
+ const offset=slot%Math.max(1,lists.length),ordered=lists.slice(offset).concat(lists.slice(0,offset)),out=[];
+ while(out.length<limit&&ordered.some(g=>g.length))for(const g of ordered){if(g.length)out.push(g.shift());if(out.length===limit)break}
+ return out;
+}
