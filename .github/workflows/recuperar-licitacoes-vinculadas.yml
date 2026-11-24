@@ -20,7 +20,7 @@ permissions:
   contents: read
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 jobs:
   historico:
     runs-on: ubuntu-22.04

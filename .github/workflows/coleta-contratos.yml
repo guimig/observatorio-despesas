@@ -14,11 +14,12 @@ on:
       - 'src/procurement-store.mjs'
   schedule:
     - cron: '35 11 * * 1,4'
+    - cron: '35 15 * * *'
 permissions:
   contents: read
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 jobs:
   atualizar:
     runs-on: ubuntu-22.04
@@ -44,6 +45,7 @@ jobs:
       - name: Consultar fontes públicas (sem token)
         env:
           PROC_MONTH: ${{ inputs.month }}
+          PROC_HISTORICAL: ${{ github.event.schedule == '35 15 * * *' && 'true' || 'false' }}
         run: npm run collect:contracts
       - name: Validar arquivo contratual normalizado
         run: npm run check:data

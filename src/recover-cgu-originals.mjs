@@ -1,3 +1,4 @@
+import {FIRST_YEAR,inScopeNe} from './collection-scope.mjs';
 /**
  * Recupera por codigo completo NE do mesmo exercicio ou anterior ja referenciada
  * por NS/OB/DF canonicos. A consulta individual NAO cobre o dia/mes inteiro.
@@ -98,7 +99,7 @@ export function missingReferencedNe(sources,{scope='interannual'}={}){
  for(const row of relations){
    const year=NOTE.exec(row?.to||''),from=PARENT.exec(row?.from||'');
    const owner=owners.get(row?.from);
-   if(!year||!from||!owner||originals.has(row.to))continue;
+   if(!year||!from||!owner||originals.has(row.to)||!inScopeNe(row.to)||owner.year<FIRST_YEAR)continue;
    const targetYear=Number(year[1]);
    if((scope!=='same_year'&&owner.year>targetYear)||
       (scope!=='interannual'&&owner.year===targetYear))targets.add(row.to);
@@ -107,7 +108,7 @@ export function missingReferencedNe(sources,{scope='interannual'}={}){
    a.localeCompare(b));
 }
 export function chooseNeBatch(targets,{limit=3,slot=0}={}){
- if(!Array.isArray(targets)||targets.some(id=>!NOTE.test(id))||
+ if(!Array.isArray(targets)||targets.some(id=>!inScopeNe(id))||
    new Set(targets).size!==targets.length||
    !Number.isSafeInteger(limit)||limit<1||limit>5||
    !Number.isSafeInteger(slot)||slot<0)throw Error('Plano NE invalido');
@@ -195,7 +196,7 @@ async function parseBounded(response){
 export async function fetchCguOriginal(id,{
  token,fetchFn=fetch,wait=delay,timeoutMs=18000
 }={}){
- if(!NOTE.test(id)||typeof token!=='string'||!token||
+ if(!inScopeNe(id)||typeof token!=='string'||!token||
    !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)
    throw Error('Consulta CGU nao autorizada');
  const url=detailUrl(id);
@@ -244,7 +245,7 @@ export async function recoverReferencedNe({
  root=process.cwd(),token,now=new Date(),limit=3,slot=0,
  year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
 }={}){
- if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)))
+ if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)||Number(year)<FIRST_YEAR))
    throw Error('Exercicio CGU de destino invalido');
  const months=await readSources(root);
  const missing=missingReferencedNe(months,{scope});

@@ -11,7 +11,7 @@ permissions:
   contents: read
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 jobs:
   coletar:
     runs-on: ubuntu-22.04

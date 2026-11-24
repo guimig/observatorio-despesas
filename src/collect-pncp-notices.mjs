@@ -1,3 +1,4 @@
+import {planCatalogMonth} from './collection-scope.mjs';
 /** Backfill mensal de todas modalidades do PNCP publicadas pela Reitoria. */
 import {fileURLToPath} from 'node:url';
 import {monthBounds,HttpFailure} from './procurement.mjs';
@@ -11,9 +12,12 @@ function month(){
   return process.env.PNCP_NOTICE_MONTH||local;
 }
 async function main(){
-  const selected=month();
-  monthBounds(selected);
   const previous=await readNotices(process.cwd());
+  const historical=!process.env.PNCP_NOTICE_MONTH&&process.env.PNCP_NOTICE_HISTORICAL==='true';
+  const plan=historical?planCatalogMonth(previous?.coverage,{keys:Object.keys(MODALITIES).map(Number),kind:'modality'}):null;
+  if(historical&&!plan){console.log('Cobertura historica de contratacoes completa no recorte.');return}
+  const selected=plan?.month||month();
+  monthBounds(selected);
   if(process.argv.includes('--dry-run')){
     console.log('Planejamento PNCP '+selected+': '+Object.keys(MODALITIES).length+
       ' modalidades; '+(previous?.notices.length||0)+
@@ -23,6 +27,7 @@ async function main(){
   const scans=[];let failed=0,total=0;
   for(const raw of Object.keys(MODALITIES)){
     const modality=Number(raw);
+    if(plan&&!plan.pending.includes(modality))continue;
     try{
       const result=await scanNotices(selected,modality,{maxPages:20});
       const status=result.skipped?'partial':'complete';

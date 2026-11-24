@@ -8,15 +8,15 @@ on:
         type: string
         required: false
       earliest_month:
-        description: 'Competencia mais antiga da varredura automatica AAAA-MM (padrao 2025-01)'
+        description: 'Competencia mais antiga da varredura automatica AAAA-MM (padrao 2024-01)'
         type: string
         required: false
-        default: '2025-01'
+        default: '2024-01'
       days:
         description: 'Dias por lote (maximo 7)'
         type: choice
         required: true
-        default: '3'
+        default: '5'
         options: ['1', '2', '3', '5', '7']
       start_day:
         description: 'Dia inicial do mes (1 a 31)'
@@ -44,16 +44,17 @@ on:
       - 'src/historical-collector.mjs'
       - 'src/store.mjs'
   # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
-  # Mantido um lote diario ate diagnosticar falhas de fonte da coleta historica.
+  # Dois lotes limitados por dia, com rodizio entre competencias.
   schedule:
     - cron: '13 11 * * *'
+    - cron: '13 21 * * *'
 
 permissions:
   contents: read
 
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   atualizar:
@@ -94,8 +95,8 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           BACKFILL_MONTH: ${{ inputs.month }}
-          BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2025-01' }}
-          BACKFILL_DAYS: ${{ inputs.days || '3' }}
+          BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2024-01' }}
+          BACKFILL_DAYS: ${{ inputs.days || '5' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
           BACKFILL_ROTATE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}

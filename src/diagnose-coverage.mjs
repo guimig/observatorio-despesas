@@ -1,3 +1,4 @@
+import {FIRST_MONTH,assertScopeMonth,inScopeNe} from './collection-scope.mjs';
 /** Diagnóstico local do acervo: sem API, banco adicional ou dados pessoais. */
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ export function auditBaseline(report,{revision='unknown'}={}){
     commitmentsReferenced:report.commitmentsReferenced,
     commitmentsMissing:report.commitmentsMissing,
     missingByYear:report.missingByYear,
+    commitmentsBeforeCutoff:report.commitmentsBeforeCutoff||0,
     pendingEnrichment:report.pendingEnrichment,
     phaseObservations:report.phaseObservations||{total:0,overlappingDocuments:0,amountDisagreements:0},
     asOf:report.asOf||null,
@@ -46,8 +48,9 @@ function nextMonth(month){
 }
 
 /** Cobertura contra o calendario encerrado, incluindo competencias sem arquivo. */
-export function historicalWindow(months,{now=new Date(),earliestMonth='2025-01'}={}){
+export function historicalWindow(months,{now=new Date(),earliestMonth=FIRST_MONTH}={}){
   if(!Array.isArray(months)||!VALID_MONTH.test(earliestMonth))throw Error('Janela historica invalida');
+  assertScopeMonth(earliestMonth);
   const current=referenceMonth(now),known=new Map(months.map(m=>[m.month,m]));
   const summary={from:earliestMonth,through:current,monthsExpected:0,monthsPublished:0,
     monthsMissing:[],closedDays:0,completeDays:0,partialDays:0,missingDays:0,percentComplete:null};
@@ -75,6 +78,7 @@ export function baselineMarkdown(baseline){
     '## Observatorio de Despesas - auditoria CGU',
     `Revisao: ${baseline.revision} | referencia (Brasilia): ${baseline.asOf||'indisponivel'} | UG: ${baseline.unit}`,
     `Cobertura historica: **${headline}**. Competencias sem arquivo: ${history.monthsMissing?.length??'n/d'}.`,
+    `Referencias a NEs fora do recorte inicial: ${baseline.commitmentsBeforeCutoff||0} (nao entram na fila de origens).`,
     `Documentos canônicos: ${baseline.documents}; aparições adicionais em outras fases: ${baseline.phaseObservations?.total??0}; divergências de valores informados: ${baseline.phaseObservations?.amountDisagreements??0}; vínculos: ${baseline.relations}; NEs referenciadas sem documento: ${baseline.commitmentsMissing}; enriquecimentos pendentes: ${baseline.pendingEnrichment}.`,
     '',
     '| Competencia | Dias completos / encerrados | Parciais | Ausentes | Enriquecimentos pendentes |',
@@ -86,7 +90,7 @@ export function baselineMarkdown(baseline){
   return lines.join('\n')+'\n';
 }
 
-export function diagnoseCoverage(months,{now=new Date(),earliestMonth='2025-01'}={}) {
+export function diagnoseCoverage(months,{now=new Date(),earliestMonth=FIRST_MONTH}={}) {
   const docs=new Map(), refs=new Set(), phaseCount={1:0,2:0,3:0};
   const observedIds=new Set();
   let observedTotal=0,observedDisagreements=0;
@@ -118,7 +122,8 @@ export function diagnoseCoverage(months,{now=new Date(),earliestMonth='2025-01'}
       documents:month.documents.length,relations:month.relations.length});
   }
   const known=new Set([...docs.values()].filter(d=>d.phase===1).map(d=>d.id));
-  const missing=[...refs].filter(id=>!known.has(id)).sort();
+  const outsideCutoff=[...refs].filter(id=>!known.has(id)&&!inScopeNe(id));
+  const missing=[...refs].filter(id=>!known.has(id)&&inScopeNe(id)).sort();
   const missingByYear=Object.fromEntries([...new Set(missing.map(id=>id.slice(11,15)))].sort()
     .map(year=>[year,missing.filter(id=>id.slice(11,15)===year).length]));
   const pendingEnrichment=monthsSummary.reduce((total,month)=>total+month.pendingTotal,0);
@@ -127,7 +132,7 @@ export function diagnoseCoverage(months,{now=new Date(),earliestMonth='2025-01'}
     phaseObservations:{total:observedTotal,overlappingDocuments:observedIds.size,amountDisagreements:observedDisagreements},
     pendingEnrichment,documents:docs.size,relations:months.reduce((n,m)=>n+m.relations.length,0),
     commitmentsCollected:known.size,commitmentsReferenced:refs.size,
-    commitmentsMissing:missing.length,missingByYear,
+    commitmentsMissing:missing.length,missingByYear,commitmentsBeforeCutoff:outsideCutoff.length,
     missingCommitmentIds:missing,
     note:'Referência sem documento não comprova ausência de empenho. Cobertura diária completa da consulta não equivale a conciliação SIAFI.'};
 }

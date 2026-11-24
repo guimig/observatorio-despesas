@@ -1,3 +1,4 @@
+import {FIRST_MONTH,assertScopeMonth,inScopeNe,scopeMonths} from './collection-scope.mjs';
 /**
  * Planejador de recuperação histórica sem arquivo extra de checkpoint:
  * a cobertura diária validada do JSON mensal é a fonte de verdade.
@@ -27,6 +28,7 @@ export function planHistoricalDays({
   batchDays = 3, startDay = 1, recheck = false, dayOffset = 0
 } = {}) {
   if (!MONTH.test(month)) throw Error('Competência histórica inválida');
+  assertScopeMonth(month);
   if (!Number.isSafeInteger(batchDays) || batchDays < 1 || batchDays > 7) {
     throw Error('Lote histórico deve conter entre 1 e 7 dias');
   }
@@ -74,20 +76,21 @@ export function missingCommitmentYears(months) {
   if (!Array.isArray(months)) throw Error('Acervo inválido');
   const known = new Set(months.flatMap(m => m.documents.filter(d => d.phase === 1).map(d => d.id)));
   const missing = new Set(months.flatMap(m => m.relations.map(r => r.to))
-    .filter(id => /^158459\d{5}20\d{2}NE\d{6}$/.test(id) && !known.has(id)));
+    .filter(id => inScopeNe(id) && !known.has(id)));
   return [...new Set([...missing].map(id => id.slice(11, 15)))].sort();
 }
 
 export async function chooseHistoricalMonth({
-  requestedMonth='',earliestMonth='2026-01',now=new Date(),
-  loadExisting=async()=>null, priorityYears=[], prioritize=false
+  requestedMonth='',earliestMonth=FIRST_MONTH,now=new Date(),
+  loadExisting=async()=>null, priorityYears=[], prioritize=false,includeCurrent=false,rotationSlot=null
 }={}){
   if(requestedMonth){
     if(!MONTH.test(requestedMonth))throw Error('Competência manual inválida');
-    return requestedMonth;
+    return assertScopeMonth(requestedMonth);
   }
   if(!MONTH.test(earliestMonth))throw Error('Início histórico inválido');
-  const previous=previousMonthInBrazil(now);
+  assertScopeMonth(earliestMonth);
+  const previous=includeCurrent?currentDateInBrazil(now).slice(0,7):previousMonthInBrazil(now);
   if(earliestMonth>previous)return null;
   const [year,month]=previous.split('-').map(Number);
   if (prioritize) {
@@ -100,6 +103,15 @@ export async function chooseHistoricalMonth({
         if (planHistoricalDays({month:candidate,existing,now,batchDays:1}).length) return candidate;
       }
     }
+  }
+  if(rotationSlot!==null){
+    if(!Number.isSafeInteger(rotationSlot)||rotationSlot<0)throw Error('Rodada historica invalida');
+    const candidates=scopeMonths(now,{includeCurrent}).filter(m=>m>=earliestMonth);
+    const offset=rotationSlot%Math.max(1,candidates.length);
+    for(const candidate of candidates.slice(offset).concat(candidates.slice(0,offset))){
+      if(planHistoricalDays({month:candidate,existing:await loadExisting(candidate),now,batchDays:1}).length)return candidate;
+    }
+    return null;
   }
   for(let cursor=new Date(Date.UTC(year,month-1,1));
     cursor.toISOString().slice(0,7)>=earliestMonth;

@@ -1,3 +1,4 @@
+import {inScopeMonth} from './collection-scope.mjs';
 /**
  * Recupera somente um mes de PUBLICACAO por execucao, para IDs PNCP
  * revelados por consulta de atualizacao. Nenhuma inferencia de UG financeira.
@@ -15,7 +16,7 @@ export function planPncpRecovery(catalog,{now=new Date()}={}){
  validateProcurement(catalog);
  if(!(now instanceof Date)||!Number.isFinite(now.getTime()))
    throw Error('Relogio invalido');
- const queue=catalog.pncpDelta?.pendingPublications??[];
+ const queue=(catalog.pncpDelta?.pendingPublications??[]).filter(x=>inScopeMonth(x.publishedMonth));
  if(!queue.length)return null;
  const month=queue[0].publishedMonth;
  if(!MONTH.test(month))throw Error('Mes pendente invalido');
