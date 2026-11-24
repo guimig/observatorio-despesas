@@ -86,7 +86,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: atualizar evidencias de NE associadas a contratos PNCP'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Verificar se o estado operacional mudou
         id: state_after

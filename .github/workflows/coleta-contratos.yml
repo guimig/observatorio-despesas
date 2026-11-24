@@ -61,7 +61,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: atualizar contratos públicos IFC sem dados pessoais'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: atualizar

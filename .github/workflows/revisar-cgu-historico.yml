@@ -72,7 +72,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: revisar cobertura CGU historica'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Verificar alteracao operacional
         id: state_after

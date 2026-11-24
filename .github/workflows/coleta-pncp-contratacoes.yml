@@ -59,7 +59,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: registrar licitacoes e contratacoes diretas PNCP centralizadas'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: coletar

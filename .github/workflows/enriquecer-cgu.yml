@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       month:
-        description: 'Competencia AAAA-MM (vazio = mais recente com pendencias)'
+        description: 'Competencia AAAA-MM (vazio = distribuir entre meses com pendencias)'
         required: false
         type: string
       liquidations:
@@ -111,7 +111,9 @@ jobs:
           ENRICH_ITEMS: ${{ inputs.items || '7' }}
           ENRICH_HISTORY_ITEMS: '10'
           CGU_HISTORY_STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
-        run: npm run enrich:cgu
+        run: |
+          set -o pipefail
+          npm run enrich:cgu | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Validar todos os JSONs antes da publicacao
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
@@ -128,7 +130,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: enriquecer vinculos de liquidacoes, pagamentos e itens CGU'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Verificar se o estado operacional mudou
         if: steps.credential.outputs.enabled == 'true'

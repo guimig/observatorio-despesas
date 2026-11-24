@@ -439,6 +439,8 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   }else if(result.kind==='payment'){
     if(target.phase!==3||!Array.isArray(result.links)||
        result.links.some(link=>link.from!==id))throw Error('Vínculos de pagamento inválidos');
+    if(target.paymentLinksChecked===true&&!result.links.length&&next.relations.some(link=>link.from===id))
+      throw Error('Reconsulta vazia nao pode apagar vinculos de pagamento confirmados');
     target.paymentLinksChecked=true;
     next.relations=next.relations.filter(link=>link.from!==id);
     next.relations.push(...structuredClone(result.links));
@@ -448,6 +450,8 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
     if(target.phase!==1||!Array.isArray(result.items))throw Error('Itens de empenho inválidos');
     next.itemsByDocument ||= {};
     const previous=new Map((next.itemsByDocument[id]||[]).map(item=>[item.seq,item]));
+    if(result.recheck&&[...previous.keys()].some(seq=>!result.items.some(item=>item.seq===seq)))
+      throw Error('Reconsulta de itens omitiu sequencial confirmado; revisar fonte');
     next.itemsByDocument[id]=structuredClone(result.items).map(item=>{
       const old=previous.get(item.seq);
       if(old?.historyChecked===true&&old.cents===item.cents){

@@ -61,11 +61,11 @@ export function classifyCguFailure(error){
     return 'resposta_invalida';
   return 'consulta_indisponivel';
 }
-async function collectPages(document,{token,limit=8,request,keys}){
+async function collectPages(document,{token,limit=8,request,keys,budget}){
   const max=bounded(limit,8,20), pages=new Set(),result=[];
   for(let page=1;page<=max;page++){
     let rows;
-    try{rows=await request(document,page,{token});}
+    try{rows=await request(document,page,{token,...(budget?{budget}:{})});}
     catch(error){return {ok:false,reason:classifyCguFailure(error)};}
     if(!Array.isArray(rows))return {ok:false,reason:'resposta_invalida'};
     if(!rows.length)return {ok:true,rows:result};
@@ -83,9 +83,9 @@ function paymentComponents(row){
   const cents=(regular??0)+(rap??0);
   return Number.isSafeInteger(cents)?cents:null;
 }
-export async function resolvePaymentLinks(document,{token,limit=8,request=requestPaymentPage}={}){
+export async function resolvePaymentLinks(document,{token,limit=8,request=requestPaymentPage,budget}={}){
   if(!DOC.test(document))throw Error('Documento de pagamento inválido');
-  const response=await collectPages(document,{token,limit,request,
+  const response=await collectPages(document,{token,limit,request,budget,
     keys:['empenho','subitem','valorPago','valorRestoPago']});
   if(!response.ok)return {ok:false,reason:response.reason};
   const sums=new Map();
@@ -108,10 +108,10 @@ export async function resolvePaymentLinks(document,{token,limit=8,request=reques
  * O valor do documento de liquidação nunca é sobrescrito pela soma de impactos.
  */
 export async function resolveLiquidationLinks(document,{
-  token,limit=8,request=requestLiquidationPage
+  token,limit=8,request=requestLiquidationPage,budget
 }={}){
   if(!DOC.test(document))throw Error('Documento de liquidação inválido');
-  const response=await collectPages(document,{token,limit,request,
+  const response=await collectPages(document,{token,limit,request,budget,
     keys:['empenho','subitem','valorLiquidado']});
   if(!response.ok)return {ok:false,reason:response.reason};
   const sums=new Map();
@@ -168,9 +168,9 @@ export function normalizeItem(row){
   if(cents!==null)item.cents=cents;
   return assertPublicSafe(item);
 }
-export async function resolveItems(document,{token,limit=8,request=requestItemsPage}={}){
+export async function resolveItems(document,{token,limit=8,request=requestItemsPage,budget}={}){
   if(!NE.test(document))throw Error('Empenho inválido');
-  const result=await collectPages(document,{token,limit,request,
+  const result=await collectPages(document,{token,limit,request,budget,
     keys:['codigoItemEmpenho','sequencial','valorAtual','descricao']});
   if(!result.ok)return {ok:false,reason:result.reason};
   const items=new Map();

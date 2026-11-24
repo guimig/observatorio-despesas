@@ -51,14 +51,14 @@ export function normalizeMovement(row){
  return {date,operation,type:movementClass(operation),quantity,unitPrice,cents};
 }
 export async function resolveItemMovements(id,seq,{
- token,limit=8,request=(id,seq,page,opts)=>getCguArray(historyUrl(id,seq,page),opts)
+ token,limit=8,budget,request=(id,seq,page,opts)=>getCguArray(historyUrl(id,seq,page),opts)
 }={}){
  historyUrl(id,seq,1);
  if(!Number.isSafeInteger(limit)||limit<1||limit>20)throw Error('Limite de historico invalido');
  const collected=[],pages=new Set();
  for(let page=1;page<=limit;page++){
    let rows;
-   try{rows=await request(id,seq,page,{token});}
+   try{rows=await request(id,seq,page,{token,...(budget?{budget}:{})});}
    catch{return {ok:false,reason:'consulta_indisponivel'};}
    if(!Array.isArray(rows))return {ok:false,reason:'resposta_invalida'};
    if(!rows.length){
