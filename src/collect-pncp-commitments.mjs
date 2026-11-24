@@ -1,4 +1,5 @@
 /** Recuperação incremental das NEs oficiais vinculadas a contratos PNCP. */
+import {stateKey,effectiveDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import {fileURLToPath} from 'node:url';
 import {readProcurement,writeCommitmentResult} from './procurement-store.mjs';
 import {fetchLinkedCommitments} from './pncp-commitments.mjs';
@@ -10,17 +11,18 @@ function integer(value,fallback,max){
   return n;
 }
 export function planCommitmentChecks(catalog,{
-  count=8,now=new Date(),recheck=false
+  count=8,now=new Date(),recheck=false,state={}
 }={}){
   const limit=integer(count,8,25);
   const due=(contract)=>{
     if(recheck)return true;
     if(!contract.commitmentStatus)return true;
     // Resultados positivos tambem precisam de revisao periodica.
-    if(!contract.commitmentAt)return true;
-    const time=new Date(contract.commitmentAt+'T00:00:00Z').valueOf();
+    const last=effectiveDay(contract.commitmentAt,state[stateKey(contract)],now);
+    if(!last)return true;
+    const time=new Date(last+'T00:00:00Z').valueOf();
     const interval=contract.commitmentStatus==='complete'?30:7;
-    return Number.isFinite(time) && now.getTime()-time>=interval*86400000;
+    return !Number.isFinite(time) || now.getTime()-time>=interval*86400000;
   };
   const eligible=(catalog?.contracts||[])
     .filter(c=>c.source==='pncp'&&due(c))
@@ -54,7 +56,10 @@ async function main(){
     console.log('Sem contratos PNCP a enriquecer');
     return;
   }
+  const statePath=process.env.PNCP_NE_STATE_PATH;
+  const state=await readOperationalState(statePath);
   const batch=planCommitmentChecks(catalog,{
+    state,
     count:process.env.PNCP_COMMITMENT_BATCH||8,
     recheck:process.env.PNCP_COMMITMENT_RECHECK==='true'
   });
@@ -65,9 +70,12 @@ async function main(){
     const record=catalog.contracts.find(c=>c.id===entry.id);
     try{
       const result=await fetchLinkedCommitments(record);
-      await writeCommitmentResult(process.cwd(),entry.id,{
+      const outcome=await writeCommitmentResult(process.cwd(),entry.id,{
         status:'complete',refs:result.refs
       });
+      const current=outcome.data.contracts.find(c=>c.id===entry.id);
+      delete state[stateKey(record)];
+      state[stateKey(current)]=new Date().toISOString().slice(0,10);
       completed++;
       matched+=result.refs.length;
     }catch{
@@ -76,6 +84,7 @@ async function main(){
       await writeCommitmentResult(process.cwd(),entry.id,{status:'unavailable'});
     }
   }
+  await saveOperationalState(statePath,state);
   console.log('PNCP empenhos: '+completed+' instrumento(s) consultado(s) integralmente, '+
     unavailable+' indisponível(is), '+matched+' referência(s) explícitas à UG 158459. '+
     'Nenhum número de NE de outra unidade ou CPF foi registrado.');

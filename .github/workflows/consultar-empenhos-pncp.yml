@@ -50,9 +50,26 @@ jobs:
         run: |
           npm test
           npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-ne-state.json
+          key: pncp-ne-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pncp-ne-state-v1-
+      - name: Registrar estado anterior do cache
+        id: state_before
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-pncp-ne-state.json
+        run: |
+          if [ -f "$STATE_PATH" ]; then
+            echo "digest=$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+          else
+            echo 'digest=missing' >> "$GITHUB_OUTPUT"
+          fi
       - name: Consultar NEs vinculadas no PNCP (sem token ou conteúdo pessoal)
         env:
           PNCP_COMMITMENT_BATCH: ${{ inputs.batch || '8' }}
+          PNCP_NE_STATE_PATH: ${{ runner.temp }}/observatorio-pncp-ne-state.json
           PNCP_COMMITMENT_RECHECK: ${{ inputs.recheck || 'false' }}
         run: npm run collect:pncp-ne
       - name: Validar catálogo e política de privacidade
@@ -71,6 +88,23 @@ jobs:
           git commit -m 'data: atualizar evidencias de NE associadas a contratos PNCP'
           git push origin HEAD:main
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Verificar se o estado operacional mudou
+        id: state_after
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-pncp-ne-state.json
+          PREVIOUS_DIGEST: ${{ steps.state_before.outputs.digest }}
+        run: |
+          if [ -f "$STATE_PATH" ] && [ "$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" != "$PREVIOUS_DIGEST" ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache/save@v4
+        if: steps.state_after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-ne-state.json
+          key: pncp-ne-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: enriquecer
     if: needs.enriquecer.outputs.changed == 'true'

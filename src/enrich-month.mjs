@@ -1,6 +1,7 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import {readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
@@ -140,12 +141,7 @@ async function main(){
   // sem manter histórico adicional de tentativas em arquivos públicos.
   const slot=Math.floor(Date.now()/21600000);
   const statePath=process.env.CGU_HISTORY_STATE_PATH;
-  let historyState={};
-  if(statePath){
-    try{historyState=JSON.parse(await readFile(statePath,'utf8'))}
-    catch(e){if(e.code!=='ENOENT')throw e}
-    if(!historyState||typeof historyState!=='object'||Array.isArray(historyState))throw Error('Estado historico invalido');
-  }
+  const historyState=await readOperationalState(statePath);
   const args={slot,historyState,
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
@@ -227,11 +223,7 @@ async function main(){
     }
   }
   await validatePublishedData(root);
-  if(statePath){
-    const cutoff=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
-    const clean=Object.fromEntries(Object.entries(historyState).filter(([k,v])=>/^[a-f0-9]{64}$/.test(k)&&typeof v==='string'&&v>=cutoff&&v<=new Date().toISOString().slice(0,10)));
-    await writeFile(statePath,JSON.stringify(clean)+'\n');
-  }
+  await saveOperationalState(statePath,historyState);
   console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+
     JSON.stringify(summarizeFailures(failures)));
   console.log('Enriquecimento CGU (liquidações, pagamentos e itens): '+successes+' documento(s) concluído(s), '+

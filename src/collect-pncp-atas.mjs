@@ -1,5 +1,6 @@
 /** Coleta limitada de ARPs por compras SRP ja catalogadas, sem consultas por NE. */
-import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
+import {readOperationalState,saveOperationalState,PURCHASE_KEY} from './operational-state.mjs';
 import {fileURLToPath} from 'node:url';
 import {scanAtas} from './pncp-atas.mjs';
 import {readAtas,writeAtas} from './pncp-atas-store.mjs';
@@ -42,12 +43,7 @@ async function main(){
  const limit=Number(process.env.PNCP_ATA_LIMIT||12);
  const day=Math.floor(Date.now()/86400000);
  const statePath=process.env.ATA_STATE_PATH;
- let state={};
- if(statePath){
-  try{state=JSON.parse(await readFile(statePath,'utf8'))}
-  catch(e){if(e.code!=='ENOENT')throw e}
-  if(!state||typeof state!=='object'||Array.isArray(state))throw Error('Estado ARP invalido');
- }
+ let state=await readOperationalState(statePath,{keyPattern:PURCHASE_KEY});
  const checks=effectiveAtaChecks(previous.checks,state);
  const plan=planAtas(catalog.notices,checks,new Date(),limit,day*limit);
  const before=summarizeAtaCollection({notices:catalog.notices,checks,atas:previous.atas});
@@ -72,8 +68,7 @@ async function main(){
  if(statePath){
   const next=Object.fromEntries(effectiveAtaChecks(outcome.data.checks,state).map(c=>[c.procurementId,c.checkedAt]));
   for(const r of results)next[r.procurementId]=new Date().toISOString().slice(0,10);
-  await mkdir(new URL('.', 'file://'+statePath).pathname,{recursive:true});
-  await writeFile(statePath,JSON.stringify(next)+'\n');
+  await saveOperationalState(statePath,next,{keyPattern:PURCHASE_KEY});
   state=next;
  }
  console.log('Falhas por categoria: '+JSON.stringify(errors));
