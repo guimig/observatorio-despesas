@@ -82,6 +82,12 @@ jobs:
       - name: Auditar cruzamentos interanuais existentes (so contagens)
         if: steps.credential.outputs.enabled == 'true'
         run: npm run audit:cgu-interannual
+      - uses: actions/cache/restore@v4
+        if: steps.credential.outputs.enabled == 'true'
+        with:
+          path: ${{ runner.temp }}/observatorio-history-state.json
+          key: cgu-history-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cgu-history-v1-
       - name: Consultar documentos pendentes e revisar historicos vencidos
         if: steps.credential.outputs.enabled == 'true'
         env:
@@ -92,6 +98,7 @@ jobs:
           ENRICH_PAYMENTS: ${{ inputs.payments || '15' }}
           ENRICH_ITEMS: ${{ inputs.items || '7' }}
           ENRICH_HISTORY_ITEMS: '10'
+          CGU_HISTORY_STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
         run: npm run enrich:cgu
       - name: Validar todos os JSONs antes da publicacao
         if: steps.credential.outputs.enabled == 'true'
@@ -111,6 +118,11 @@ jobs:
           git commit -m 'data: enriquecer vinculos de liquidacoes, pagamentos e itens CGU'
           git push origin HEAD:main
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        if: steps.credential.outputs.enabled == 'true'
+        with:
+          path: ${{ runner.temp }}/observatorio-history-state.json
+          key: cgu-history-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: atualizar
     if: needs.atualizar.outputs.changed == 'true'
