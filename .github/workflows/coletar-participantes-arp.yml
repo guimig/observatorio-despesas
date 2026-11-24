@@ -41,4 +41,4 @@ jobs:
           git add -- data/procurement/ata-participants.json
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'data: atualizar participacao em atas PNCP'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh

@@ -72,7 +72,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: atualizar atas PNCP'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Verificar se o estado operacional mudou
         id: state_after

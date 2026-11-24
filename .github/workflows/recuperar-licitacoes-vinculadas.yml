@@ -58,7 +58,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: recuperar licitacoes de origem por IDs PNCP'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: historico

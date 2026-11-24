@@ -102,7 +102,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: recuperar origens CGU de NEs referenciadas por identificador'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: recuperar

@@ -1,7 +1,9 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import {readOperationalState,saveOperationalState} from './operational-state.mjs';
+import {createCguBudget} from './cgu-budget.mjs';
+import {inScopeMonth} from './collection-scope.mjs';
+import {stateKey,validDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
@@ -116,6 +118,56 @@ export function orderMonths(months,{priority='newest',slot=0}={}){
   if(priority==='newest')ordered.reverse();
   return ordered;
 }
+/** Checkpoint por tipo de consulta e conteudo confirmado, nao pela data de gravacao mensal. */
+export function detailKey(month,id,kind){
+ const doc=month.documents.find(d=>d.id===id);
+ if(!doc)throw Error('Documento de consulta ausente');
+ const rows=kind==='items'?(month.itemsByDocument?.[id]||[]).map(({historyChecked,historyCheckedAt,movements,...item})=>item):
+   month.relations.filter(r=>r.from===id);
+ return stateKey(['cgu-detail',kind,id,doc.cents,rows]);
+}
+function roundRobin(groups,limit){
+ const q=groups.map(g=>[...g]),result=[];
+ while(result.length<limit&&q.some(g=>g.length)){
+  for(const group of q){if(group.length)result.push(group.shift());if(result.length===limit)break;}
+ }
+ return result;
+}
+export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2}={}){
+ const today=now.toISOString().slice(0,10),cutoff=new Date(now.getTime()-30*86400000).toISOString().slice(0,10);
+ const lists={liquidation:[],payment:[],items:[]};
+ for(const doc of month.documents){
+  const kind=doc.phase===1&&doc.itemsDetailVersion===2&&Object.hasOwn(month.itemsByDocument||{},doc.id)?'items':
+   doc.phase===2&&doc.liquidationLinksChecked===true?'liquidation':
+   doc.phase===3&&doc.paymentLinksChecked===true?'payment':null;
+  if(!kind)continue;
+  const last=state[detailKey(month,doc.id,kind)];
+  if(validDay(last)&&last>cutoff&&last<=today)continue;
+  lists[kind].push({month:month.month,id:doc.id,kind,recheck:true,last:validDay(last)&&last<=today?last:''});
+ }
+ for(const kind of Object.keys(lists)){
+  const candidates=lists[kind].sort((a,b)=>a.last.localeCompare(b.last)||a.id.localeCompare(b.id));
+  const first=candidates[0]?.last||'';
+  const same=candidates.filter(x=>x.last===first),others=candidates.filter(x=>x.last!==first);
+  lists[kind]=[...rotatePending(same,Math.min(limit,same.length),slot),...others].slice(0,limit);
+ }
+ return lists;
+}
+export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
+ const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
+  review:review?planDetailRechecks(m,{state:args.historyState||{},now:args.now||new Date(),slot:args.slot||0}):{}}));
+ const specs=[['liquidations','liquidation',bounded(args.maxLiquidations,12,40)],['payments','payment',bounded(args.maxPayments,15,50)],
+  ['items','items',bounded(args.maxItems,7,20)],['itemHistories','itemHistory',bounded(args.maxItemHistories,10,30)],
+  ['itemRechecks','itemHistory',bounded(args.maxHistoryRechecks,2,8)]];
+ const queues=specs.map(([key,kind,limit])=>roundRobin(plans.map(({month,plan})=>plan[key].map(item=>
+  kind==='itemHistory'?{month:month.month,kind,...item,recheck:key==='itemRechecks'}:{month:month.month,kind,id:item})),limit));
+ if(review)for(const kind of ['liquidation','payment','items']){
+  const occupied=new Set(queues.flat().filter(t=>t.kind==='itemHistory').map(t=>t.id));
+  const eligible=plans.map(p=>(p.review[kind]||[]).filter(t=>kind!=='items'||!occupied.has(t.id)));
+  queues.push(roundRobin(eligible,2));
+ }
+ return roundRobin(queues,queues.reduce((n,q)=>n+q.length,0));
+}
 export function summarizeFailures(failures){
   const counts={};
   for(const reason of failures){
@@ -155,73 +207,57 @@ async function main(){
   // novos documentos deixem competências históricas sempre aguardando.
   const monthSlot=scheduledMonthSlot();
   const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot:monthSlot});
-  let chosen=null;
-  for(const monthName of alternatives){
-    const data=await readMonth(root,monthName);
-    const plan=planEnrichment(data,args);
-    if(plan.liquidations.length||plan.payments.length||plan.items.length||
-       plan.itemHistories.length||plan.itemRechecks.length){
-      chosen={monthName,plan};break;
-    }
-  }
-  if(!chosen){
+  const months=[];
+  for(const monthName of alternatives)if(inScopeMonth(monthName))months.push(await readMonth(root,monthName));
+  const tasks=planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)});
+  if(!tasks.length){
     console.log('Acervo sem documentos pendentes de enriquecimento.');
     return;
   }
-  console.log('Plano de enriquecimento: competência '+chosen.monthName+'; '+
-    chosen.plan.liquidations.length+' liquidações; '+chosen.plan.payments.length+
-    ' pagamentos; '+chosen.plan.items.length+' empenhos; '+
-    chosen.plan.itemHistories.length+' historicos de itens; '+
-    chosen.plan.itemRechecks.length+' reconsultas historicas.');
+  const planned={};
+  for(const task of tasks){const key=task.kind+(task.recheck?'Review':'Pending');planned[key]=(planned[key]||0)+1;}
+  console.log('Plano de enriquecimento multicompetencia: '+JSON.stringify({months:new Set(tasks.map(t=>t.month)).size,planned,total:tasks.length}));
   if(process.argv.includes('--dry-run')){
     console.log('Simulação: nenhuma consulta autenticada ou arquivo alterado.');
     return;
   }
   const token=process.env.CGU_API_KEY;
   if(!token)throw Error('CGU_API_KEY não disponível');
-  let successes=0,errors=0,links=0,items=0;
+  const budget=createCguBudget();
+  let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0;
   const failures=[];
-  for(const [kind,docs] of [['liquidation',chosen.plan.liquidations],
-    ['payment',chosen.plan.payments],['items',chosen.plan.items],
-    ['itemHistory',chosen.plan.itemHistories],['itemHistory',chosen.plan.itemRechecks]]){
-    for(const item of docs){
-      const id=kind==='itemHistory'?item.id:item;
-      const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token}):
-        kind==='payment'?await resolvePaymentLinks(id,{token}):
-        kind==='items'?await resolveItems(id,{token}):
-          await resolveItemMovements(id,item.seq,{token});
-      if(!outcome.ok){
-        failures.push(outcome.reason||'outro');
-        errors++;
-        continue;
+  for(const task of tasks){
+    if(budget.stopped())break;
+    const {kind,id,month,seq,recheck}=task;
+    const before=await readMonth(root,month);
+    const doc=before.documents.find(d=>d.id===id);
+    const old=kind==='itemHistory'?before.itemsByDocument?.[id]?.find(x=>x.seq===seq):null;
+    if(!doc||kind==='itemHistory'&&!old)continue;
+    attempted++;
+    const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget}):
+      kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
+      kind==='items'?await resolveItems(id,{token,budget}):await resolveItemMovements(id,seq,{token,budget});
+    if(!outcome.ok){failures.push(outcome.reason||'outro');errors++;continue;}
+    const result=kind==='items'?{kind,items:outcome.items,recheck}:
+      kind==='itemHistory'?{kind,seq,movements:outcome.movements,checkedAt:new Date().toISOString().slice(0,10)}:
+        {kind,links:outcome.links};
+    try{
+      if(statePath&&kind==='itemHistory'&&old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements))
+        delete result.checkedAt;
+      await persistEnrichment(root,month,id,result,new Date());
+      if(statePath){
+        const after=await readMonth(root,month);
+        const updated=after.documents.find(d=>d.id===id);
+        const previousKey=kind==='itemHistory'?historyKey(doc,old):detailKey(before,id,kind);
+        const currentKey=kind==='itemHistory'?historyKey(updated,after.itemsByDocument[id].find(x=>x.seq===seq)):detailKey(after,id,kind);
+        delete historyState[previousKey];
+        historyState[currentKey]=new Date().toISOString().slice(0,10);
       }
-      const result=kind==='items'?{kind:'items',items:outcome.items}:
-        kind==='itemHistory'?{kind:'itemHistory',seq:item.seq,movements:outcome.movements,
-          checkedAt:new Date().toISOString().slice(0,10)}:
-          {kind,links:outcome.links};
-      try{
-        if(statePath&&kind==='itemHistory'){
-          const before=await readMonth(root,chosen.monthName);
-          const old=before.itemsByDocument[id].find(x=>x.seq===item.seq);
-          if(old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements))
-            delete result.checkedAt;
-          await persistEnrichment(root,chosen.monthName,id,result,new Date());
-          const after=await readMonth(root,chosen.monthName);
-          const doc=after.documents.find(d=>d.id===id);
-          const current=after.itemsByDocument[id].find(x=>x.seq===item.seq);
-          delete historyState[historyKey(before.documents.find(d=>d.id===id),old)];
-          historyState[historyKey(doc,current)]=new Date().toISOString().slice(0,10);
-        }else await persistEnrichment(root,chosen.monthName,id,result,new Date());
-      }catch{
-        failures.push('persistencia_invalida');
-        errors++;
-        continue;
-      }
-      successes++;
-      links+=outcome.links?.length||0;
-      items+=outcome.items?.length||0;
-    }
+    }catch{failures.push('persistencia_invalida');errors++;continue;}
+    successes++;if(recheck)completedReviews++;
+    links+=outcome.links?.length||0;items+=outcome.items?.length||0;
   }
+  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,...budget.snapshot()}));
   await validatePublishedData(root);
   await saveOperationalState(statePath,historyState);
   console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+
