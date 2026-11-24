@@ -1220,7 +1220,7 @@ function renderNotices() {
             if(Object.hasOwn(detail,'instruments')){
               sub.append(element('p','helper',detail.instruments.length?'Instrumentos vinculados diretamente pelo PNCP; unidade administrativa não equivale automaticamente à UG SIAFI.':'Consulta sem instrumento IFC identificado.'));
               for(const i of detail.instruments){
-                const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\\d{14})-2-(\\d{6})\\/(20\\d{2})$/.exec(i.pncpId);
+                const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\d{14})-2-(\d{6})\/(20\d{2})$/.exec(i.pncpId);
                 if(m){link.href='https://pncp.gov.br/app/contratos/'+m[1]+'/'+m[3]+'/'+Number(m[2]);link.target='_blank';link.rel='noopener noreferrer'}
                 row.append(link,document.createTextNode((i.unitCode?' · Unidade PNCP '+i.unitCode:'')+(i.adhesion===true?' · Adesão':'')));sub.append(row);
               }
