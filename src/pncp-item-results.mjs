@@ -25,8 +25,8 @@ export function validateResults(rows){
   if(!r||typeof r!=='object'||Array.isArray(r)||
    Object.keys(r).some(k=>!['sequence','status','date','quantity','unitPrice','total','supplierType','supplierCnpj','supplierCpfMasked','rank','reserve','cancelledAt'].includes(k))||
    !int(r.sequence)||keys.has(r.sequence)||![1,2].includes(r.status)||
-   !validDay(r.date)||!inScopeDate(r.date)||decimal(r.quantity)!==r.quantity||decimal(r.unitPrice)!==r.unitPrice||
-   (r.total!==undefined&&decimal(r.total)!==r.total)||
+   !validDay(r.date)||!inScopeDate(r.date)||typeof r.quantity!=='string'||decimal(r.quantity)!==r.quantity||typeof r.unitPrice!=='string'||decimal(r.unitPrice)!==r.unitPrice||
+   (r.total!==undefined&&(typeof r.total!=='string'||decimal(r.total)!==r.total))||
    !['PJ','PF','PE'].includes(r.supplierType)||
    (r.supplierCnpj!==undefined&&(r.supplierType!=='PJ'||!/^\d{14}$/.test(r.supplierCnpj)))||
    (r.supplierCpfMasked!==undefined&&(r.supplierType!=='PF'||!/^\*\*\*\.\d{3}\.\d{3}-\*\*$/.test(r.supplierCpfMasked)))||
@@ -63,10 +63,12 @@ export function normalizeResult(row,id,number){
 export async function fetchItemResults(item,{fetcher=requestPublicJSON}={}){
  const body=await fetcher(resultUrl(item.pncpId,item.number));
  const rows=Array.isArray(body)?body:body?.listaResultados??body?.data??body?.dados;
- if(!Array.isArray(rows)||(!Array.isArray(body)&&
-   (Number(body.totalPaginas??(rows.length?1:0))>(rows.length?1:1)||
-   Number(body.totalRegistros??rows.length)!==rows.length)))
-  throw Error('Lista de resultados incompleta');
+ if(!Array.isArray(rows))throw Error('Lista de resultados incompleta');
+ if(!Array.isArray(body)){
+  const pages=Number(body.totalPaginas??1),total=Number(body.totalRegistros??rows.length);
+  if(!Number.isSafeInteger(pages)||pages<0||pages>1||(pages===0&&rows.length)||
+     !Number.isSafeInteger(total)||total!==rows.length)throw Error('Lista de resultados incompleta');
+ }
  const result=rows.map(row=>normalizeResult(row,item.pncpId,item.number)).sort((a,b)=>a.sequence-b.sequence);
  validateResults(result);
  return result;

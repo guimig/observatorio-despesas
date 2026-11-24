@@ -36,3 +36,10 @@ test('fila inclui nao SRP, preserva recorte e reconsulta por hash sem novo dado'
  assert.equal(planItemResults(p,{state:{},now,slot:0}).length,3);
  assert.notEqual(resultKey(next),resultKey({...next,quantity:9}));
 });
+
+test('rejeita quantidade ou valor unitario ausente e envelope sem contagem valida',async()=>{
+ assert.throws(()=>normalizeResult({...row,quantidadeHomologada:null},id,1));
+ assert.throws(()=>normalizeResult({...row,valorUnitarioHomologado:undefined},id,1));
+ await assert.rejects(fetchItemResults(item,{fetcher:async()=>({data:[row],totalPaginas:'invalido'})}));
+ await assert.rejects(fetchItemResults(item,{fetcher:async()=>({data:[row],totalPaginas:0})}));
+});
