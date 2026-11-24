@@ -141,8 +141,10 @@ export async function checkBeneficiaryYear(id,cnpj,{
  for(let page=1;page<=maxPages;page++){
    let rows;
    try{rows=await requestPage(cnpj,year,page,{token});}
-   catch(error)return {status:'unavailable',reason:safeError(error),
-     pagesConsulted:page,rowsExamined,yearConfirmed:false};
+   catch(error){
+     return {status:'unavailable',reason:safeError(error),
+       pagesConsulted:page,rowsExamined,yearConfirmed:false};
+   }
    if(!Array.isArray(rows)||rows.length>MAX_ROWS||
       rows.some(row=>!row||typeof row!=='object'||Array.isArray(row)))
      return {status:'invalid_page',pagesConsulted:page,rowsExamined,
