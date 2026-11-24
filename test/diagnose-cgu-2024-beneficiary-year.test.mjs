@@ -157,3 +157,76 @@ test('sem pendencia de 2024 nao aciona endpoints; fase/UG invalidas não permite
  const noToken=await diagnoseBeneficiaryYear2024({sources,token:''});
  assert.equal(noToken.status,'credential_unavailable');
 });
+
+test('ano posterior observado e consultado sozinho; match nao confirma emissao',async()=>{
+ const seen=[];
+ const result=await diagnoseBeneficiaryYear2024({
+   sources,token:'SECRET_PRIVADO',detailYearOnly:true,
+   fetchDetail:async()=>payload,
+   requestPage:async(p,year,page,options)=>{
+     seen.push({year,page});
+     assert.equal(p,cnpj);
+     assert.equal(options.token,'SECRET_PRIVADO');
+     return [row()];
+   }
+ });
+ assert.deepEqual(seen,[{year:'2025',page:1}]);
+ assert.equal(result.status,'observed');
+ assert.equal(result.byEmissionYear,undefined);
+ assert.equal(result.byDetailYear.status,'exact_match_in_detail_year_filter');
+ assert.equal(result.byDetailYear.yearConfirmed,false);
+ assert.equal(result.byDetailYear.returnedDataClass,'after_ne_year');
+ assert.equal(result.byDetailYear.returnedDataMatchesFilter,true);
+ assert.equal(result.originRecorded,false);
+ for(const secret of [cnpj,ne,'SECRET_PRIVADO','2025-02-01','111.222.333-44'])
+   assert.equal(JSON.stringify(result).includes(secret),false);
+});
+test('indice posterior vazio, falha ou limite preservam a pendencia',async()=>{
+ for(const [requestPage,status] of [
+   [async()=>[],'complete_no_match'],
+   [async()=>{const e=Error('SEGREDO');e.status=429;throw e;},'unavailable'],
+   [async(_p,_y,page)=>[row('158459264222025NE'+String(page).padStart(6,'0'))],
+     'pagination_incomplete']
+ ]){
+   const result=await diagnoseBeneficiaryYear2024({
+     sources,token:'SECRET',detailYearOnly:true,
+     fetchDetail:async()=>payload,requestPage
+   });
+   assert.equal(result.byDetailYear.status,status);
+   assert.equal(result.byDetailYear.yearConfirmed,false);
+   assert.equal(result.originRecorded,false);
+   assert.equal(JSON.stringify(result).includes('SEGREDO'),false);
+ }
+});
+test('comparacao posterior bloqueia data nao posterior, invalida, futura e CPF',async()=>{
+ let called=0;
+ for(const data of ['2024-12-01','2025-02-30','2099-01-01',null]){
+   const result=await diagnoseBeneficiaryYear2024({
+     sources,token:'SECRET',detailYearOnly:true,
+     fetchDetail:async()=>({...payload,data}),
+     requestPage:async()=>{called++;return [];}
+   });
+   assert.equal(result.status,'detail_year_not_later');
+   assert.equal(result.originRecorded,false);
+ }
+ const result=await diagnoseBeneficiaryYear2024({
+   sources,token:'SECRET',detailYearOnly:true,
+   fetchDetail:async()=>({...payload,codigoFavorecido:'12345678901'}),
+   requestPage:async()=>{called++;return [];}
+ });
+ assert.equal(result.status,'beneficiary_cnpj_unavailable');
+ assert.equal(called,0);
+});
+test('match posterior com campo data divergente nao confirma o filtro semantico',async()=>{
+ const result=await checkBeneficiaryYear(ne,cnpj,{
+   token:'SECRET',queryYear:'2025',
+   requestPage:async()=>[row(ne,{data:'2024-12-01',dataEmissao:'2024-12-01'})]
+ });
+ assert.equal(result.status,'exact_match_in_detail_year_filter');
+ assert.equal(result.yearConfirmed,false);
+ assert.equal(result.returnedDataMatchesFilter,false);
+ assert.equal(result.returnedEmissionClass,'same_ne_year');
+ await assert.rejects(checkBeneficiaryYear(ne,cnpj,{
+   queryYear:'2023',requestPage:async()=>{throw Error('Nao consultar');}
+ }));
+});

@@ -131,16 +131,20 @@ export async function requestBeneficiaryYearPage(cnpj,year,page,{
 }
 /** Match exato na API por ano; nunca converte em data original de emissao. */
 export async function checkBeneficiaryYear(id,cnpj,{
- token,requestPage=requestBeneficiaryYearPage,maxPages=MAX_PAGES
+ token,requestPage=requestBeneficiaryYearPage,maxPages=MAX_PAGES,queryYear=null
 }={}){
  if(!NE.test(id)||!CNPJ.test(cnpj)||
    !Number.isSafeInteger(maxPages)||maxPages<1||maxPages>MAX_PAGES)
    throw Error('Identidade CGU de consulta anual invalida');
  const year=NE.exec(id)[1],pages=new Set();
+ const filterYear=queryYear??year;
+ if(typeof filterYear!=='string'||!/^20\d{2}$/.test(filterYear)||filterYear<year)
+   throw Error('Exercicio de consulta CGU invalido');
+ const originalYearFilter=filterYear===year;
  let rowsExamined=0;
  for(let page=1;page<=maxPages;page++){
    let rows;
-   try{rows=await requestPage(cnpj,year,page,{token});}
+   try{rows=await requestPage(cnpj,filterYear,page,{token});}
    catch(error){
      return {status:'unavailable',reason:safeError(error),
        pagesConsulted:page,rowsExamined,yearConfirmed:false};
@@ -163,10 +167,14 @@ export async function checkBeneficiaryYear(id,cnpj,{
         !samePhase(row.fase)))
        return {status:'identity_conflict',pagesConsulted:page,
          rowsExamined,yearConfirmed:false};
-     return {status:'exact_match_in_year_filter',
-       pagesConsulted:page,rowsExamined,yearConfirmed:true,
+     return {status:originalYearFilter?'exact_match_in_year_filter':
+         'exact_match_in_detail_year_filter',
+       pagesConsulted:page,rowsExamined,yearConfirmed:originalYearFilter,
        returnedDataClass:classifyDate(same[0].data,year),
-       returnedEmissionClass:classifyDate(same[0].dataEmissao,year)};
+       returnedEmissionClass:classifyDate(same[0].dataEmissao,year),
+       ...(!originalYearFilter?{
+         returnedDataMatchesFilter:dateYear(same[0].data)===filterYear
+       }:{})};
    }
  }
  return {status:'pagination_incomplete',pagesConsulted:maxPages,
@@ -182,7 +190,8 @@ async function readMonths(root){
 /** Diagnostico de no maximo uma NE, sem gravacao de dados/publicacao. */
 export async function diagnoseBeneficiaryYear2024({
  root=process.cwd(),token,sources=null,
- fetchDetail=fetchCguOriginal,requestPage=requestBeneficiaryYearPage
+ fetchDetail=fetchCguOriginal,requestPage=requestBeneficiaryYearPage,
+ detailYearOnly=false
 }={}){
  const months=sources??await readMonths(root);
  const missing=missingReferencedNe(months)
@@ -205,6 +214,21 @@ export async function diagnoseBeneficiaryYear2024({
  const cnpj=cnpjFromSource(payload.codigoFavorecido);
  if(!cnpj)return {status:'beneficiary_cnpj_unavailable',pending:1,
    detailDataClass:meta.dateClasses.data};
+ // A etapa anterior ja consultou 2024. Testar somente o indice do ano
+ // posterior observado, nunca usar esse ano para atribuir emissao.
+ if(detailYearOnly){
+   const observedYear=dateYear(payload.data);
+   if(meta.dateClasses.data!=='after_ne_year'||!observedYear||observedYear<='2024')
+     return {status:'detail_year_not_later',pending:1,
+       detailDataClass:meta.dateClasses.data,originRecorded:false};
+   const probe=await checkBeneficiaryYear(id,cnpj,{
+     token,requestPage,queryYear:observedYear
+   });
+   return {status:'observed',pending:1,
+     detailDataClass:meta.dateClasses.data,byDetailYear:probe,
+     originRecorded:false,
+     caution:'Correspondencia no indice de ano posterior nao prova emissao, natureza da data ou RAP.'};
+ }
  const probe=await checkBeneficiaryYear(id,cnpj,{token,requestPage});
  return {status:'observed',pending:1,
    detailDataClass:meta.dateClasses.data,
@@ -215,7 +239,8 @@ export async function diagnoseBeneficiaryYear2024({
 async function main(){
  try{
    const result=await diagnoseBeneficiaryYear2024({
-     root:resolve(process.cwd()),token:process.env.CGU_API_KEY
+     root:resolve(process.cwd()),token:process.env.CGU_API_KEY,
+     detailYearOnly:process.argv.includes('--detail-year')
    });
    console.log('Contraprova por exercicio CGU (sem ID, CNPJ ou data): '+
      JSON.stringify(result));
