@@ -194,3 +194,16 @@ test('consultas nunca realizadas tem prioridade sobre vazios a revalidar',()=>{
  },new Date('2026-10-15T12:00:00Z')).data;
  assert.equal(planCommitmentChecks(checked,{now,count:1})[0].id,b.id);
 });
+
+import {stateKey} from '../src/operational-state.mjs';
+test('vinculos positivos reconsultados nao voltam prematuramente a fila',()=>{
+ const now=new Date('2026-11-24');
+ const original=mergeProcurement(null,[{source:'pncp',month:'2026-11',records:[base()],status:'complete',skipped:0}]).data;
+ const catalog=applyCommitmentResult(original,base().id,{status:'complete',refs:[ne]},new Date('2026-10-01')).data;
+ const contract=catalog.contracts[0],state={[stateKey(contract)]:'2026-11-24'};
+ assert.equal(planCommitmentChecks(catalog,{now,state}).length,0);
+ assert.equal(planCommitmentChecks(catalog,{now,state:{}}).length,1);
+ assert.equal(planCommitmentChecks(catalog,{now,state,recheck:true}).length,1);
+ assert.equal(planCommitmentChecks({...catalog,contracts:[{...contract,number:'different'}]},{now,state}).length,1);
+ assert.equal(applyCommitmentResult(catalog,contract.id,{status:'complete',refs:[ne]},now).changed,false);
+});
