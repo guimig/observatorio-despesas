@@ -27,6 +27,19 @@ const SAFE_FAILURES=new Set([
  'erro_http','invalid_shape','too_large','network','invalid_json'
 ]);
 const allowedFailure=reason=>SAFE_FAILURES.has(reason)?reason:'source_unavailable';
+function safeDetailFailure(error){
+ const status=Number(error?.status);
+ if(status===401||status===403)return 'authentication_required';
+ if(status===404)return 'http_404';
+ if(status===429)return 'rate_limited';
+ if(Number.isSafeInteger(status)&&status>=500&&status<=599)
+   return 'server_unavailable';
+ if(Number.isSafeInteger(status)&&status>=400&&status<=499)
+   return 'http_other';
+ if(['network','too_large','invalid_shape','invalid_json'].includes(error?.code))
+   return error.code;
+ return 'source_unavailable';
+}
 const isIsoDate=value=>{
  if(typeof value!=='string'||!/^20\d{2}-\d{2}-\d{2}$/.test(value))return false;
  const d=new Date(value+'T00:00:00Z');
@@ -121,21 +134,31 @@ export async function diagnoseCgu2024Chronology({
  if(pending.length!==1)return {status:'ambiguous_2024_pending',pending:pending.length};
  if(typeof token!=='string'||!token)throw Error('CGU_API_KEY ausente');
  const id=pending[0];
- let payload;
+ let payload,detail,detailStatus='verified',detailFailure=null;
  try{payload=await requestDetail(id,{token});}
- catch{return {status:'detail_unavailable',pending:1};}
- let detail;
- try{detail=summarizeOriginalIssueFields(id,payload,{now});}
- catch{return {status:'detail_invalid',pending:1};}
- if(detail.identityConfirmed!==true||detail.phaseConfirmed!==true)
-   return {status:'detail_identity_unverified',pending:1,
-     identityConfirmed:detail.identityConfirmed,
-     phaseConfirmed:detail.phaseConfirmed};
+ catch(error){
+   // As duas rotas seguintes consultam a MESMA NE por codigo completo.
+   // Podem gerar evidencia diagnostica mesmo quando o detalhe falha,
+   // mas nunca autorizam gravar origem nem presumir data de emissao.
+   detailStatus='unavailable';
+   detailFailure=safeDetailFailure(error);
+ }
+ if(payload!==undefined){
+   try{detail=summarizeOriginalIssueFields(id,payload,{now});}
+   catch{return {status:'detail_invalid',pending:1};}
+   if(detail.identityConfirmed!==true||detail.phaseConfirmed!==true)
+     return {status:'detail_identity_unverified',pending:1,
+       identityConfirmed:detail.identityConfirmed,
+       phaseConfirmed:detail.phaseConfirmed};
+ }else if(detailStatus==='verified'){
+   return {status:'detail_invalid',pending:1};
+ }
  let items;
  try{items=await resolveItemsFn(id,{token,limit:4});}
  catch{items={ok:false,reason:'consulta_indisponivel'};}
  if(items?.ok!==true||!Array.isArray(items.items))
-   return {status:'items_unavailable',pending:1,detail,
+   return {status:'items_unavailable',pending:1,
+     ...(detail?{detail}:{detailStatus,detailFailure}),
      reason:allowedFailure(items?.reason)};
  const ordered=[...items.items].sort((a,b)=>a.seq-b.seq);
  if(ordered.some(x=>!Number.isSafeInteger(x.seq)||x.seq<1)||
@@ -183,13 +206,15 @@ export async function diagnoseCgu2024Chronology({
    else listing.partialOrUnavailable++;
  }
  const assessment=listing.exactMatches?
-   'listing_corrob_or_requires_review':
+   (detailStatus==='verified'?
+     'listing_corrob_or_requires_review':'listing_match_detail_unavailable'):
    dates.length?
      'item_history_only_not_issuance_proof':
      'no_original_date_candidate';
  return {
    status:'observed',pending:1,
-   detail,items:{total:ordered.length,examined:picks.length,
+   ...(detail?{detail}:{detailStatus,detailFailure}),
+   items:{total:ordered.length,examined:picks.length,
      unexamined:ordered.length-picks.length},
    history:{completed,unavailable,failures,...totals},
    listing,assessment,originRecorded:false,
