@@ -68,3 +68,15 @@ test('HTTP 204 PNCP convertido em envelope dados vazio nao e erro',async()=>{
  const rows=await scanAtas(notice,{fetcher:async()=>({dados:[],totalPaginas:0})});
  assert.deepEqual(rows,[]);
 });
+
+import {effectiveAtaChecks} from '../src/collect-pncp-atas.mjs';
+test('reconsulta identica preserva JSON e checkpoint operacional evita repeticao',()=>{
+ const first=mergeAtas(emptyAtas(),[{procurementId:id,atas:[]}],new Date('2026-10-01'));
+ const now=new Date('2026-11-24');
+ assert.deepEqual(mergeAtas(first,[{procurementId:id,atas:[]}],now),first);
+ const checks=effectiveAtaChecks(first.checks,{[id]:'2026-11-24'},now);
+ assert.equal(planAtas([notice],checks,now).length,0);
+ assert.equal(planAtas([notice],effectiveAtaChecks(first.checks,{[id]:'2099-01-01'},now),now).length,1);
+ const ata=normalizeAta({sequencialAta:1,numeroAtaRegistroPreco:'1/2026'},id);
+ assert.equal(mergeAtas(first,[{procurementId:id,atas:[ata]}],now).atas.length,1);
+});

@@ -1,8 +1,16 @@
 /** Coleta limitada de ARPs por compras SRP ja catalogadas, sem consultas por NE. */
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {scanAtas} from './pncp-atas.mjs';
 import {readAtas,writeAtas} from './pncp-atas-store.mjs';
+export function effectiveAtaChecks(checks,state,now=new Date()){
+ const today=now.toISOString().slice(0,10);
+ return checks.map(c=>{
+  const stamp=state[c.procurementId];
+  return typeof stamp==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(stamp)&&stamp<=today&&stamp>c.checkedAt
+   ?{...c,checkedAt:stamp}:c;
+ });
+}
 export function summarizeAtaCollection({notices,checks,atas},now=new Date()){
  const srp=notices.filter(n=>n.srp===true);
  const checked=new Map(checks.map(c=>[c.procurementId,c]));
@@ -33,8 +41,16 @@ async function main(){
  const previous=await readAtas(root);
  const limit=Number(process.env.PNCP_ATA_LIMIT||12);
  const day=Math.floor(Date.now()/86400000);
- const plan=planAtas(catalog.notices,previous.checks,new Date(),limit,day*limit);
- const before=summarizeAtaCollection({notices:catalog.notices,checks:previous.checks,atas:previous.atas});
+ const statePath=process.env.ATA_STATE_PATH;
+ let state={};
+ if(statePath){
+  try{state=JSON.parse(await readFile(statePath,'utf8'))}
+  catch(e){if(e.code!=='ENOENT')throw e}
+  if(!state||typeof state!=='object'||Array.isArray(state))throw Error('Estado ARP invalido');
+ }
+ const checks=effectiveAtaChecks(previous.checks,state);
+ const plan=planAtas(catalog.notices,checks,new Date(),limit,day*limit);
+ const before=summarizeAtaCollection({notices:catalog.notices,checks,atas:previous.atas});
  console.log('Cobertura ARP: '+JSON.stringify(before));
  console.log('Atas PNCP: '+plan.length+' compras SRP elegiveis; '+previous.atas.length+' atas catalogadas.');
  if(process.argv.includes('--dry-run'))return;
@@ -53,8 +69,15 @@ async function main(){
   }
  }
  const outcome=await writeAtas(root,results);
+ if(statePath){
+  const next=Object.fromEntries(effectiveAtaChecks(outcome.data.checks,state).map(c=>[c.procurementId,c.checkedAt]));
+  for(const r of results)next[r.procurementId]=new Date().toISOString().slice(0,10);
+  await mkdir(new URL('.', 'file://'+statePath).pathname,{recursive:true});
+  await writeFile(statePath,JSON.stringify(next)+'\n');
+  state=next;
+ }
  console.log('Falhas por categoria: '+JSON.stringify(errors));
- console.log('Cobertura apos coleta: '+JSON.stringify(summarizeAtaCollection({notices:catalog.notices,checks:outcome.data.checks,atas:outcome.data.atas})));
+ console.log('Cobertura apos coleta: '+JSON.stringify(summarizeAtaCollection({notices:catalog.notices,checks:effectiveAtaChecks(outcome.data.checks,state),atas:outcome.data.atas})));
  console.log('Consultas concluidas: '+results.length+'; falhas: '+failed+
   '; atas: '+outcome.data.atas.length+'; alterado: '+outcome.changed);
 }
