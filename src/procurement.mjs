@@ -82,7 +82,7 @@ export function pncpUrl(month,cnpjOrgao,page=1){
 }
 export function uasgUrl(){
   return COMPRAS+'/modulo-uasg/1_consultarUasg?'+
-    new URLSearchParams({codigoUasg:CAMPUS_UG,pagina:'1',tamanhoPagina:'10'});
+    new URLSearchParams({pagina:'1',codigoUasg:CAMPUS_UG,statusUasg:'true'});
 }
 export function comprasUrl(orgao,month,page=1){
   if(!/^\d{3,9}$/.test(String(orgao)))throw Error('Código de órgão não validado');

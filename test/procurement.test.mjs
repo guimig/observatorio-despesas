@@ -32,6 +32,8 @@ test('CNPJs dos âmbitos IFC e Araquari e filtros são separados',()=>{
  assert.equal(new URL(pncpUrl('2026-11',REITORIA_CNPJ)).searchParams.get('cnpjOrgao'),REITORIA_CNPJ);
  assert.equal(new URL(comprasUrl('26422','2026-11')).searchParams.get('codigoUnidadeGestora'),'158459');
  assert.equal(new URL(uasgUrl()).pathname,'/modulo-uasg/1_consultarUasg');
+ assert.equal(new URL(uasgUrl()).searchParams.get('statusUasg'),'true');
+ assert.equal(new URL(uasgUrl()).searchParams.has('tamanhoPagina'),false);
  assert.throws(()=>pncpUrl('2026-11','00012345678901'));
  assert.throws(()=>comprasUrl('../private','2026-11'));
  assert.throws(()=>monthBounds('2026-13'));

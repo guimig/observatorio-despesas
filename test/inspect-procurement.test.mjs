@@ -7,6 +7,11 @@ test('consultas limitadas ao campus, sem credencial, com paginação',()=>{
  assert.equal(p.searchParams.get('pagina'),'1');
  const c=new URL(comprasUasgUrl());
  assert.equal(c.searchParams.get('codigoUasg'),'158459');
+ assert.equal(c.searchParams.get('statusUasg'),'true');
+ const historical=new URL(comprasContractsUrl(26422,'2024-12'));
+ assert.equal(historical.searchParams.get('dataVigenciaInicialMin'),'2024-12-01');
+ assert.equal(historical.searchParams.get('dataVigenciaInicialMax'),'2024-12-31');
+ assert.throws(()=>comprasContractsUrl(26422,'2023-12'));
  assert.equal(new URL(comprasContractsUrl(26422)).searchParams.get('codigoUnidadeGestora'),'158459');
  assert.throws(()=>comprasContractsUrl('../../secret'));
 });
