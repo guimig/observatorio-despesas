@@ -12,6 +12,12 @@ on:
         description: 'Rodada de paginacao logica (vazio = automatica)'
         type: string
         required: false
+      year:
+        description: 'Exercicio da NE (vazio = todos)'
+        type: choice
+        required: false
+        default: 'all'
+        options: ['all','2024','2025']
   push:
     branches: [main]
     paths:
@@ -67,9 +73,17 @@ jobs:
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-          CGU_ORIGINAL_LIMIT: ${{ inputs.limit || '3' }}
+          # Uma unica rodada de recuperacao prioritaria das cinco NEs
+          # de 2025 no merge; o agendamento diario volta ao limite 3.
+          CGU_ORIGINAL_LIMIT: ${{ github.event_name == 'push' && '5' || inputs.limit || '3' }}
+          CGU_ORIGINAL_YEAR: ${{ github.event_name == 'push' && '2025' || inputs.year || 'all' }}
           CGU_ORIGINAL_SLOT: ${{ github.event_name == 'push' && '0' || inputs.slot || '' }}
         run: npm run recover:cgu-originals
+      - name: Diagnosticar datas da NE 2024 sem alterar arquivo e sem expor dados
+        if: steps.credential.outputs.enabled == 'true' && github.event_name == 'push'
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: npm run diagnose:cgu-original-date
       - name: Validar arquivos mensais e manifesto apos a recuperacao
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
