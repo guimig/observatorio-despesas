@@ -1,10 +1,12 @@
 /** Build estático por allowlist: somente a interface e JSONs públicos validados. */
-import { copyFile, mkdir, rm, readFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { validatePublishedData } from './store.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
+import {buildCoverageIndex} from './coverage-index.mjs';
+import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
 import {validateTenderCatalog} from './collect-pncp-tender-items.mjs';
 
 export async function buildSite(root = process.cwd(), destination = 'dist') {
@@ -20,7 +22,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   await mkdir(join(output, 'assets'), { recursive: true });
   await mkdir(join(output, 'data', 'months'), { recursive: true });
 
-  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/procurement-links.js', 'assets/procurement-financial-evidence.js', 'assets/procurement-evidence-coverage.js', 'assets/procurement-evidence-audit.js', 'assets/procurement-audit-report.js', 'assets/procurement-structured-filters.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/trajectory.js', 'assets/dialog-scroll.js', 'assets/siafi-movement-audit.js', 'assets/siafi-movement-reconciliation.js', 'assets/style.css',
+  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/procurement-links.js', 'assets/procurement-financial-evidence.js', 'assets/procurement-evidence-coverage.js', 'assets/procurement-evidence-audit.js', 'assets/procurement-audit-report.js', 'assets/procurement-structured-filters.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/coverage-panel.js', 'assets/trajectory.js', 'assets/dialog-scroll.js', 'assets/siafi-movement-audit.js', 'assets/siafi-movement-reconciliation.js', 'assets/style.css',
     'data/manifest.json']) {
     await copyFile(join(base, file), join(output, file));
   }
@@ -39,12 +41,17 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
     await copyFile(join(base,'data','procurement','atas.json'),
       join(output,'data','procurement','atas.json'));
   }
+  let tender=null,participants=null;
   try {
-    const tender=JSON.parse(await readFile(join(base,'data','procurement','tender-items.json'),'utf8'));
+    tender=JSON.parse(await readFile(join(base,'data','procurement','tender-items.json'),'utf8'));
     validateTenderCatalog(tender,notices?.notices||[]);
     await mkdir(join(output,'data','procurement'),{recursive:true});
     await copyFile(join(base,'data','procurement','tender-items.json'),join(output,'data','procurement','tender-items.json'));
   } catch(e) { if(e.code!=='ENOENT')throw e; }
+  try{participants=validateParticipantReferences(JSON.parse(await readFile(join(base,'data','procurement','ata-participants.json'),'utf8')),atas.atas)}
+  catch(e){if(e.code!=='ENOENT')throw e}
+  const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
+  await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
   for (const month of manifest.months) {
     const file = month + '.json';
     await copyFile(join(base, 'data', 'months', file),

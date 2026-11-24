@@ -1,4 +1,4 @@
-import {inScopeMonth} from './collection-scope.mjs';
+import {inScopeMonth,brazilMonth} from './collection-scope.mjs';
 /**
  * Recupera somente um mes de PUBLICACAO por execucao, para IDs PNCP
  * revelados por consulta de atualizacao. Nenhuma inferencia de UG financeira.
@@ -70,7 +70,7 @@ export async function recoverPncpPending({
  try{
    merged=mergeProcurement(existing,[{
      source:'pncp',month:plan.month,status:'complete',
-     records:batch.records,skipped:0
+     records:batch.records,skipped:0,...(plan.month<brazilMonth(now)?{closedMonth:true}:{})
    }],now);
  }catch{
    return {status:'invalid_reconciliation',changed:false,

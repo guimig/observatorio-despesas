@@ -28,6 +28,13 @@ export function auditMonth(month,{now=new Date()}={}){
     if(byPhase.has(c.phase))issues.push('cobertura_duplicada');
     byPhase.set(c.phase,c);
   }
+  const byFilter=new Map();
+  for(const doc of [...month.documents,...appearances]){
+    const key=doc.date+'/'+doc.phase;
+    const counts=byFilter.get(key)||{count:0,invalid:0};
+    counts.count++;if(doc.cents===null||doc.amountKnown===false)counts.invalid++;
+    byFilter.set(key,counts);
+  }
   for(const doc of month.documents){
     if(docs.has(doc.id))issues.push('documento_duplicado');
     docs.set(doc.id,doc);
@@ -45,11 +52,8 @@ export function auditMonth(month,{now=new Date()}={}){
   for(const c of month.coverage){
     if(c.complete!==true)partialQueries++;
     invalidValues+=Number(c.invalid)||0;
-    const matches=month.documents.filter(d=>d.date===c.date&&d.phase===c.phase);
-    const additional=appearances.filter(d=>d.date===c.date&&d.phase===c.phase);
-    if(matches.length+additional.length!==c.count ||
-       matches.filter(d=>d.cents===null).length+
-         additional.filter(d=>!d.amountKnown).length!==c.invalid)
+    const counts=byFilter.get(c.date+'/'+c.phase)||{count:0,invalid:0};
+    if(counts.count!==c.count||counts.invalid!==c.invalid)
       issues.push('contagem_divergente');
   }
   for(const observation of appearances){

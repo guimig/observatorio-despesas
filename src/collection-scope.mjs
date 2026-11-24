@@ -22,6 +22,8 @@ export function scopeMonths(now=new Date(),{includeCurrent=true}={}){
  }
  return out;
 }
+/** Uma consulta integral durante o mes corrente nao comprova cobertura do mes encerrado. */
+export function closedCatalogCoverage(c){return c?.status==='complete'&&(c.skipped||0)===0&&c.closedMonth===true}
 /** Completo exige evidencia por fonte/modalidade; ausencia nunca e zero. */
 export function planCatalogMonth(coverage,{keys,kind,now=new Date(),slot=Math.floor(now.getTime()/86400000)}={}){
  if(!Array.isArray(keys)||!keys.length||!['source','modality'].includes(kind)||!Number.isSafeInteger(slot)||slot<0)
@@ -33,7 +35,7 @@ export function planCatalogMonth(coverage,{keys,kind,now=new Date(),slot=Math.fl
  }
  const pending=months.map(month=>{
   const checks=byMonth.get(month)||new Map();
-  return {month,missing:keys.filter(k=>!checks.has(k)),pending:keys.filter(k=>checks.get(k)?.status!=='complete'||(checks.get(k)?.skipped||0)!==0)};
+  return {month,missing:keys.filter(k=>!checks.has(k)),pending:keys.filter(k=>!closedCatalogCoverage(checks.get(k)))};
  }).filter(x=>x.pending.length);
  const never=pending.filter(x=>x.missing.length);
  const candidates=never.length?never:pending;

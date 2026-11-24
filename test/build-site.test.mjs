@@ -24,6 +24,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'instrument-types.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'document-species.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'quality.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'coverage-panel.js'), '');
     await writeFile(join(root, 'assets', 'trajectory.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'dialog-scroll.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'siafi-movement-audit.js'), 'export const v=1;');
@@ -39,6 +40,9 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     assert.deepEqual(result, { months: 0, documents: 0 });
     assert.match(await readFile(join(root, 'dist', 'index.html'), 'utf8'), /Teste/);
     await stat(join(root, 'dist', 'assets', 'quality.js'));
+    const index=JSON.parse(await readFile(join(root,'dist','data','coverage-index.json'),'utf8'));
+    assert.equal(index.from,'2024-01-01');assert.equal(index.cgu.documents,0);
+    assert.ok(index.cgu.missingDays>0);
     await stat(join(root, 'dist', 'assets', 'trajectory.js'));
     await assert.rejects(stat(join(root, 'dist', 'assets', 'private.js')));
     await assert.rejects(stat(join(root, 'dist', '.env')));
@@ -81,6 +85,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','instrument-types.js'),'');
     await writeFile(join(root,'assets','document-species.js'),'');
     await writeFile(join(root,'assets','quality.js'),'');
+    await writeFile(join(root,'assets','coverage-panel.js'),'');
     await writeFile(join(root,'assets','trajectory.js'),'');
     await writeFile(join(root,'assets','dialog-scroll.js'),'');
     await writeFile(join(root,'assets','siafi-movement-audit.js'),'');
@@ -110,7 +115,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
+   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
