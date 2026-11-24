@@ -72,6 +72,10 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    srp:srp.length,srpAtasChecked:srp.filter(n=>ataIds.has(n.pncpId)).length,srpItemsChecked:srp.filter(n=>tenderIds.has(n.pncpId)).length,
    tenderItems:tenderItems.length,itemResultsChecked:tenderItems.filter(i=>Object.hasOwn(i,'results')).length,
    itemResults:tenderItems.reduce((n,i)=>n+(i.results?.length||0),0),
+   arpItemsMatched:(participants?.details||[]).filter(d=>d.compras).length,
+   arpItemRows:(participants?.details||[]).reduce((n,d)=>n+(d.compras?.items.length||0),0),
+   arpInstrumentChecks:(participants?.details||[]).filter(d=>Object.hasOwn(d,'instruments')).length,
+   arpInstrumentLinks:(participants?.details||[]).reduce((n,d)=>n+(d.instruments?.length||0),0),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
   years:byYear,months:rows};
 }

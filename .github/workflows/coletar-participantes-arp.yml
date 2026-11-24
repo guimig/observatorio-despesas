@@ -9,6 +9,8 @@ on:
       - '.github/workflows/coletar-participantes-arp.yml'
       - 'src/pncp-ata-participants.mjs'
       - 'src/collect-pncp-ata-participants.mjs'
+      - 'src/arp-details.mjs'
+      - 'src/collect-arp-details.mjs'
 permissions:
   contents: read
 concurrency:
@@ -34,6 +36,23 @@ jobs:
         env:
           PNCP_PARTICIPANTS_LIMIT: '30'
         run: npm run collect:pncp-ata-participants
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-arp-details.json
+          key: arp-detail-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: arp-detail-v1-
+      - name: Registrar estado anterior
+        id: before
+        run: |
+          file="$RUNNER_TEMP/observatorio-arp-details.json"
+          if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
+      - name: Consultar itens de ARP e instrumentos decorrentes
+        env:
+          ARP_DETAIL_STATE_PATH: ${{ runner.temp }}/observatorio-arp-details.json
+        run: |
+          set -o pipefail
+          node src/collect-arp-details.mjs | tee -a "$GITHUB_STEP_SUMMARY"
       - run: npm run check:data
       - name: Persistir apenas evidencias institucionais
         id: commit
@@ -47,6 +66,19 @@ jobs:
           git commit -m 'data: atualizar participacao em atas PNCP'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Verificar alteracao do estado
+        id: after
+        env:
+          BEFORE: ${{ steps.before.outputs.digest }}
+        run: |
+          file="$RUNNER_TEMP/observatorio-arp-details.json"
+          if [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$BEFORE" ]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; else echo 'changed=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/save@v4
+        if: steps.after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-arp-details.json
+          key: arp-detail-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: coletar
     if: needs.coletar.outputs.changed == 'true'
