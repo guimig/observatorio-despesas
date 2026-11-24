@@ -69,7 +69,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: atualizar janela PNCP por data global e registrar cobertura'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: atualizar

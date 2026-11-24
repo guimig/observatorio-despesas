@@ -98,9 +98,10 @@ export function retryDelay(attempt,{retryAfter=null,now=Date.now()}={}){
   return Number.isFinite(requested)?Math.min(30000,Math.max(exponential,requested)):exponential;
 }
 
-export async function getCguArray(url, { token, fetcher = fetch, wait = pause } = {}) {
+export async function getCguArray(url, { token, fetcher = fetch, wait = pause, budget } = {}) {
   if (!token || typeof token !== 'string') throw Error('CGU_API_KEY ausente');
   for (let attempt = 0; attempt < 4; attempt++) {
+    if(budget)await budget.beforeRequest();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
     let response;
@@ -111,7 +112,8 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause } 
         }
       });
     } catch (cause) {
-      if (attempt === 3) {
+      budget?.observe(null);
+      if (attempt === 3 || budget?.stopped()) {
         const error=Error('CGU indisponível após novas tentativas');
         error.code=cause?.name==='AbortError'?'CGU_TIMEOUT':'CGU_TRANSPORT';
         throw error;
@@ -119,7 +121,8 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause } 
       await wait(retryDelay(attempt));
       continue;
     } finally { clearTimeout(timeout); }
-    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3) {
+    budget?.observe(response.status);
+    if ([429, 500, 502, 503, 504].includes(response.status) && attempt < 3 && !budget?.stopped()) {
       await wait(retryDelay(attempt,{retryAfter:response.headers?.get?.('retry-after')})); continue;
     }
     if (!response.ok) {
@@ -212,7 +215,7 @@ function relatedEmpenho(row) {
  * Se houver paginação truncada ou valor ilegível, nunca publica total monetário.
  */
 export async function resolveLiquidation(id, {
-  token, maxPages = 8, request = requestImpacts
+  token, maxPages = 8, request = requestImpacts, budget
 } = {}) {
   const limit = integer(maxPages, 8, 30);
   const seen = new Set();
@@ -220,7 +223,7 @@ export async function resolveLiquidation(id, {
   let total = 0, count = 0, unlinked = 0;
   try {
     for (let page = 1; page <= limit; page++) {
-      const rows = await request(id, page, { token });
+      const rows = await request(id, page, { token,...(budget?{budget}:{}) });
       if (!Array.isArray(rows)) return { cents: null, links: [], reason: 'invalid_response' };
       if (!rows.length) {
         if (!count) return { cents: null, links: [], reason: 'empty_impact' };
@@ -250,7 +253,7 @@ export async function resolveLiquidation(id, {
 
 export async function collectDayPhase(date, phase, {
   token, maxPages = 30, maxImpactPages = 8,
-  getDocuments = requestDocuments, getImpacts = requestImpacts
+  getDocuments = requestDocuments, getImpacts = requestImpacts, budget
 } = {}) {
   if(!inScopeDate(isoDate(date)))throw Error('Consulta anterior ao recorte de 2024');
   const limit = integer(maxPages, 30, 80);
@@ -258,7 +261,7 @@ export async function collectDayPhase(date, phase, {
   const links = [];
   let complete = false, reason = null;
   for (let page = 1; page <= limit; page++) {
-    const rows = await getDocuments(date, phase, page, { token });
+    const rows = await getDocuments(date, phase, page, { token,...(budget?{budget}:{}) });
     if (!Array.isArray(rows)) throw Error('Página documental CGU inválida');
     if (!rows.length) { complete = true; break; }
     const key = fingerprint(rows, ['documento', 'codigoUg', 'valor']);
@@ -277,8 +280,9 @@ export async function collectDayPhase(date, phase, {
   if (phase === 2) {
     for (const doc of found.values()) {
       if (doc.cents !== null) continue;
+      if(budget?.stopped())break;
       const resolved = await resolveLiquidation(doc.id, {
-        token, maxPages: maxImpactPages, request: getImpacts
+        token, maxPages: maxImpactPages, request: getImpacts,budget
       });
       if (resolved.cents === null) continue;
       doc.cents = resolved.cents;
