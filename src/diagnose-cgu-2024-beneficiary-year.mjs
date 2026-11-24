@@ -194,8 +194,10 @@ export async function diagnoseBeneficiaryYear2024({
  const id=missing[0];
  let payload,meta;
  try{payload=await fetchDetail(id,{token});}
- catch(error)return {status:'detail_unavailable',pending:1,
-   reason:safeError(error)};
+ catch(error){
+   return {status:'detail_unavailable',pending:1,
+     reason:safeError(error)};
+ }
  try{meta=summarizeOriginalIssueFields(id,payload);}
  catch{return {status:'detail_invalid',pending:1};}
  if(!meta.identityConfirmed||!meta.phaseConfirmed)
