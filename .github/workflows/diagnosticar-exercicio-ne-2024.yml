@@ -1,0 +1,32 @@
+name: Confrontar exercicio NE 2024 por favorecido CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/diagnose-cgu-2024-beneficiary-year.mjs'
+      - '.github/workflows/diagnosticar-exercicio-ne-2024.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnosticar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar codigo e protecao dos arquivos
+        run: |
+          npm run check:syntax
+          node --test test/diagnose-cgu-2024-beneficiary-year.test.mjs
+          npm run check:data
+      - name: Confrontar somente um empenho pela rota oficial com filtro anual
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: npm run diagnose:cgu-2024-beneficiary-year

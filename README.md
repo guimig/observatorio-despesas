@@ -366,3 +366,7 @@ Para a única NE de 2024 cujo detalhe CGU retornou data de exercício posterior,
 ### Verificação segura de autenticação da CGU
 
 O workflow `diagnosticar-cronologia-ne-2024.yml` executa um preflight autenticado em três rotas oficiais, usando uma NE controle já confirmada no catálogo, **antes** da única sondagem de emissão. O Secret deve ser interpolado exatamente por `CGU_API_KEY: ${{ secrets.CGU_API_KEY }}`, sem barra invertida literal antes do cifrão. Os testes automatizados verificam essa configuração para evitar regressões. Respostas 401/403 interrompem a investigação sem repetição contínua e não são interpretadas como ausência de documentos. O comando `npm run check:cgu-access` precisa de uma chave configurada no ambiente seguro; nunca inserir o valor diretamente em comandos, repositório ou logs.
+
+### Verificação da NE 2024 por exercício de emissão (CGU)
+
+O diagnóstico `npm run diagnose:cgu-2024-beneficiary-year`, executado apenas no workflow `diagnosticar-exercicio-ne-2024.yml` com o Secret CGU, utiliza o endpoint oficial `despesas/documentos-por-favorecido` com filtros `ano=2024`, `fase=1`, `ug=158459` e CNPJ público identificado por consulta individual. Não consulta CPF e não guarda respostas brutas. A busca termina após no máximo quatro páginas; resposta truncada ou vazia **não** comprova ausência no SIAFI. Um documento encontrado confirma apenas a correspondência na seleção anual da API — não a data exata de emissão, que continua exigindo fonte verificável.
