@@ -270,7 +270,7 @@ A interface distingue:
 
 O desenvolvimento agora segue o [Plano Diretor v0.2](docs/PLANO-DIRETOR.md) e as [instruções para agentes e contribuidores](AGENTS.md). Implementar código, executar um workflow e homologar indicadores contábeis são estágios **distintos**.
 
-`npm run audit:baseline` apresenta agregados de documentos, enriquecimentos e cobertura histórica; `node src/diagnose-coverage.mjs --audit-md` produz um resumo Markdown (sem números de documentos individuais) nos checks de CI e nas recuperações históricas CGU. A auditoria considera meses ainda sem arquivos, dias encerrados ausentes e dias com alguma fase incompleta, usando `2025-01` como limite inicial. Indicadores não permitem concluir que o acervo de pagamentos está conciliado ou que ausência de documento equivale a gasto zero.
+`npm run audit:baseline` apresenta agregados de documentos, enriquecimentos e cobertura histórica; `node src/diagnose-coverage.mjs --audit-md` produz um resumo Markdown (sem números de documentos individuais) nos checks de CI e nas recuperações históricas CGU. A auditoria considera meses ainda sem arquivos, dias encerrados ausentes e dias com alguma fase incompleta, usando `2024-01` como limite inicial. Indicadores não permitem concluir que o acervo de pagamentos está conciliado ou que ausência de documento equivale a gasto zero.
 
 A recuperação histórica mantém **um lote diário com três dias elegíveis** e permite execução manual entre um e sete dias. Após três falhas consecutivas observadas em 22/11/2026, a ampliação da frequência foi bloqueada até diagnóstico. A próxima execução registra categorias técnicas de falha sem payloads, chaves ou IDs; os checkpoints íntegros são preservados.
 
@@ -377,4 +377,8 @@ Após a busca de 2024 sem correspondência, o workflow `diagnosticar-exercicio-n
 
 ### Recuperação dirigida de NEs do mesmo exercício
 
-O workflow de recuperação de origens CGU agora prioriza NEs referenciadas por NS/OB/DF do mesmo exercício (`CGU_ORIGINAL_SCOPE=same_year`). O limite agendado é três consultas por rodada, com mesma frequência. A opção manual `interannual` mantém a investigação de exercícios anteriores e `all` reúne ambos; relações futuras e sem documento de impacto canônico não são elegíveis. A consulta individual conserva cobertura parcial, não representa saldo RAP e não integra Tesouro Gerencial. A divergência da NE de 2024 está documentada em [fontes e prioridades](docs/FONTES-API-PRIORIDADES.md).
+O workflow de recuperação de origens CGU inclui NEs referenciadas por NS/OB/DF do mesmo exercício e de exercícios anteriores a partir de 2024 (`CGU_ORIGINAL_SCOPE=all`). O limite agendado é três consultas por rodada, com mesma frequência. A opção manual `interannual` mantém a investigação de exercícios anteriores e `all` reúne ambos; relações futuras e sem documento de impacto canônico não são elegíveis. A consulta individual conserva cobertura parcial, não representa saldo RAP e não integra Tesouro Gerencial. A divergência da NE de 2024 está documentada em [fontes e prioridades](docs/FONTES-API-PRIORIDADES.md).
+
+### Recorte e manutenção do acervo
+
+O recorte inicial é 01/01/2024. Consulte [a política de recuperação histórica](docs/recorte-historico.md). A rotina `revisar-cgu-historico.yml` reconsulta até quatro fases completas por dia, prioriza NEs com impactos recentes e mantém o checkpoint operacional fora do Git. Respostas parciais, ausência conflitante de documento confirmado e datas divergentes não substituem o acervo. Os intervalos de 7/30/90 dias definem elegibilidade, não prazo garantido de atualização. A cobertura atual e as falhas ficam nos resumos de execução.

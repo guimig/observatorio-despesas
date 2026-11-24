@@ -9,3 +9,7 @@ Inicio fixo: 01/01/2024 (inclusive). Fim: dia corrente, com a CGU consultando di
 - Sem Tesouro Gerencial, sem snapshots redundantes e sem tolerancia minima para alteracoes materiais.
 
 O recorte e uma politica de recuperacao, nao declaracao de cobertura ja completa. Revisao periodica de documentos completos, limites de API e lacunas de fontes ainda exigem monitoramento.
+
+## Revisao de cobertura completa
+
+Uma rodada diaria independente revisa ate quatro fases de dias anteriores a janela corrente de sete dias. Prioriza NEs impactadas por liquidacoes/pagamentos recentes e reserva capacidade para demais documentos. Intervalos de elegibilidade: 7 dias para NEs ativas, 30 para fases com documentos, 90 para fases vazias. Novo impacto posterior a consulta torna a fase novamente elegivel. Nao e SLA: a capacidade e limitada e as APIs podem falhar. Estado por data/fase, cache descartavel com limites comuns. A listagem oficial por emissao/fase e usada em vez de atribuir data de emissao pelo detalhe CGU ambiguo; desaparecimento de registro confirmado, erro ou retorno parcial e tratado como conflito, nao como anulacao. Mudancas de valor invalidam enriquecimentos conforme o fluxo canonico.
