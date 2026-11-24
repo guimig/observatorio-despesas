@@ -180,7 +180,7 @@ test('consulta PNCP completa sem NE da UG e revalidada apos 30 dias',()=>{
  const withNe=applyCommitmentResult(original,base().id,{
   status:'complete',refs:[ne]
  },new Date('2026-10-15T12:00:00Z')).data;
- assert.equal(planCommitmentChecks(withNe,{now,count:8}).length,0);
+ assert.equal(planCommitmentChecks(withNe,{now,count:8}).length,1);
 });
 test('consultas nunca realizadas tem prioridade sobre vazios a revalidar',()=>{
  const now=new Date('2026-11-20T12:00:00Z');

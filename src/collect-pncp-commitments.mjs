@@ -16,16 +16,13 @@ export function planCommitmentChecks(catalog,{
   const due=(contract)=>{
     if(recheck)return true;
     if(!contract.commitmentStatus)return true;
-    // Uma consulta completa sem NE da UG não comprova ausência definitiva.
-    // Revalidar somente resultados vazios após 30 dias, sem sobrecarregar PNCP.
-    if(contract.commitmentStatus==='complete' &&
-       Array.isArray(contract.commitmentRefs) && contract.commitmentRefs.length>0)return false;
+    // Resultados positivos tambem precisam de revisao periodica.
     if(!contract.commitmentAt)return true;
     const time=new Date(contract.commitmentAt+'T00:00:00Z').valueOf();
     const interval=contract.commitmentStatus==='complete'?30:7;
     return Number.isFinite(time) && now.getTime()-time>=interval*86400000;
   };
-  return (catalog?.contracts||[])
+  const eligible=(catalog?.contracts||[])
     .filter(c=>c.source==='pncp'&&due(c))
     .sort((a,b)=>{
       const score=c=>{
@@ -40,7 +37,16 @@ export function planCommitmentChecks(catalog,{
         b.publishedMonth.localeCompare(a.publishedMonth)||
         a.id.localeCompare(b.id);
     })
-    .slice(0,limit).map(c=>({id:c.id,pncpId:c.pncpId}));
+    ;
+  const pending=eligible.filter(c=>c.commitmentStatus!=='complete');
+  const review=eligible.filter(c=>c.commitmentStatus==='complete');
+  const slot=Math.floor(now.getTime()/86400000);
+  const rotate=list=>list.length?list.slice(slot%list.length).concat(list.slice(0,slot%list.length)):[];
+  const quota=review.length&&limit>1?Math.max(1,Math.floor(limit/3)):0;
+  const selected=pending.slice(0,limit-quota);
+  selected.push(...rotate(review).slice(0,limit-selected.length));
+  selected.push(...pending.slice(selected.filter(c=>c.commitmentStatus!=='complete').length,selected.filter(c=>c.commitmentStatus!=='complete').length+limit-selected.length));
+  return selected.map(c=>({id:c.id,pncpId:c.pncpId}));
 }
 async function main(){
   const catalog=await readProcurement(process.cwd());
