@@ -472,10 +472,9 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
       if([...previous].some(key=>!current.has(key)))
         throw Error('Historico divergente exige revisao, sem sobrescrever eventos anteriores');
     }
-    const changedHistory=item.historyChecked!==true||JSON.stringify(item.movements)!==JSON.stringify(result.movements);
     item.historyChecked=true;
     item.movements=structuredClone(result.movements);
-    if(result.checkedAt&&(changedHistory||!item.historyCheckedAt))item.historyCheckedAt=result.checkedAt;
+    if(result.checkedAt)item.historyCheckedAt=result.checkedAt;
   }else throw Error('Tipo de enriquecimento não permitido');
   validateMonth(next);
   const withoutTimestamp=value=>{

@@ -68,10 +68,3 @@ test('HTTP 204 PNCP convertido em envelope dados vazio nao e erro',async()=>{
  const rows=await scanAtas(notice,{fetcher:async()=>({dados:[],totalPaginas:0})});
  assert.deepEqual(rows,[]);
 });
-
-import {mergeAtas as mergeForNoop} from '../src/pncp-atas-store.mjs';
-test('reconsulta vazia identica nao altera checkpoint canonico',()=>{
- const procurementId='10635424000186-1-000001/2026';
- const first=mergeForNoop(null,[{procurementId,atas:[]}],new Date('2026-10-01'));
- assert.deepEqual(mergeForNoop(first,[{procurementId,atas:[]}],new Date('2026-11-24')),first);
-});

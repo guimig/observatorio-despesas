@@ -39,9 +39,6 @@ export function mergeAtas(previous,results,now=new Date()){
   ataUrl(procurementId);
   if(!Array.isArray(atas)||atas.some(a=>a.procurementId!==procurementId))
    throw Error('Lote de atas invalido');
-  const old=data.atas.filter(a=>a.procurementId===procurementId);
-  const canonical=rows=>JSON.stringify(rows.map(a=>Object.fromEntries(Object.entries(a).sort(([x],[y])=>x.localeCompare(y)))).sort((a,b)=>a.id.localeCompare(b.id)));
-  if(data.checks.some(c=>c.procurementId===procurementId)&&canonical(old)===canonical(atas))continue;
   data.atas=data.atas.filter(a=>a.procurementId!==procurementId).concat(atas);
   data.checks=data.checks.filter(c=>c.procurementId!==procurementId);
   data.checks.push({procurementId,status:'complete',checkedAt:now.toISOString().slice(0,10)});
