@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {checkCguAccess,pickCguAccessControl}
@@ -88,4 +89,15 @@ test('sem Secret nenhuma consulta externa, sem informar que a credencial falhou'
  await assert.rejects(checkCguAccess({token:'SECRETO',
    control:{id:ne,date:'2026-11-14x'},fetchFn:async()=>reply()}),
    /Controle CGU invalido/);
+});
+
+test('workflow nunca prefixa a expressao secreta da CGU com barra invertida',async()=>{
+ const yaml=await readFile(new URL(
+   '../.github/workflows/diagnosticar-cronologia-ne-2024.yml',
+   import.meta.url),'utf8');
+ const good='CGU_API_KEY: ${{ secrets.CGU_API_KEY }}';
+ const bad='CGU_API_KEY: '+'\\'+'${{ secrets.CGU_API_KEY }}';
+ assert.equal(yaml.includes(bad),false);
+ assert.equal(yaml.split(good).length-1,3);
+ assert.match(yaml,/steps\.access\.outputs\.authorized == 'true'/);
 });
