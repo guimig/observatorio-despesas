@@ -13,11 +13,12 @@ on:
       - 'src/pncp-notices.mjs'
   schedule:
     - cron: '22 11 * * 2,5'
+    - cron: '22 16 * * *'
 permissions:
   contents: read
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 jobs:
   coletar:
     runs-on: ubuntu-22.04
@@ -43,6 +44,7 @@ jobs:
       - name: Consultar PNCP de todas as modalidades pelo CNPJ da Reitoria
         env:
           PNCP_NOTICE_MONTH: ${{ inputs.month }}
+          PNCP_NOTICE_HISTORICAL: ${{ github.event.schedule == '22 16 * * *' && 'true' || 'false' }}
         run: npm run collect:pncp-notices
       - name: Verificar integridade e privacidade
         run: npm run check:data

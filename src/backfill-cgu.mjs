@@ -1,3 +1,4 @@
+import {FIRST_MONTH} from './collection-scope.mjs';
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -30,7 +31,9 @@ async function main() {
     Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
   const month = await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
-    earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||'2025-01',
+    earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,
+    includeCurrent:true,
+    rotationSlot:process.env.BACKFILL_ROTATE==='true'?Math.floor(now.getTime()/43200000):null,
     now,loadExisting:readExisting,priorityYears,prioritize
   });
   if (!month) {

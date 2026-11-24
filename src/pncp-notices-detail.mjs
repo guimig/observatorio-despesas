@@ -1,3 +1,4 @@
+import {inScopePurchaseId,inScopeDate} from './collection-scope.mjs';
 /**
  * Recuperação pontual de licitações por ID oficial PNCP conhecido em um contrato.
  * Evita varrer desnecessariamente os 14 códigos de modalidade e todos os meses.
@@ -9,7 +10,7 @@ import {MODALITIES} from '../assets/pncp-modalities.js';
 const ID=/^10635424000186-1-(\d{6})\/(20\d{2})$/;
 export function noticeDetailUrl(id) {
   const m=ID.exec(String(id??''));
-  if(!m)throw Error('ID de contratação PNCP fora do cadastro da Reitoria');
+  if(!m||!inScopePurchaseId(id))throw Error('ID de contratação PNCP fora do cadastro ou recorte');
   return 'https://pncp.gov.br/api/consulta/v1/orgaos/10635424000186/compras/'+
     m[2]+'/'+Number(m[1]);
 }
@@ -22,7 +23,7 @@ export function normalizeNoticeDetail(raw,expectedId){
   if(!Object.hasOwn(MODALITIES,modality))
     throw Error('Modalidade PNCP não reconhecida no detalhe');
   const notice=normalizeNotice(raw,modality);
-  if(!notice||notice.pncpId!==expectedId)
+  if(!notice||notice.pncpId!==expectedId||!inScopeDate(notice.published))
     throw Error('Detalhe PNCP não supera validação pública');
   return notice;
 }
@@ -51,7 +52,7 @@ export function planMissingNotices(contracts,notices,{count=18}={}){
   const pending=new Map();
   for(const c of contracts?.contracts||[]) {
     const id=c.procurementId;
-    if(typeof id!=='string'||!ID.test(id)||known.has(id))continue;
+    if(typeof id!=='string'||!ID.test(id)||!inScopePurchaseId(id)||known.has(id))continue;
     const weight=c.process?.startsWith('23349.')?0:1;
     const prev=pending.get(id);
     if(!prev||weight<prev.weight)pending.set(id,{id,weight});

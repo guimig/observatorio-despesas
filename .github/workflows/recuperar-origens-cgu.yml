@@ -13,7 +13,7 @@ on:
         type: string
         required: false
       year:
-        description: 'Exercicio da NE (vazio = todos)'
+        description: 'Exercicio da NE a partir de 2024 (vazio = todos)'
         type: string
         required: false
         default: 'all'
@@ -21,7 +21,7 @@ on:
         description: 'Escopo: same_year, interannual ou all'
         type: choice
         required: false
-        default: 'same_year'
+        default: 'all'
         options: ['same_year','interannual','all']
   push:
     branches: [main]
@@ -36,7 +36,7 @@ permissions:
 
 concurrency:
   group: observatorio-coleta-main
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   recuperar:
@@ -74,7 +74,7 @@ jobs:
       - name: Planejar selecao sem requisicoes autenticadas
         if: steps.credential.outputs.enabled == 'true'
         env:
-          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'same_year' }}
+          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'all' }}
           CGU_ORIGINAL_YEAR: ${{ inputs.year || 'all' }}
         run: npm run recovery:cgu-plan >> "$GITHUB_STEP_SUMMARY"
       - name: Consultar NEs referenciadas no escopo selecionado
@@ -83,7 +83,7 @@ jobs:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           CGU_ORIGINAL_LIMIT: ${{ inputs.limit || '3' }}
           CGU_ORIGINAL_YEAR: ${{ inputs.year || 'all' }}
-          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'same_year' }}
+          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'all' }}
           CGU_ORIGINAL_SLOT: ${{ inputs.slot || '' }}
         run: npm run recover:cgu-originals
       - name: Validar arquivos mensais e manifesto apos a recuperacao

@@ -1,3 +1,4 @@
+import {inScopeDate} from './collection-scope.mjs';
 /**
  * Adaptador isolado da API CGU / Portal da Transparência.
  * Nunca retorna a resposta bruta aos arquivos públicos. Fonte do laboratório
@@ -63,7 +64,7 @@ export function datesBeforeToday(now = new Date(), lookback = 7) {
 }
 
 export function documentUrl(date, phase, page) {
-  isoDate(date);
+  if(!inScopeDate(isoDate(date)))throw Error('Consulta anterior ao recorte de 2024');
   if (!PHASES.includes(phase) || !Number.isSafeInteger(page) || page < 1) {
     throw Error('Parâmetros CGU inválidos');
   }
@@ -251,6 +252,7 @@ export async function collectDayPhase(date, phase, {
   token, maxPages = 30, maxImpactPages = 8,
   getDocuments = requestDocuments, getImpacts = requestImpacts
 } = {}) {
+  if(!inScopeDate(isoDate(date)))throw Error('Consulta anterior ao recorte de 2024');
   const limit = integer(maxPages, 30, 80);
   const found = new Map(), pageKeys = new Set();
   const links = [];
@@ -299,10 +301,10 @@ export async function collectWindow({
   maxImpactPages = 8, getDocuments = requestDocuments, getImpacts = requestImpacts
 } = {}) {
   if (!token) throw Error('CGU_API_KEY ausente');
-  const selected = dates === undefined ? datesBeforeToday(now, lookback) : dates;
+  const selected = dates === undefined ? datesBeforeToday(now, lookback).filter(d=>inScopeDate(isoDate(d))) : dates;
   if (!Array.isArray(selected) || selected.length < 1 || selected.length > 31 ||
       new Set(selected).size !== selected.length) throw Error('Janela de datas CGU inválida');
-  selected.forEach(isoDate); // Datas legíveis e existentes, sem receber texto arbitrário.
+  selected.forEach(d=>{if(!inScopeDate(isoDate(d)))throw Error('Consulta anterior ao recorte de 2024')}); // Datas legíveis e existentes, sem receber texto arbitrário.
   const queries = selected.flatMap(date => PHASES.map(phase => ({ date, phase })));
   // Concorrência baixa para evitar cota CGU. Nenhuma resposta bruta é persistida.
   const output = new Array(queries.length);

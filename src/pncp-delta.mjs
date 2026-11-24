@@ -1,3 +1,4 @@
+import {FIRST_DATE,inScopeMonth} from './collection-scope.mjs';
 /**
  * Atualizacoes PNCP por data: somente registros contratuais ja catalogados.
  * ID PNCP nao identifica automaticamente a NE financeira da UG 158459.
@@ -57,7 +58,7 @@ export function planPncpDelta(catalog,{now=new Date(),days=3}={}){
  return {from,to,initial:!last};
 }
 export function pncpDeltaUrl(from,to,org,page=1){
- if(!isDate(from)||!isDate(to)||from>to||
+ if(!isDate(from)||!isDate(to)||from<FIRST_DATE||from>to||
     (Date.parse(to)-Date.parse(from))/DAY>6||
     !PNCP_DELTA_ORGS.includes(org)||
     !Number.isSafeInteger(page)||page<1||page>MAX_PAGES)
@@ -151,7 +152,7 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
  const next=structuredClone(previous);
  const index=new Map(next.contracts.map((x,i)=>[x.id,i]));
  const pending=new Map((previous.pncpDelta?.pendingPublications||[])
-   .map(item=>[item.id,item]));
+   .filter(item=>inScopeMonth(item.publishedMonth)).map(item=>[item.id,item]));
  const seen=new Set(),summary={
    scanned:0,matched:0,unmatched:0,changedRecords:0,
    materialChanges:0,stale:0,pages:0,newlyQueued:0,
@@ -168,6 +169,7 @@ export function applyPncpDelta(catalog,plan,scans,{now=new Date()}={}){
         typeof record.id!=='string'||!record.id.startsWith('pncp:'+org+'-2-')||
         seen.has(record.id))throw problem('invalid_or_repeated_id');
      seen.add(record.id);summary.scanned++;
+     if(!inScopeMonth(record.publishedMonth))continue;
      const position=index.get(record.id);
      if(position===undefined){
        summary.unmatched++;

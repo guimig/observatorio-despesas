@@ -1,3 +1,4 @@
+import {assertScopeMonth} from './collection-scope.mjs';
 /** Fontes públicas de contratos, com escopos separados IFC x Campus Araquari. */
 import { parseMoneyCents } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
@@ -61,6 +62,7 @@ function amount(value){
 }
 export function monthBounds(month,now=new Date()){
   if(!VALID_MONTH.test(month))throw Error('Competência inválida');
+  assertScopeMonth(month);
   const [year,number]=month.split('-').map(Number);
   const end=new Date(Date.UTC(year,number,0)).toISOString().slice(0,10);
   const today=new Date(now).toISOString().slice(0,10);

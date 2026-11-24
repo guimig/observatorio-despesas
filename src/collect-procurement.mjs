@@ -1,3 +1,4 @@
+import {planCatalogMonth} from './collection-scope.mjs';
 /** Coleta independente de PNCP e Compras.gov, sem chave ou documentos brutos. */
 import {fileURLToPath} from 'node:url';
 import {CAMPUS_UG,monthBounds,scanPncp,scanCompras,HttpFailure} from './procurement.mjs';
@@ -10,9 +11,12 @@ function selectedMonth(){
   return process.env.PROC_MONTH||now;
 }
 async function main(){
-  const month=selectedMonth();
-  monthBounds(month); // impede parâmetros livres ou competências incorretas
   const previous=await readProcurement(process.cwd());
+  const historical=!process.env.PROC_MONTH&&process.env.PROC_HISTORICAL==='true';
+  const plan=historical?planCatalogMonth(previous?.coverage,{keys:['pncp','compras'],kind:'source'}):null;
+  if(historical&&!plan){console.log('Cobertura historica contratual completa no recorte.');return}
+  const month=plan?.month||selectedMonth();
+  monthBounds(month);
   if(process.argv.includes('--dry-run')){
     console.log('Plano de consulta pública: PNCP (CNPJ campus e Reitoria) + Compras.gov (UG '+
       CAMPUS_UG+'); competência '+month+'; '+(previous?.contracts?.length??0)+
@@ -21,6 +25,7 @@ async function main(){
   }
   const scans=[];
   for(const [source,action] of [['pncp',scanPncp],['compras',scanCompras]]){
+    if(plan&&!plan.pending.includes(source))continue;
     try{
       const result=await action(month,{maxPages:15});
       const status=result.skipped?'partial':'complete';
