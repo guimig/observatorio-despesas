@@ -1,4 +1,4 @@
-name: Recuperar origens CGU de NEs interanuais - por codigo
+name: Recuperar origens CGU de NEs referenciadas - por codigo
 on:
   workflow_dispatch:
     inputs:
@@ -14,10 +14,15 @@ on:
         required: false
       year:
         description: 'Exercicio da NE (vazio = todos)'
-        type: choice
+        type: string
         required: false
         default: 'all'
-        options: ['all','2024','2025']
+      scope:
+        description: 'Escopo: same_year, interannual ou all'
+        type: choice
+        required: false
+        default: 'same_year'
+        options: ['same_year','interannual','all']
   push:
     branches: [main]
     paths:
@@ -68,22 +73,19 @@ jobs:
           npm run check:data
       - name: Planejar selecao sem requisicoes autenticadas
         if: steps.credential.outputs.enabled == 'true'
+        env:
+          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'same_year' }}
+          CGU_ORIGINAL_YEAR: ${{ inputs.year || 'all' }}
         run: npm run recovery:cgu-plan >> "$GITHUB_STEP_SUMMARY"
-      - name: Consultar somente NEs com relacao interanual identificada
+      - name: Consultar NEs referenciadas no escopo selecionado
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-          # Uma unica rodada de recuperacao prioritaria das cinco NEs
-          # de 2025 no merge; o agendamento diario volta ao limite 3.
-          CGU_ORIGINAL_LIMIT: ${{ github.event_name == 'push' && '5' || inputs.limit || '3' }}
-          CGU_ORIGINAL_YEAR: ${{ github.event_name == 'push' && '2025' || inputs.year || 'all' }}
-          CGU_ORIGINAL_SLOT: ${{ github.event_name == 'push' && '0' || inputs.slot || '' }}
+          CGU_ORIGINAL_LIMIT: ${{ inputs.limit || '3' }}
+          CGU_ORIGINAL_YEAR: ${{ inputs.year || 'all' }}
+          CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'same_year' }}
+          CGU_ORIGINAL_SLOT: ${{ inputs.slot || '' }}
         run: npm run recover:cgu-originals
-      - name: Diagnosticar datas da NE 2024 sem alterar arquivo e sem expor dados
-        if: steps.credential.outputs.enabled == 'true' && github.event_name == 'push'
-        env:
-          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-        run: npm run diagnose:cgu-original-date
       - name: Validar arquivos mensais e manifesto apos a recuperacao
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
@@ -99,7 +101,7 @@ jobs:
             echo 'Nenhum documento de origem CGU incorporado.'
             exit 0
           fi
-          git commit -m 'data: recuperar origens CGU de NEs interanuais por identificador'
+          git commit -m 'data: recuperar origens CGU de NEs referenciadas por identificador'
           git push origin HEAD:main
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:

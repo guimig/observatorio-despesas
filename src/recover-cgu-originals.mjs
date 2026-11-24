@@ -1,5 +1,5 @@
 /**
- * Recupera por codigo completo apenas NE de exercicio anterior ja referenciada
+ * Recupera por codigo completo NE do mesmo exercicio ou anterior ja referenciada
  * por NS/OB/DF canonicos. A consulta individual NAO cobre o dia/mes inteiro.
  * Nenhum corpo bruto, token, ID, valor ou favorecido e impresso no runner.
  */
@@ -76,7 +76,8 @@ function dayBeforeToday(now){
 }
 
 /** Selecao somente de relacoes estruturadas NS/OB/DF -> NE. */
-export function missingReferencedNe(sources){
+export function missingReferencedNe(sources,{scope='interannual'}={}){
+ if(!['interannual','same_year','all'].includes(scope))throw Error('Escopo NE invalido');
  if(!Array.isArray(sources))throw Error('Acervo de origem invalido');
  const originals=new Set(),owners=new Map(),relations=[];
  for(const month of sources){
@@ -88,7 +89,7 @@ export function missingReferencedNe(sources){
        const existing=owners.get(doc.id);
        if(existing&&existing.date!==doc.date)
          throw Error('Origem de impacto divergente no acervo');
-       owners.set(doc.id,{year:Number(PARENT.exec(doc.id)[1]),phase:doc.phase});
+       owners.set(doc.id,{year:Number(PARENT.exec(doc.id)[1]),phase:doc.phase,date:doc.date});
      }
    }
    for(const rel of month.relations)relations.push(rel);
@@ -98,7 +99,9 @@ export function missingReferencedNe(sources){
    const year=NOTE.exec(row?.to||''),from=PARENT.exec(row?.from||'');
    const owner=owners.get(row?.from);
    if(!year||!from||!owner||originals.has(row.to))continue;
-   if(owner.year>Number(year[1]))targets.add(row.to);
+   const targetYear=Number(year[1]);
+   if((scope!=='same_year'&&owner.year>targetYear)||
+      (scope!=='interannual'&&owner.year===targetYear))targets.add(row.to);
  }
  return [...targets].sort((a,b)=>a.slice(11,15).localeCompare(b.slice(11,15))||
    a.localeCompare(b));
@@ -239,15 +242,15 @@ const byYear=targets=>targets.reduce((obj,id)=>{
  */
 export async function recoverReferencedNe({
  root=process.cwd(),token,now=new Date(),limit=3,slot=0,
- year=null,dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
+ year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
 }={}){
  if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)))
    throw Error('Exercicio CGU de destino invalido');
  const months=await readSources(root);
- const missing=missingReferencedNe(months);
+ const missing=missingReferencedNe(months,{scope});
  const eligible=year===null?missing:missing.filter(id=>id.slice(11,15)===year);
  const selected=chooseNeBatch(eligible,{limit,slot});
- const output={status:dryRun?'dry_run':'complete',missing:missing.length,
+ const output={status:dryRun?'dry_run':'complete',scope,missing:missing.length,
    missingByYear:byYear(missing),eligible:eligible.length,
    selected:byYear(selected),attempted:0,
    recovered:0,unchanged:0,failures:{}};
@@ -310,8 +313,9 @@ async function main(){
    const year=!selectedYear||selectedYear==='all'?null:selectedYear;
    const result=await recoverReferencedNe({root:resolve(process.cwd()),
      token:process.env.CGU_API_KEY,limit:max,slot,year,
+     scope:process.env.CGU_ORIGINAL_SCOPE||'interannual',
      dryRun:process.argv.includes('--dry-run')});
-   console.log('NEs de exercicios anteriores: '+JSON.stringify(result)+
+   console.log('NEs referenciadas: '+JSON.stringify(result)+
      '. Consulta individual nao equivale a cobertura diaria, RP inscrito ou saldo.');
    // Falhas de API sem novos documentos mantem a fila; um problema de esquema
    // nunca deve ser disfarçado de cobertura integral.
