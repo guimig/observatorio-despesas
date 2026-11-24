@@ -244,6 +244,12 @@ async function main(){
     try{
       if(statePath&&kind==='itemHistory'&&old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements))
         delete result.checkedAt;
+      if(kind==='liquidation'&&doc.cents===null&&outcome.links.length&&before.coverage.some(c=>c.date===doc.date&&c.phase===2&&c.complete)){
+        const total=outcome.links.reduce((n,l)=>n+BigInt(l.cents),0n);
+        if(total<=BigInt(Number.MAX_SAFE_INTEGER)&&total>=BigInt(Number.MIN_SAFE_INTEGER)){
+          result.kind='liquidationValue';result.cents=Number(total);
+        }
+      }
       await persistEnrichment(root,month,id,result,new Date());
       if(statePath){
         const after=await readMonth(root,month);

@@ -253,7 +253,7 @@ export async function resolveLiquidation(id, {
 
 export async function collectDayPhase(date, phase, {
   token, maxPages = 30, maxImpactPages = 8,
-  getDocuments = requestDocuments, getImpacts = requestImpacts, budget
+  getDocuments = requestDocuments, getImpacts = requestImpacts, budget, deferLiquidationValues=false
 } = {}) {
   if(!inScopeDate(isoDate(date)))throw Error('Consulta anterior ao recorte de 2024');
   const limit = integer(maxPages, 30, 80);
@@ -277,7 +277,7 @@ export async function collectDayPhase(date, phase, {
   if (!complete && !reason) reason = 'limite_paginas';
 
   let unresolvedLinks = 0;
-  if (phase === 2) {
+  if (phase === 2 && !deferLiquidationValues) {
     for (const doc of found.values()) {
       if (doc.cents !== null) continue;
       if(budget?.stopped())break;
@@ -286,6 +286,7 @@ export async function collectDayPhase(date, phase, {
       });
       if (resolved.cents === null) continue;
       doc.cents = resolved.cents;
+      doc.valueSource = 'impactos_cgu';
       links.push(...resolved.links);
       unresolvedLinks += resolved.unlinked || 0;
     }

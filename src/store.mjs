@@ -52,7 +52,7 @@ export function validateMonth(data) {
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
       'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
-      'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion']);
+      'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion', 'valueSource']);
     if(doc.itemsDetailVersion!==undefined&&doc.itemsDetailVersion!==2)
       throw Error('Versao de enriquecimento de itens invalida');
     if(doc.itemsDetailVersion===2&&!Object.hasOwn(data.itemsByDocument||{},doc.id))
@@ -97,7 +97,10 @@ export function validateMonth(data) {
       !doc.date.startsWith(data.month) || !phases.has(doc.phase) || ids.has(doc.id)) {
       throw Error('Documento público inválido ou duplicado');
     }
-    assertCents(doc.cents); ids.add(doc.id);
+    assertCents(doc.cents);
+    if(doc.valueSource!==undefined&&(doc.valueSource!=='impactos_cgu'||doc.phase!==2||doc.cents===null))
+      throw Error('Proveniencia monetaria invalida');
+    ids.add(doc.id);
   }
   // A aparicao em outro filtro da API nao constitui outro documento nem
   // comprova uma nova operacao de liquidacao/pagamento.
@@ -426,7 +429,23 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   if(!doc)throw Error('Documento não encontrado no JSON mensal');
   const next=structuredClone(original);
   const target=next.documents.find(item=>item.id===id);
-  if(result.kind==='liquidation'){
+  if(result.kind==='liquidationValue'){
+    if(target.phase!==2||!Array.isArray(result.links)||!result.links.length||
+       result.links.some(link=>link.from!==id||!Number.isSafeInteger(link.cents))||
+       !Number.isSafeInteger(result.cents)||result.links.reduce((n,l)=>n+BigInt(l.cents),0n)!==BigInt(result.cents))
+      throw Error('Valor de liquidacao sem impactos completos e identificados');
+    // Recuperacao de lacuna, nunca retificacao de valor documental existente.
+    if(target.cents!==null)return {changed:false,data:original};
+    const coverage=next.coverage.find(c=>c.date===target.date&&c.phase===2);
+    if(!coverage?.complete||coverage.invalid<1)throw Error('Listagem da fase ainda nao concluida');
+    target.cents=result.cents;target.valueSource='impactos_cgu';target.liquidationLinksChecked=true;
+    coverage.invalid--;
+    next.relations=next.relations.filter(link=>link.from!==id);
+    next.relations.push(...structuredClone(result.links));
+    next.relations.sort((a,b)=>a.from.localeCompare(b.from)||a.to.localeCompare(b.to)||a.cents-b.cents);
+    // Uma aparicao em outro filtro nao ganha valor ou igualdade presumida.
+    for(const o of next.phaseObservations||[])if(o.id===id)o.amountRelation='unknown';
+  }else if(result.kind==='liquidation'){
     if(target.phase!==2||!Array.isArray(result.links)||
        result.links.some(link=>link.from!==id))throw Error('Vínculos de liquidação inválidos');
     if(!result.links.length&&next.relations.some(link=>link.from===id))

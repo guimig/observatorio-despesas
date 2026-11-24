@@ -25,6 +25,7 @@ export function safeFailureCategory(error){
   const status=Number(error?.status ?? error?.statusCode);
   if(Number.isInteger(status)&&status>=400&&status<=599)return 'http_'+status;
   const code=String(error?.code||'').toUpperCase();
+  if(code==='CGU_BUDGET_STOP')return 'budget_deferred';
   if(code==='CGU_DOC_COLLISION_DATE')return 'document_duplicate_other_date';
   if(code==='CGU_DOC_COLLISION_PHASE')return 'document_duplicate_other_phase';
   if(code==='CGU_DOC_COLLISION_BOTH')return 'document_duplicate_date_and_phase';
@@ -56,11 +57,12 @@ export function safeFailureCategory(error){
   return known.get(error?.message)||'validation_or_other';
 }
 
-export function phasesMissingOnDate(existing,date,{recheck=false}={}){
+export function phasesMissingOnDate(existing,date,{recheck=false,listingOnly=false}={}){
   const iso=isoDate(date);
   if(recheck)return [...PHASES];
   return PHASES.filter(phase=>!existing?.coverage?.some(c=>c.date===iso&&
-    c.phase===phase&&c.complete===true&&c.invalid===0));
+    c.phase===phase&&c.complete===true&&(c.invalid===0||listingOnly&&phase===2&&
+      c.invalid===(existing.documents||[]).filter(d=>d.date===iso&&d.phase===2&&d.cents===null).length)));
 }
 
 /** Checkpoints sao gravados individualmente; somente fases sem cobertura completa sao chamadas.
@@ -68,20 +70,26 @@ export function phasesMissingOnDate(existing,date,{recheck=false}={}){
  * O chamador recebe apenas contagens e categorias, sem identificadores de documentos.
  */
 export async function collectHistoricalDate({
-  date,existing=null,recheck=false,collect,persist,logger=()=>{}
+  date,existing=null,recheck=false,listingOnly=false,shouldStop=()=>false,collect,persist,logger=()=>{}
 }={}){
   if(typeof collect!=='function'||typeof persist!=='function')throw Error('Operadores historicos invalidos');
-  const pending=phasesMissingOnDate(existing,date,{recheck});
-  const completed=new Set([1,2,3].filter(phase=>!pending.includes(phase)));
+  const pending=phasesMissingOnDate(existing,date,{recheck,listingOnly});
+  const missing=phasesMissingOnDate(existing,date,{recheck});
+  const completed=new Set([1,2,3].filter(phase=>!missing.includes(phase)));
   const failures={},attempted=[];
-  let documents=0,consulted=0;
+  let documents=0,consulted=0,deferred=0;
   for(const phase of pending){
+    if(shouldStop()){deferred+=pending.length-attempted.length;break;}
     attempted.push(phase);
     let patch;
     try{
       patch=await collect(date,phase);
     }catch(error){
       const category=safeFailureCategory(error);
+      if(category==='budget_deferred'){
+        deferred+=1+pending.length-attempted.length;
+        logger({date,phase,status:'deferred',category});break;
+      }
       failures[category]=(failures[category]||0)+1;
       logger({date,phase,status:'failed',category});
       continue;
@@ -108,6 +116,6 @@ export async function collectHistoricalDate({
     logger({date,phase,status:patch.coverage.complete&&patch.coverage.invalid===0?
       'complete':'partial',count:patch.documents.length});
   }
-  return {date,attempted,consulted,documents,fullyComplete:completed.size===3,
+  return {date,attempted,consulted,documents,deferred,fullyComplete:completed.size===3,
     failed:Object.values(failures).reduce((n,v)=>n+v,0),failures};
 }
