@@ -34,9 +34,15 @@ jobs:
         run: |
           npm test
           npm run check:data
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/observatorio-ata-state.json
+          key: ata-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ata-state-v1-
       - name: Consultar atas de compras SRP publicadas
         env:
           PNCP_ATA_LIMIT: '12'
+          ATA_STATE_PATH: ${{ runner.temp }}/observatorio-ata-state.json
         run: npm run collect:pncp-atas
       - name: Validar catalogo minimo
         run: npm run check:data
@@ -57,6 +63,10 @@ jobs:
           git commit -m 'data: atualizar atas PNCP'
           git push origin HEAD:main
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/observatorio-ata-state.json
+          key: ata-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: coletar
     if: needs.coletar.outputs.changed == 'true'
