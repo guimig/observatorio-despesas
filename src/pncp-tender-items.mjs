@@ -3,6 +3,7 @@ import {procurementItemsUrl} from './audit-pncp-procurement-items.mjs';
 import {requestPublicJSON} from './procurement.mjs';
 import {publicItemDescription} from './enrich-cgu.mjs';
 import {assertPublicSafe} from './privacy.mjs';
+import {inScopePurchaseId} from './collection-scope.mjs';
 const ID=/^(10635424000186|10635424000348)-1-\d{6}\/20\d{2}$/;
 export function normalizeTenderItem(row,pncpId){
  if(!ID.test(pncpId)||!row||typeof row!=='object')return null;
@@ -14,7 +15,7 @@ export function normalizeTenderItem(row,pncpId){
  return assertPublicSafe(item);
 }
 export async function fetchTenderItems(pncpId,{fetcher=requestPublicJSON,maxPages=100}={}){
- if(!ID.test(pncpId)||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)
+ if(!ID.test(pncpId)||!inScopePurchaseId(pncpId)||!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>100)
   throw Error('Consulta de itens invalida');
  const records=[],seen=new Set();let total=null;
  for(let page=1;page<=maxPages;page++){

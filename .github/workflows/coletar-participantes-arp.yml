@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +36,9 @@ jobs:
         run: npm run collect:pncp-ata-participants
       - run: npm run check:data
       - name: Persistir apenas evidencias institucionais
+        id: commit
         run: |
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
           if [ ! -f data/procurement/ata-participants.json ]; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
@@ -42,3 +46,12 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'data: atualizar participacao em atas PNCP'
           bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: coletar
+    if: needs.coletar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml

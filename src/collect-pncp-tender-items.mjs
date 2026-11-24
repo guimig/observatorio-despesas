@@ -1,6 +1,9 @@
 import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {fetchTenderItems} from './pncp-tender-items.mjs';
+import {inScopePurchaseId} from './collection-scope.mjs';
+import {validateResults,fetchItemResults,applyItemResults,planItemResults,resultKey} from './pncp-item-results.mjs';
+import {readOperationalState,saveOperationalState} from './operational-state.mjs';
 import {assertPublicSafe} from './privacy.mjs';
 const path='data/procurement/tender-items.json';
 const ID=/^(10635424000186|10635424000348)-1-\d{6}\/20\d{2}$/;
@@ -19,8 +22,9 @@ export function validateTenderCatalog(data,notices){
     !Number.isSafeInteger(item.number)||item.number<1||nums.has(item.number)||
     !Number.isFinite(item.quantity)||item.quantity<0||item.quantity>1e12||
     typeof item.description!=='string'||!item.description||item.description.length>240||
-    Object.keys(item).some(k=>!['pncpId','number','description','quantity','scope'].includes(k)))
+    Object.keys(item).some(k=>!['pncpId','number','description','quantity','scope','results'].includes(k)))
     throw Error('Item de licitacao invalido');
+   if(Object.hasOwn(item,'results'))validateResults(item.results);
    nums.add(item.number);
   }
  }
@@ -29,7 +33,7 @@ export function validateTenderCatalog(data,notices){
 export function planTenderItems(notices,procedures,limit=5,slot=0){
  if(!Number.isSafeInteger(limit)||limit<1||limit>10||!Number.isSafeInteger(slot)||slot<0)throw Error('Limite ou rodada invalida');
  const known=new Set(procedures.map(p=>p.pncpId));
- const pending=notices.filter(n=>n.srp===true&&!known.has(n.pncpId))
+ const pending=notices.filter(n=>inScopePurchaseId(n.pncpId)&&!known.has(n.pncpId))
   .sort((a,b)=>a.pncpId.localeCompare(b.pncpId));
  if(!pending.length)return [];
  // Alternar o ponto inicial a cada dia impede que uma falha persistente bloqueie o acervo.
@@ -43,7 +47,7 @@ async function main(){
  validateTenderCatalog(data,notices);
  const slot=Math.floor(Date.now()/86400000);
  const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||5),slot);
- console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,srpNotices:notices.filter(n=>n.srp===true).length,already:data.procedures.length,selected:plan.length,remaining:notices.filter(n=>n.srp===true).length-data.procedures.length}));
+ console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,srpNotices:notices.filter(n=>n.srp===true).length,already:data.procedures.length,selected:plan.length,remaining:notices.filter(n=>inScopePurchaseId(n.pncpId)&&!data.procedures.some(p=>p.pncpId===n.pncpId)).length}));
  if(process.argv.includes('--dry-run'))return;
  let success=0,failed=0;
  for(const notice of plan){
@@ -53,12 +57,31 @@ async function main(){
    success++;
   }catch(e){failed++;console.warn('Falha na consulta de itens: '+notice.pncpId+'; dados parciais descartados');}
  }
- if(success){
+ const statePath=process.env.PNCP_RESULT_STATE_PATH;
+ const state=await readOperationalState(statePath);
+ const resultPlan=planItemResults(data.procedures,{state,limit:Number(process.env.PNCP_RESULT_LIMIT||15),slot});
+ const deadline=Date.now()+4*60*1000;
+ let resultSuccess=0,resultFailed=0,resultChanged=0,resultRows=0;
+ for(const item of resultPlan){
+  if(Date.now()>=deadline)break;
+  try{
+   const results=await fetchItemResults(item);
+   const next=applyItemResults(item,results);
+   const procedure=data.procedures.find(p=>p.pncpId===item.pncpId);
+   const idx=procedure.items.findIndex(i=>i.number===item.number);
+   if(next!==item){procedure.items[idx]=next;resultChanged++}
+   delete state[resultKey(item)];state[resultKey(next)]=new Date().toISOString().slice(0,10);
+   resultSuccess++;resultRows+=results.length;
+  }catch(e){resultFailed++;console.warn('Consulta de resultados PNCP nao concluida: '+(e.status?'HTTP '+e.status:'formato ou divergencia'));if([401,403,429].includes(e.status))break;}
+ }
+ if(success||resultChanged){
   data.procedures.sort((a,b)=>a.pncpId.localeCompare(b.pncpId));
   validateTenderCatalog(data,notices);
   try{await writeFile(path+'.tmp',JSON.stringify(data)+'\n');await rename(path+'.tmp',path)}
   catch(e){await unlink(path+'.tmp').catch(()=>{});throw e}
  }
+ await saveOperationalState(statePath,state);
+ console.log('Resultados PNCP (contagens): '+JSON.stringify({planned:resultPlan.length,success:resultSuccess,failed:resultFailed,changed:resultChanged,rows:resultRows,checked:data.procedures.reduce((n,p)=>n+p.items.filter(i=>Object.hasOwn(i,'results')).length,0)}));
  console.log('Itens licitados: '+JSON.stringify({success,failed,procedures:data.procedures.length,
   items:data.procedures.reduce((n,p)=>n+p.items.length,0)}));
 }

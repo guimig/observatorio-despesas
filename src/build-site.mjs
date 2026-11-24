@@ -50,6 +50,10 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   } catch(e) { if(e.code!=='ENOENT')throw e; }
   try{participants=validateParticipantReferences(JSON.parse(await readFile(join(base,'data','procurement','ata-participants.json'),'utf8')),atas.atas)}
   catch(e){if(e.code!=='ENOENT')throw e}
+  if(participants){
+    await mkdir(join(output,'data','procurement'),{recursive:true});
+    await copyFile(join(base,'data','procurement','ata-participants.json'),join(output,'data','procurement','ata-participants.json'));
+  }
   const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
   for (const month of manifest.months) {
