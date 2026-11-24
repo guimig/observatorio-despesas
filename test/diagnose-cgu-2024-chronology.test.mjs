@@ -100,7 +100,7 @@ test('fonte incompleta, paginas repetidas e rate limit nao viram data confirmada
    token:'SECRET',requestDayFn:async()=>({data:[]})
  });
  assert.equal(invalid.status,'invalid_page');
- assert.throws(()=>checkEmissionListing(ne,'2025-01-01'),/incompatível/);
+ await assert.rejects(checkEmissionListing(ne,'2025-01-01'),/incompatível/);
 });
 test('historico de item sozinho nao autoriza data de emissao',async()=>{
  let listCalls=0;
