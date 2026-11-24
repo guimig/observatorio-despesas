@@ -1,4 +1,6 @@
 import {FIRST_MONTH} from './collection-scope.mjs';
+import {planAdaptiveBackfill} from './backfill-adaptive.mjs';
+import {createCguBudget,BACKFILL_LIMITS} from './cgu-budget.mjs';
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -29,7 +31,9 @@ async function main() {
   if(!['auto','true','false'].includes(preference)) throw Error('Preferência de prioridade inválida');
   const prioritize=preference==='true'||(preference==='auto' &&
     Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
-  const month = await chooseHistoricalMonth({
+  const adaptive=process.env.BACKFILL_ADAPTIVE==='true'&&!process.env.BACKFILL_MONTH&&process.env.BACKFILL_RECHECK!=='true';
+  const adaptivePlan=adaptive?await planAdaptiveBackfill({now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize}):null;
+  const month = adaptive?adaptivePlan.tasks[0]?.month:await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
     earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,
     includeCurrent:true,
@@ -49,14 +53,14 @@ async function main() {
     recheck: process.env.BACKFILL_RECHECK === 'true',
     dayOffset: rotation ? epochDay*batchDays : 0
   };
-  const days = planHistoricalDays(options);
+  const days = adaptive?adaptivePlan.tasks:planHistoricalDays(options).map(date=>({month,date}));
   if (!days.length) {
     console.log('Nenhum dia elegível para coleta histórica em ' + month +
       '. Cobertura existente preservada.');
     return;
   }
   console.log('Modo de recuperação: '+(prioritize?'NEs referenciadas sem documento':'cobertura recente')+'. Anos pendentes: '+priorityYears.join(', '));
-  console.log('Plano histórico: ' + month + '; ' + days.length +
+  console.log('Plano histórico: ' + (adaptive?'adaptativo, '+adaptivePlan.eligibleMonths+' competencias elegiveis':month) + '; ' + days.length +
     ' dia(s) elegível(is) para o lote.');
   if (process.argv.includes('--dry-run')) {
     console.log('Simulação: nenhuma consulta e nenhum arquivo gravado.');
@@ -64,14 +68,17 @@ async function main() {
   }
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
-  let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0;
+  const budget=createCguBudget();
+  let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0,attemptedDays=0,attemptedPhases=0,consultedPhases=0;
   const failureKinds={};
-  for(const date of days){
+  for(const {month,date} of days){
+    if(budget.stopped())break;
+    attemptedDays++;
     const monthData=await readExisting(month);
     const result=await collectHistoricalDate({
       date,existing:monthData,recheck:options.recheck,
       collect:(value,phase)=>collectDayPhase(value,phase,{
-        token,maxPages:process.env.CGU_MAX_PAGES || 30,
+        token,budget,maxPages:process.env.CGU_MAX_PAGES || 30,
         maxImpactPages:process.env.CGU_MAX_IMPACT_PAGES || 8
       }),
       persist:async patch=>{
@@ -100,12 +107,16 @@ async function main() {
     });
     if(result.fullyComplete)completedDays++;
     if(result.consulted>0 && !result.fullyComplete)partiallyRecoveredDays++;
+    attemptedPhases+=result.attempted.length;
+    consultedPhases+=result.consulted;
     failedPhases+=result.failed;
     totalDocs+=result.documents;
     for(const [kind,n] of Object.entries(result.failures))
       failureKinds[kind]=(failureKinds[kind]||0)+n;
   }
   await validatePublishedData(process.cwd());
+  const measurement=budget.snapshot();
+  console.log('Telemetria CGU backfill: '+JSON.stringify({adaptive,plannedDays:days.length,attemptedDays,completedDays,partiallyRecoveredDays,attemptedPhases,consultedPhases,failedPhases,documents:totalDocs,...measurement,limits:BACKFILL_LIMITS}));
   console.log('Resultado da coleta histórica: '+completedDays+
     ' dia(s) com tres fases completas; '+partiallyRecoveredDays+
     ' dia(s) com novas fases mas incompletos; '+failedPhases+

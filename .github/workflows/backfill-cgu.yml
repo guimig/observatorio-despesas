@@ -97,13 +97,16 @@ jobs:
           BACKFILL_MONTH: ${{ inputs.month }}
           BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2024-01' }}
           BACKFILL_DAYS: ${{ inputs.days || '5' }}
+          BACKFILL_ADAPTIVE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
           BACKFILL_ROTATE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           BACKFILL_PRIORITY_REFERENCES: ${{ github.event_name == 'push' && 'true' || inputs.priority_references || 'auto' }}
           CGU_MAX_PAGES: '30'
           CGU_MAX_IMPACT_PAGES: '8'
-        run: npm run backfill:cgu
+        run: |
+          set -o pipefail
+          npm run backfill:cgu | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Diagnosticar cobertura após o lote
         if: steps.credential.outputs.enabled == 'true'
         run: npm run diagnose:coverage
@@ -128,7 +131,7 @@ jobs:
             exit 0
           fi
           git commit -m 'data: acrescentar lote historico CGU validado'
-          git push origin HEAD:main
+          bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
 
   publicar:
