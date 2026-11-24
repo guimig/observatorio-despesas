@@ -61,9 +61,19 @@ async function main(){
     const r=await safeGet(pncpUrl(begin,end));
     console.log('PNCP contratos '+begin+': '+JSON.stringify(safeSummary(r)));
   }
-  const uasg=await safeGet(comprasUasgUrl());
-  console.log('Compras UASG: '+JSON.stringify(safeSummary(uasg)));
-  const list=uasg.body?.resultado;
+  const variants=[
+    ['campus_documentado',C+'/modulo-uasg/1_consultarUasg?pagina=1&codigoUasg=158459&statusUasg=true'],
+    ['campus_sem_status',C+'/modulo-uasg/1_consultarUasg?pagina=1&codigoUasg=158459'],
+    ['controle_reitoria',C+'/modulo-uasg/1_consultarUasg?pagina=1&codigoUasg=158125&statusUasg=true']
+  ];
+  let uasg=null;
+  for(const [label,url] of variants){
+    const result=await safeGet(url);
+    console.log('Compras UASG '+label+': '+JSON.stringify(safeSummary(result)));
+    const rows=result.body?.resultado??result.body?.dados??result.body?.data;
+    if(!uasg&&Array.isArray(rows)&&rows.some(r=>String(r.codigoUasg)==='158459'))uasg=result;
+  }
+  const list=uasg?.body?.resultado??uasg?.body?.dados??uasg?.body?.data;
   const org=Array.isArray(list)?
     list.find(row=>String(row.codigoUasg)==='158459')?.codigoOrgao:null;
   if (org && /^\d{3,9}$/.test(String(org))) {

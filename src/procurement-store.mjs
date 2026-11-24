@@ -166,12 +166,13 @@ export function validateProcurement(data){
   }
   const coverageKeys=new Set();
   for(const c of data.coverage){
-    exactKeys(c,['source','month','status','count','skipped','httpStatus']);
+    exactKeys(c,['source','month','status','count','skipped','httpStatus','closedMonth']);
     if(!SOURCE.has(c.source)||!MONTH.test(c.month) ||
        !['complete','partial','unavailable'].includes(c.status)||
        (c.count!==undefined&&(!Number.isSafeInteger(c.count)||c.count<0))||
        (c.skipped!==undefined&&(!Number.isSafeInteger(c.skipped)||c.skipped<0))||
        (c.httpStatus!==undefined&&(!Number.isInteger(c.httpStatus)||c.httpStatus<0||c.httpStatus>599))||
+       (c.closedMonth!==undefined&&(c.closedMonth!==true||c.status!=='complete'))||
        coverageKeys.has(c.source+'/'+c.month))throw Error('Cobertura contratual inválida');
     coverageKeys.add(c.source+'/'+c.month);
     if(c.status==='complete'&&c.skipped>0)throw Error('Cobertura completa apesar de registros rejeitados');
@@ -189,7 +190,7 @@ export function mergeProcurement(current,scans,now=new Date()){
   const previous=validateProcurement(structuredClone(current??blankProcurement()));
   const next=structuredClone(previous);
   for(const scan of scans){
-    const {source,month,records,skipped=0,status='complete',httpStatus}=scan;
+    const {source,month,records,skipped=0,status='complete',httpStatus,closedMonth}=scan;
     if(!SOURCE.has(source)||!MONTH.test(month)||!Array.isArray(records)||
        !['complete','partial','unavailable'].includes(status)||
        !Number.isSafeInteger(skipped)||skipped<0)throw Error('Lote contratual inválido');
@@ -245,7 +246,7 @@ export function mergeProcurement(current,scans,now=new Date()){
     }
     next.coverage=next.coverage.filter(item=>item.source!==source||item.month!==month);
     next.coverage.push({source,month,status,...(status==='unavailable'?
-      {httpStatus:httpStatus??0}:{count:records.length,skipped})});
+      {httpStatus:httpStatus??0}:{count:records.length,skipped,...(status==='complete'&&(closedMonth===true||before?.closedMonth===true)?{closedMonth:true}:{})})});
   }
   next.contracts.sort((a,b)=>a.source.localeCompare(b.source)||a.id.localeCompare(b.id));
   next.coverage.sort((a,b)=>a.month.localeCompare(b.month)||a.source.localeCompare(b.source));

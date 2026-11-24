@@ -40,17 +40,24 @@ test('recuperacao pontual PNCP nao consulta IDs originarios anteriores ao corte'
 });
 test('fila mensal historica ignora competencias completas e roda falhas persistentes',()=>{
  const now=new Date('2024-04-05T15:00:00Z');
- const coverage=[{month:'2024-01',source:'pncp',status:'complete',skipped:0},{month:'2024-01',source:'compras',status:'unavailable'},
- {month:'2024-02',source:'pncp',status:'complete',skipped:0},{month:'2024-02',source:'compras',status:'complete',skipped:0}];
+ const coverage=[{month:'2024-01',source:'pncp',status:'complete',skipped:0,closedMonth:true},{month:'2024-01',source:'compras',status:'unavailable'},
+ {month:'2024-02',source:'pncp',status:'complete',skipped:0,closedMonth:true},{month:'2024-02',source:'compras',status:'complete',skipped:0,closedMonth:true}];
  const opts={keys:['pncp','compras'],kind:'source',now,slot:0};
  assert.deepEqual(planCatalogMonth(coverage,opts),{month:'2024-03',missing:['pncp','compras'],pending:['pncp','compras']});
- const completed=coverage.concat([{month:'2024-03',source:'pncp',status:'complete',skipped:0},{month:'2024-03',source:'compras',status:'complete',skipped:0}]);
+ const completed=coverage.concat([{month:'2024-03',source:'pncp',status:'complete',skipped:0,closedMonth:true},{month:'2024-03',source:'compras',status:'complete',skipped:0,closedMonth:true}]);
  assert.deepEqual(planCatalogMonth(completed,opts),{month:'2024-01',missing:[],pending:['compras']});
- assert.equal(planCatalogMonth(completed.map(c=>({...c,status:'complete'})),opts),null);
+ assert.equal(planCatalogMonth(completed.map(c=>({...c,status:'complete',closedMonth:true})),opts),null);
 });
 test('rodizio CGU inclui lacunas do mes corrente e avanca entre competencias',async()=>{
  const now=new Date('2024-03-10T12:00:00Z');
  assert.equal(await chooseHistoricalMonth({now,includeCurrent:true,rotationSlot:0}),'2024-01');
  assert.equal(await chooseHistoricalMonth({now,includeCurrent:true,rotationSlot:1}),'2024-02');
  assert.equal(await chooseHistoricalMonth({now,includeCurrent:true,rotationSlot:2}),'2024-03');
+});
+
+test('consulta integral durante o mes nao dispensa fechamento posterior',()=>{
+ const coverage=[{month:'2024-01',source:'pncp',status:'complete',skipped:0}];
+ const opts={keys:['pncp'],kind:'source',now:new Date('2024-02-01T12:00:00Z'),slot:0};
+ assert.deepEqual(planCatalogMonth(coverage,opts),{month:'2024-01',missing:[],pending:['pncp']});
+ assert.equal(planCatalogMonth([{...coverage[0],closedMonth:true}],opts),null);
 });

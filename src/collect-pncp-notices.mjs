@@ -1,4 +1,4 @@
-import {planCatalogMonth} from './collection-scope.mjs';
+import {planCatalogMonth,brazilMonth} from './collection-scope.mjs';
 /** Backfill mensal de todas modalidades do PNCP publicadas pela Reitoria. */
 import {fileURLToPath} from 'node:url';
 import {monthBounds,HttpFailure} from './procurement.mjs';
@@ -24,6 +24,7 @@ async function main(){
       ' contratações já normalizadas, nenhum acesso externo ou gravação.');
     return;
   }
+  const closedMonth=selected<brazilMonth();
   const scans=[];let failed=0,total=0;
   for(const raw of Object.keys(MODALITIES)){
     const modality=Number(raw);
@@ -32,7 +33,7 @@ async function main(){
       const result=await scanNotices(selected,modality,{maxPages:20});
       const status=result.skipped?'partial':'complete';
       scans.push({month:selected,modality,status,
-        records:result.records,skipped:result.skipped});
+        records:result.records,skipped:result.skipped,...(status==='complete'&&closedMonth?{closedMonth:true}:{})});
       total+=result.records.length;
       console.log('Modalidade '+modality+': '+result.records.length+
         ' publicação(ões) válida(s); '+result.skipped+

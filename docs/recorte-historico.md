@@ -17,3 +17,11 @@ Uma rodada diaria independente revisa ate quatro fases de dias anteriores a jane
 ## Dimensionamento adaptativo e telemetria
 
 Nos dois disparos agendados, a recuperação histórica planeja até 21 dias de várias competências e encerra o lote ao atingir 120 tentativas HTTP, oito minutos de orçamento de novas chamadas ou bloqueio 401/403/429. Uma sequência de três erros de transporte/5xx também interrompe novas consultas. Intervalo interno de 1,5 s entre chamadas, inclusive retries e consultas de impacto. Estes são limites conservadores do projeto, não cotas declaradas da CGU; uma requisição já iniciada pode terminar depois do orçamento temporal. O modo manual mantém a seleção por competência e até sete dias. Resumo por execução: dias, fases, documentos, chamadas, categorias HTTP e tempo, sem novo histórico persistente. Quando a main muda durante a coleta, backfill e delta PNCP podem retentar o push uma única vez, somente com arquivos de dados disjuntos e validação após rebase; conflito no mesmo arquivo interrompe sem sobrescrever dados.
+
+## Fechamento mensal e painel de cobertura
+
+A pagina inicial carrega sob demanda o resumo de cobertura desde 01/01/2024, gerado exclusivamente no dist/ a partir dos JSONs canonicos validados. Nao versionar o indice, nao duplicar documentos e nao armazenar payloads. Data documental, ultima gravacao, data de revisao registrada e janela de delta PNCP sao distintos; o cache descartavel nao e prova publica da ultima consulta de cada registro. Mes sem arquivo permanece sem cobertura, nao despesa zero.
+
+A cobertura de contratos e licitacoes por mes fechado exige `closedMonth:true` obtido em consulta completa de competencia ja encerrada. A consulta integral do mes em andamento ou um checkpoint legado sem essa evidencia volta a fila de fechamento. Aditivos, cancelamentos e saldos nao sao inferidos.
+
+Metas propostas para homologacao: cobertura de todos os dias encerrados nas tres fases; zero lacunas de NEs em escopo sem causa documentada; contabilizar separadamente vinculos, itens e historicos pendentes; contratos/licitacoes com fechamento por fonte/modalidade. Enquanto isso, rotular cobertura parcial. O indice nao garante SLA nem prova conciliacao. Aferir desempenho em desktop/mobile e com acervo maior antes da homologacao final.

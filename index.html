@@ -42,6 +42,10 @@
     </div>
     <div id="status" role="status" aria-live="polite" class="notice">Verificando o acervo publicado…</div>
 
+    <details class="panel coverage-panel" id="historical-coverage">
+      <summary><strong>Cobertura histórica e atualidade</strong><span>Desde 01/01/2024 · indicadores de coleta e lacunas</span></summary>
+      <div id="coverage-content" class="coverage-content" aria-live="polite"><p class="helper">Abra para carregar o resumo do acervo, sem baixar os documentos mensais.</p></div>
+    </details>
     <section id="dashboard" hidden>
       <div class="toolbar panel">
         <div>
@@ -363,5 +367,6 @@
     <div class="container"><span>Observatório de Despesas · Projeto público experimental</span><span>Fonte oficial CGU · Dados minimizados · Sem integração com Tesouro Gerencial</span></div>
   </footer>
   <script type="module" src="./assets/app.js"></script>
+  <script type="module" src="./assets/coverage-panel.js"></script>
 </body>
 </html>

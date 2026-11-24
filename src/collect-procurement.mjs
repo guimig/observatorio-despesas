@@ -1,4 +1,4 @@
-import {planCatalogMonth} from './collection-scope.mjs';
+import {planCatalogMonth,brazilMonth} from './collection-scope.mjs';
 /** Coleta independente de PNCP e Compras.gov, sem chave ou documentos brutos. */
 import {fileURLToPath} from 'node:url';
 import {CAMPUS_UG,monthBounds,scanPncp,scanCompras,HttpFailure} from './procurement.mjs';
@@ -23,13 +23,14 @@ async function main(){
       ' contrato(s) no acervo. Nenhuma API consultada ou arquivo modificado.');
     return;
   }
+  const closedMonth=month<brazilMonth();
   const scans=[];
   for(const [source,action] of [['pncp',scanPncp],['compras',scanCompras]]){
     if(plan&&!plan.pending.includes(source))continue;
     try{
       const result=await action(month,{maxPages:15});
       const status=result.skipped?'partial':'complete';
-      scans.push({source,month,status,records:result.records,skipped:result.skipped});
+      scans.push({source,month,status,records:result.records,skipped:result.skipped,...(status==='complete'&&closedMonth?{closedMonth:true}:{})});
       console.log('Fonte '+source+': '+result.records.length+' contrato(s) normalizados; '+
         result.skipped+' registro(s) fora do esquema; estado '+status+'.');
     }catch(error){

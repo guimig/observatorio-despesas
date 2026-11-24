@@ -2,7 +2,7 @@ name: Diagnosticar APIs PNCP e Compras.gov sem dados pessoais
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/diagnostico-contratos.yml']
+    paths: ['.github/workflows/diagnostico-contratos.yml','src/inspect-procurement.mjs']
   workflow_dispatch:
 permissions:
   contents: read

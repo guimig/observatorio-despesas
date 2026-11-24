@@ -77,10 +77,11 @@ export function validateNotices(data){
   }
   const cover=new Set();
   for(const c of data.coverage){
-    whitelist(c,['month','modality','status','count','skipped','httpStatus']);
+    whitelist(c,['month','modality','status','count','skipped','httpStatus','closedMonth']);
     const k=c.month+'/'+c.modality;
     if(!MONTH.test(c.month)||!Object.hasOwn(MODALITIES,c.modality)||
        !['complete','partial','unavailable'].includes(c.status)||cover.has(k)||
+       (c.closedMonth!==undefined&&(c.closedMonth!==true||c.status!=='complete'))||
        c.count!==undefined&&(!Number.isSafeInteger(c.count)||c.count<0)||
        c.skipped!==undefined&&(!Number.isSafeInteger(c.skipped)||c.skipped<0)||
        c.httpStatus!==undefined&&(!Number.isInteger(c.httpStatus)||
@@ -108,7 +109,7 @@ export function mergeNotices(previous,scans,now=new Date()){
   const before=validateNotices(structuredClone(previous||blankNotices()));
   const next=structuredClone(before);
   for(const scan of scans){
-    const {month,modality,status,records=[],skipped=0,httpStatus}=scan;
+    const {month,modality,status,records=[],skipped=0,httpStatus,closedMonth}=scan;
     if(!MONTH.test(month)||!Object.hasOwn(MODALITIES,modality)||
        !['complete','partial','unavailable'].includes(status)||
        !Array.isArray(records)||!Number.isSafeInteger(skipped)||skipped<0){
@@ -143,7 +144,7 @@ export function mergeNotices(previous,scans,now=new Date()){
     }
     next.coverage=next.coverage.filter(c=>!(c.month===month&&c.modality===Number(modality)));
     next.coverage.push({month,modality:Number(modality),status,
-      ...(status==='unavailable'?{httpStatus:httpStatus??0}:{count:records.length,skipped})});
+      ...(status==='unavailable'?{httpStatus:httpStatus??0}:{count:records.length,skipped,...(status==='complete'&&(closedMonth===true||current?.closedMonth===true)?{closedMonth:true}:{})})});
   }
   next.notices.sort((a,b)=>a.id.localeCompare(b.id));
   next.coverage.sort((a,b)=>a.month.localeCompare(b.month)||a.modality-b.modality);
