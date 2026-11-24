@@ -49,6 +49,7 @@
     "pncp-recovery:plan": "node src/recover-pncp-publications.mjs --dry-run",
     "audit:cgu-interannual": "node src/audit-cgu-interannual.mjs",
     "recover:cgu-originals": "node src/recover-cgu-originals.mjs",
-    "recovery:cgu-plan": "node src/recover-cgu-originals.mjs --dry-run"
+    "recovery:cgu-plan": "node src/recover-cgu-originals.mjs --dry-run",
+    "diagnose:cgu-original-date": "node src/recover-cgu-originals.mjs --diagnose-oldest"
   }
 }

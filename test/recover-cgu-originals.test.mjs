@@ -5,7 +5,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {
  missingReferencedNe,chooseNeBatch,normalizeOriginalDetail,
- fetchCguOriginal,recoverReferencedNe
+ fetchCguOriginal,recoverReferencedNe,summarizeOriginalIssueFields,
+ diagnoseOldestIssueDate
 } from '../src/recover-cgu-originals.mjs';
 import {applyTargetedOriginal,emptyMonth,mergeMonth,validateMonth}
  from '../src/store.mjs';
@@ -224,5 +225,89 @@ test('diagnostico separa fase, emissao e identidade sem registrar ID, CPF ou seg
      assert.equal(JSON.stringify(result).includes('SEGREDO_CGU'),false);
      assert.equal(JSON.stringify(result).includes(note24),false);
    }
+ });
+});
+
+test('selecao exclusiva de 2025 nao consulta NE de 2024 bloqueada por data',async()=>{
+ await temporary(async root=>{
+   const seen=[];
+   const result=await recoverReferencedNe({root,now,token:'SECRET',year:'2025',
+     limit:5,slot:0,wait:async()=>{},fetchFn:async url=>{
+       const id=url.split('/').pop();
+       seen.push(id);
+       assert.equal(id,note25);
+       return json(detail(id,{data:'2025-08-07'}));
+     }});
+   assert.equal(result.missing,2);
+   assert.equal(result.eligible,1);
+   assert.deepEqual(result.selected,{'2025':1});
+   assert.equal(result.recovered,1);
+   assert.deepEqual(seen,[note25]);
+   const data=JSON.parse(await readFile(join(root,'data','months','2025-08.json'),'utf8'));
+   assert.equal(data.coverage[0].complete,false);
+   assert.equal(data.coverage[0].reason,'consulta_individual');
+   const plan=await recoverReferencedNe({root,now,year:'2025',dryRun:true});
+   assert.equal(plan.eligible,0);
+   assert.equal(plan.missing,1);
+   const remaining=await recoverReferencedNe({root,now,token:'SECRET',
+     year:'2025',fetchFn:async()=>{throw Error('Nao consultar novamente');}});
+   assert.equal(remaining.status,'no_eligible');
+   assert.equal(remaining.attempted,0);
+   await assert.rejects(recoverReferencedNe({root,now,year:'2025NE',
+     dryRun:true}),/Exercicio/);
+ });
+});
+test('confronto de campos CGU expõe so relacao com o ano da NE',()=>{
+ const check=summarizeOriginalIssueFields(note24,detail(note24,{
+   data:'2025-02-01',dataEmissao:'2024-06-03',
+   dataDocumento:'2024-06-02',fase:'Empenho'
+ }),{now});
+ assert.deepEqual(check.dateClasses,{
+   data:'after_ne_year',dataEmissao:'same_ne_year',
+   dataDocumento:'same_ne_year'
+ });
+ assert.equal(check.dataMatchesEmissao,false);
+ assert.equal(check.identityConfirmed,true);
+ assert.equal(check.phaseConfirmed,true);
+ assert.equal(JSON.stringify(check).includes(note24),false);
+ for(const raw of ['2025-02-01','2024-06-03','SECRET','CPF'])
+   assert.equal(JSON.stringify(check).includes(raw),false);
+ const noDate=summarizeOriginalIssueFields(note24,detail(note24,{
+   data:null,dataEmissao:'31/02/2024',dataDocumento:undefined
+ }),{now});
+ assert.deepEqual(noDate.dateClasses,{
+   data:'not_provided',dataEmissao:'invalid_or_unknown',
+   dataDocumento:'not_provided'
+ });
+ const later=summarizeOriginalIssueFields(note24,detail(note24,{
+   data:'2027-01-01'
+ }),{now});
+ assert.equal(later.dateClasses.data,'future');
+});
+test('diagnostico de 2024 consulta uma nota sem gravar resposta ou competencia',async()=>{
+ await temporary(async root=>{
+   const before=await readFile(join(root,'data','months','2026-11.json'),'utf8');
+   let calls=0;
+   const result=await diagnoseOldestIssueDate({root,now,token:'SECRET',
+     fetchFn:async url=>{
+       calls++;
+       assert.equal(url.endsWith(note24),true);
+       return json(detail(note24,{
+         data:'2025-06-07',dataEmissao:'2024-06-03',
+         observacao:'CPF 000.123.456-78'
+       }));
+     }});
+   assert.equal(calls,1);
+   assert.equal(result.status,'observed');
+   assert.equal(result.sampled,1);
+   assert.equal(result.dateClasses.data,'after_ne_year');
+   assert.equal(result.dateClasses.dataEmissao,'same_ne_year');
+   assert.equal(result.dataMatchesEmissao,false);
+   assert.equal(JSON.stringify(result).includes(note24),false);
+   assert.equal(JSON.stringify(result).includes('000.123.456-78'),false);
+   assert.equal(await readFile(join(root,'data','months','2026-11.json'),'utf8'),before);
+   const denied=await diagnoseOldestIssueDate({root,now,token:'SECRET',
+     fetchFn:async()=>json('not found',404)});
+   assert.deepEqual(denied,{status:'unavailable',sampled:1,reason:'http_404'});
  });
 });

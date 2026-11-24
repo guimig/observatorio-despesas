@@ -33,6 +33,39 @@ function dateFromSource(value){
    date=match[3]+'-'+match[2]+'-'+match[1];
  return validIso(date)?date:null;
 }
+/** Apenas classes derivadas de campos fixos, nunca valores ou datas da CGU. */
+export function summarizeOriginalIssueFields(id,payload,{now=new Date()}={}){
+ if(!NOTE.test(id)||!payload||typeof payload!=='object'||
+    Array.isArray(payload)||!(now instanceof Date)||
+    !Number.isFinite(now.getTime()))throw coded('detail_invalid');
+ const expectedYear=NOTE.exec(id)[1],latest=dayBeforeToday(now);
+ const classify=value=>{
+   if(value===undefined||value===null||value==='')return 'not_provided';
+   const parsed=dateFromSource(value);
+   if(!parsed)return 'invalid_or_unknown';
+   if(parsed>latest)return 'future';
+   if(parsed.slice(0,4)<expectedYear)return 'before_ne_year';
+   if(parsed.slice(0,4)>expectedYear)return 'after_ne_year';
+   return 'same_ne_year';
+ };
+ const data=dateFromSource(payload.data);
+ const emission=dateFromSource(payload.dataEmissao);
+ const docDate=dateFromSource(payload.dataDocumento);
+ const phase=typeof payload.fase==='string'?payload.fase.trim().toLowerCase()
+   .normalize('NFD').replace(/[\u0300-\u036f]/g,''):payload.fase;
+ return {
+   identityConfirmed:payload.documento===id&&String(payload.codigoUg)==='158459',
+   phaseConfirmed:[1,'1','empenho','empenhos','1 - empenho'].includes(phase),
+   dateClasses:{
+     data:classify(payload.data),
+     dataEmissao:classify(payload.dataEmissao),
+     dataDocumento:classify(payload.dataDocumento)
+   },
+   dataMatchesEmissao:data&&emission?data===emission:null,
+   dataMatchesDocumento:data&&docDate?data===docDate:null,
+   caution:'Classificacao de data nao prova emissao; nenhum campo alternativo foi incorporado'
+ };
+}
 function dayBeforeToday(now){
  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-US',{
    timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'
@@ -206,14 +239,19 @@ const byYear=targets=>targets.reduce((obj,id)=>{
  */
 export async function recoverReferencedNe({
  root=process.cwd(),token,now=new Date(),limit=3,slot=0,
- dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
+ year=null,dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
 }={}){
+ if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)))
+   throw Error('Exercicio CGU de destino invalido');
  const months=await readSources(root);
  const missing=missingReferencedNe(months);
- const selected=chooseNeBatch(missing,{limit,slot});
+ const eligible=year===null?missing:missing.filter(id=>id.slice(11,15)===year);
+ const selected=chooseNeBatch(eligible,{limit,slot});
  const output={status:dryRun?'dry_run':'complete',missing:missing.length,
-   missingByYear:byYear(missing),selected:byYear(selected),attempted:0,
+   missingByYear:byYear(missing),eligible:eligible.length,
+   selected:byYear(selected),attempted:0,
    recovered:0,unchanged:0,failures:{}};
+ if(!dryRun&&!selected.length&&missing.length)output.status='no_eligible';
  if(dryRun||!selected.length)return output;
  if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
  for(const id of selected){
@@ -234,14 +272,44 @@ export async function recoverReferencedNe({
  if(Object.keys(output.failures).length)output.status='partial';
  return output;
 }
+/**
+ * Uma unica NE de 2024 em aberto, consultada somente para classificar
+ * a relacao de seus campos de data com o ano do codigo SIAFI.
+ * Nenhuma resposta, identificador, data exata ou documento e salvo.
+ */
+export async function diagnoseOldestIssueDate({
+ root=process.cwd(),token,now=new Date(),fetchFn=fetch,wait=delay
+}={}){
+ const missing=missingReferencedNe(await readSources(root));
+ const candidates=missing.filter(id=>id.slice(11,15)==='2024');
+ if(!candidates.length)return {status:'no_2024_pending',sampled:0};
+ if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
+ try{
+   const payload=await fetchCguOriginal(candidates[0],{token,fetchFn,wait});
+   return {status:'observed',sampled:1,
+     ...summarizeOriginalIssueFields(candidates[0],payload,{now})};
+ }catch(error){
+   return {status:'unavailable',sampled:1,reason:categorize(error)};
+ }
+}
 async function main(){
  try{
+   if(process.argv.includes('--diagnose-oldest')){
+     const diagnostic=await diagnoseOldestIssueDate({
+       root:resolve(process.cwd()),token:process.env.CGU_API_KEY
+     });
+     console.log('Diagnostico CGU de NE 2024 (somente classes): '+
+       JSON.stringify(diagnostic));
+     return;
+   }
    const max=Number(process.env.CGU_ORIGINAL_LIMIT??3);
    const slot=process.env.CGU_ORIGINAL_SLOT===undefined||
      process.env.CGU_ORIGINAL_SLOT===''?
        Math.floor(Date.now()/86400000):Number(process.env.CGU_ORIGINAL_SLOT);
+   const selectedYear=process.env.CGU_ORIGINAL_YEAR;
+   const year=!selectedYear||selectedYear==='all'?null:selectedYear;
    const result=await recoverReferencedNe({root:resolve(process.cwd()),
-     token:process.env.CGU_API_KEY,limit:max,slot,
+     token:process.env.CGU_API_KEY,limit:max,slot,year,
      dryRun:process.argv.includes('--dry-run')});
    console.log('NEs de exercicios anteriores: '+JSON.stringify(result)+
      '. Consulta individual nao equivale a cobertura diaria, RP inscrito ou saldo.');
