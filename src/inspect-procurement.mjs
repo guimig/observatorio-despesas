@@ -1,6 +1,7 @@
 /** Apenas diagnóstico do schema de APIs públicas; nunca persiste ou imprime respostas. */
 import { fileURLToPath } from 'node:url';
 import { structuralFields } from './inspect-cgu.mjs';
+import {comprasUrl,uasgUrl,normalizeCompras} from './procurement.mjs';
 const P='https://pncp.gov.br/api/consulta/v1/contratos';
 const C='https://dadosabertos.compras.gov.br';
 const campusCnpj='10635424000348';
@@ -17,16 +18,10 @@ export function pncpUrl(begin,end,page=1){
   });
 }
 export function comprasUasgUrl(){
-  return C+'/modulo-uasg/1_consultarUasg?'+new URLSearchParams({
-    codigoUasg:'158459',pagina:'1',tamanhoPagina:'10'
-  });
+  return uasgUrl();
 }
-export function comprasContractsUrl(org){
-  if(!/^\d{3,9}$/.test(String(org)))throw Error('Código de órgão ausente');
-  return C+'/modulo-contratos/1_consultarContratos?'+new URLSearchParams({
-    codigoOrgao:String(org),codigoUnidadeGestora:'158459',
-    pagina:'1',tamanhoPagina:'10'
-  });
+export function comprasContractsUrl(org,month='2026-11'){
+  return comprasUrl(org,month,1);
 }
 async function safeGet(url){
   for(let attempt=0;attempt<3;attempt++){
@@ -78,8 +73,12 @@ async function main(){
     list.find(row=>String(row.codigoUasg)==='158459')?.codigoOrgao:null;
   if (org && /^\d{3,9}$/.test(String(org))) {
     console.log('Compras código do órgão (não pessoal): '+String(org));
-    const c=await safeGet(comprasContractsUrl(org));
-    console.log('Compras contratos UG: '+JSON.stringify(safeSummary(c)));
+    for(const month of ['2024-12','2025-11','2026-11']){
+      const c=await safeGet(comprasContractsUrl(org,month));
+      const rows=c.body?.resultado??c.body?.dados??c.body?.data??[];
+      const accepted=Array.isArray(rows)?rows.filter(row=>normalizeCompras(row)?.publishedMonth===month).length:0;
+      console.log('Compras contratos UG '+month+': '+JSON.stringify({...safeSummary(c),accepted}));
+    }
   }else{
     console.log('Compras contratos UG: não consultado, código de órgão não confirmado');
   }
