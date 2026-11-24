@@ -26,7 +26,7 @@ jobs:
           npm run check:syntax
           node --test test/diagnose-cgu-2024-beneficiary-year.test.mjs
           npm run check:data
-      - name: Confrontar somente um empenho pela rota oficial com filtro anual
+      - name: Confrontar somente o ano posterior indicado no detalhe CGU
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-        run: npm run diagnose:cgu-2024-beneficiary-year
+        run: npm run diagnose:cgu-2024-beneficiary-year -- --detail-year

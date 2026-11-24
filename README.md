@@ -370,3 +370,7 @@ O workflow `diagnosticar-cronologia-ne-2024.yml` executa um preflight autenticad
 ### Verificação da NE 2024 por exercício de emissão (CGU)
 
 O diagnóstico `npm run diagnose:cgu-2024-beneficiary-year`, executado apenas no workflow `diagnosticar-exercicio-ne-2024.yml` com o Secret CGU, utiliza o endpoint oficial `despesas/documentos-por-favorecido` com filtros `ano=2024`, `fase=1`, `ug=158459` e CNPJ público identificado por consulta individual. Não consulta CPF e não guarda respostas brutas. A busca termina após no máximo quatro páginas; resposta truncada ou vazia **não** comprova ausência no SIAFI. Um documento encontrado confirma apenas a correspondência na seleção anual da API — não a data exata de emissão, que continua exigindo fonte verificável.
+
+### Confronto do exercício posterior indicado pela CGU
+
+Após a busca de 2024 sem correspondência, o workflow `diagnosticar-exercicio-ne-2024.yml` passa a executar `npm run diagnose:cgu-2024-beneficiary-year -- --detail-year`, apenas por push do código ou disparo manual. Consulta exclusivamente o ano posterior válido observado no detalhe CGU, por CNPJ PJ e identidade exata; não repete a consulta anual anterior. Não guarda dados nem atribui emissão, mesmo se houver correspondência. A hipótese serve para investigar o índice anual da fonte; a pendência histórica e o bloqueio de saldos RAP permanecem até evidência adequada. Veja [resultados e limites](docs/FONTES-API-PRIORIDADES.md).
