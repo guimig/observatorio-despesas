@@ -311,3 +311,46 @@ test('diagnostico de 2024 consulta uma nota sem gravar resposta ou competencia',
    assert.deepEqual(denied,{status:'unavailable',sampled:1,reason:'http_404'});
  });
 });
+
+test('escopo mesmo exercicio seleciona somente NE vinculada de mesmo ano, nao futura ou orfa',()=>{
+ const same=prefix+'2026NE000091',future=prefix+'2027NE000001';
+ const m=references();
+ m[0].relations.push({from:ns,to:same,cents:0},
+   {from:ob,to:same,cents:100},{from:ns,to:future,cents:0},
+   {from:prefix+'2026NS000099',to:prefix+'2026NE000092',cents:0});
+ assert.deepEqual(missingReferencedNe(m,{scope:'same_year'}),[same]);
+ assert.equal(missingReferencedNe(m,{scope:'all'}).length,4);
+ assert.throws(()=>missingReferencedNe(m,{scope:'unknown'}));
+ m[0].documents.push({id:same,date:'2026-10-10',phase:1});
+ assert.deepEqual(missingReferencedNe(m,{scope:'same_year'}),[]);
+});
+test('recuperacao do mesmo exercicio usa origem confirmada e preserva cobertura parcial',async()=>{
+ await temporary(async root=>{
+   const path=join(root,'data','months','2026-11.json');
+   const m=JSON.parse(await readFile(path,'utf8'));
+   const same=prefix+'2026NE000091';
+   m.relations.push({from:ns,to:same,cents:100});
+   await writeFile(path,JSON.stringify(m));
+   const seen=[];
+   const plan=await recoverReferencedNe({root,now,scope:'same_year',dryRun:true});
+   assert.equal(plan.missing,1);
+   assert.equal(plan.attempted,0);
+   const result=await recoverReferencedNe({root,now,scope:'same_year',
+     token:'SECRET',slot:0,wait:async()=>{},fetchFn:async url=>{
+       seen.push(url.split('/').pop());
+       return json(detail(same,{data:'2026-10-10'}));
+     }});
+   assert.deepEqual(seen,[same]);
+   assert.equal(result.recovered,1);
+   const d=JSON.parse(await readFile(join(root,'data','months','2026-10.json'),'utf8'));
+   assert.equal(d.coverage[0].complete,false);
+   assert.equal(d.coverage[0].reason,'consulta_individual');
+   assert.equal(JSON.stringify(result).includes(same),false);
+   const repeat=await recoverReferencedNe({root,now,scope:'same_year',dryRun:true});
+   assert.equal(repeat.missing,0);
+ });
+});
+test('origem de impacto repetida com a mesma data nao gera conflito artificial',()=>{
+ const m=references();
+ assert.equal(missingReferencedNe([...m,...m]).length,3);
+});

@@ -374,3 +374,7 @@ O diagnóstico `npm run diagnose:cgu-2024-beneficiary-year`, executado apenas no
 ### Confronto do exercício posterior indicado pela CGU
 
 Após a busca de 2024 sem correspondência, o workflow `diagnosticar-exercicio-ne-2024.yml` passa a executar `npm run diagnose:cgu-2024-beneficiary-year -- --detail-year`, apenas por push do código ou disparo manual. Consulta exclusivamente o ano posterior válido observado no detalhe CGU, por CNPJ PJ e identidade exata; não repete a consulta anual anterior. Não guarda dados nem atribui emissão, mesmo se houver correspondência. A hipótese serve para investigar o índice anual da fonte; a pendência histórica e o bloqueio de saldos RAP permanecem até evidência adequada. Veja [resultados e limites](docs/FONTES-API-PRIORIDADES.md).
+
+### Recuperação dirigida de NEs do mesmo exercício
+
+O workflow de recuperação de origens CGU agora prioriza NEs referenciadas por NS/OB/DF do mesmo exercício (`CGU_ORIGINAL_SCOPE=same_year`). O limite agendado é três consultas por rodada, com mesma frequência. A opção manual `interannual` mantém a investigação de exercícios anteriores e `all` reúne ambos; relações futuras e sem documento de impacto canônico não são elegíveis. A consulta individual conserva cobertura parcial, não representa saldo RAP e não integra Tesouro Gerencial. A divergência da NE de 2024 está documentada em [fontes e prioridades](docs/FONTES-API-PRIORIDADES.md).
