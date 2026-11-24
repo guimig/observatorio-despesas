@@ -518,7 +518,7 @@ function showDocument(doc, monthData = state.data) {
           ' (valor informado divergente)':o.amountRelation==='unknown'?
           ' (comparação de valores indisponível)':' (mesmo valor informado)'))
         .join('; ')||'Nenhum outro filtro identificado'],
-    ['Data informada na listagem CGU', localDate(doc.date)], ['Valor', fmtMoney(doc.cents)],
+    ['Data informada na listagem CGU', localDate(doc.date)], [doc.valueSource==='impactos_cgu'?'Valor recuperado dos impactos CGU':'Valor documental', fmtMoney(doc.cents)],
     ['Unidade gestora', '158459 · IFC Araquari'],
     ['Favorecido', beneficiaryLabel(doc,monthData)],
     ['Processo administrativo', doc.process || 'Não informado'],

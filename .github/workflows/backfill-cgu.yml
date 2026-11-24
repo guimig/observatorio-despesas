@@ -42,6 +42,7 @@ on:
       - 'src/backfill-cgu.mjs'
       - 'src/backfill.mjs'
       - 'src/historical-collector.mjs'
+      - 'src/recover-liquidation-values.mjs'
       - 'src/store.mjs'
   # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
   # Dois lotes limitados por dia, com rodizio entre competencias.

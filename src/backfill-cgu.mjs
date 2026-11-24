@@ -4,10 +4,11 @@ import {createCguBudget,BACKFILL_LIMITS} from './cgu-budget.mjs';
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { collectDayPhase } from './cgu.mjs';
-import { collectHistoricalDate,documentCollisionSummary,collisionCode } from './historical-collector.mjs';
+import { collectDayPhase,isoDate } from './cgu.mjs';
+import {canResumeLiquidations,recoverLiquidationValues} from './recover-liquidation-values.mjs';
+import { collectHistoricalDate,documentCollisionSummary,collisionCode,phasesMissingOnDate } from './historical-collector.mjs';
 import { planHistoricalDays, chooseHistoricalMonth, missingCommitmentYears } from './backfill.mjs';
-import { persistWindow, validateMonth, validatePublishedData } from './store.mjs';
+import { persistWindow, persistEnrichment, validateMonth, validatePublishedData } from './store.mjs';
 
 async function readExisting(month) {
   const path = join(process.cwd(), 'data', 'months', month + '.json');
@@ -69,16 +70,16 @@ async function main() {
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
   const budget=createCguBudget();
-  let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0,attemptedDays=0,attemptedPhases=0,consultedPhases=0;
+  let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0,attemptedDays=0,attemptedPhases=0,consultedPhases=0,deferredPhases=0,valuesRecovered=0,valuesAttempted=0,valuesUnresolved=0;
   const failureKinds={};
   for(const {month,date} of days){
     if(budget.stopped())break;
     attemptedDays++;
     const monthData=await readExisting(month);
     const result=await collectHistoricalDate({
-      date,existing:monthData,recheck:options.recheck,
+      date,existing:monthData,recheck:options.recheck,listingOnly:!options.recheck,shouldStop:budget.stopped,
       collect:(value,phase)=>collectDayPhase(value,phase,{
-        token,budget,maxPages:process.env.CGU_MAX_PAGES || 30,
+        token,budget,deferLiquidationValues:!options.recheck&&!(monthData?.coverage||[]).some(c=>c.date===isoDate(value)&&c.phase===2&&c.complete&&c.invalid>0&&!canResumeLiquidations(monthData,c.date)),maxPages:process.env.CGU_MAX_PAGES || 30,
         maxImpactPages:process.env.CGU_MAX_IMPACT_PAGES || 8
       }),
       persist:async patch=>{
@@ -98,6 +99,8 @@ async function main() {
           console.warn(event.date+': fase '+event.phase+' falhou ('+event.category+
             (event.count!==undefined?'; '+event.count+' colisao(oes)':'')+
             '); checkpoint preservado.');
+        else if(event.status==='deferred')
+          console.log(event.date+': fase '+event.phase+' adiada pelo limite operacional; nao e falha da API.');
         else if(event.status==='checkpoint_failed')
           console.error(event.date+': fase '+event.phase+
             ' falhou ao validar/gravar checkpoint ('+event.category+'); execução abortada.');
@@ -105,8 +108,18 @@ async function main() {
           '; '+event.count+' documento(s) consultado(s).');
       }
     });
-    if(result.fullyComplete)completedDays++;
-    if(result.consulted>0 && !result.fullyComplete)partiallyRecoveredDays++;
+    let latest=await readExisting(month),recovered=0;
+    if(!options.recheck&&canResumeLiquidations(latest,isoDate(date))&&!budget.stopped()){
+      const resume=await recoverLiquidationValues(latest,isoDate(date),{token,budget,slot:Math.floor(now.getTime()/43200000),now,
+        persist:(id,value)=>persistEnrichment(process.cwd(),month,id,value,now)});
+      latest=resume.data;recovered=resume.summary.recovered;
+      valuesRecovered+=recovered;valuesAttempted+=resume.summary.attempted;valuesUnresolved+=resume.summary.unresolved;
+      console.log(date+': recuperacao de valores de liquidacoes '+JSON.stringify(resume.summary));
+    }
+    const fullyComplete=options.recheck?result.fullyComplete:phasesMissingOnDate(latest,date).length===0;
+    if(fullyComplete)completedDays++;
+    if((result.consulted>0||recovered>0)&&!fullyComplete)partiallyRecoveredDays++;
+    deferredPhases+=result.deferred;
     attemptedPhases+=result.attempted.length;
     consultedPhases+=result.consulted;
     failedPhases+=result.failed;
@@ -116,7 +129,7 @@ async function main() {
   }
   await validatePublishedData(process.cwd());
   const measurement=budget.snapshot();
-  console.log('Telemetria CGU backfill: '+JSON.stringify({adaptive,plannedDays:days.length,attemptedDays,completedDays,partiallyRecoveredDays,attemptedPhases,consultedPhases,failedPhases,documents:totalDocs,...measurement,limits:BACKFILL_LIMITS}));
+  console.log('Telemetria CGU backfill: '+JSON.stringify({adaptive,plannedDays:days.length,attemptedDays,completedDays,partiallyRecoveredDays,attemptedPhases,consultedPhases,failedPhases,deferredPhases,valuesRecovered,valuesAttempted,valuesUnresolved,documents:totalDocs,...measurement,limits:BACKFILL_LIMITS}));
   console.log('Resultado da coleta histórica: '+completedDays+
     ' dia(s) com tres fases completas; '+partiallyRecoveredDays+
     ' dia(s) com novas fases mas incompletos; '+failedPhases+
