@@ -1,0 +1,44 @@
+name: Diagnosticar cronologia oficial de NE 2024 pela CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/diagnose-cgu-2024-chronology.mjs'
+      - '.github/workflows/diagnosticar-cronologia-ne-2024.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar sintaxe e testes de cronologia
+        run: |
+          npm run check:syntax
+          node --test test/diagnose-cgu-2024-chronology.test.mjs
+          npm run check:data
+      - name: Conferir disponibilidade da chave oficial
+        id: credential
+        env:
+          CGU_API_KEY: \${{ secrets.CGU_API_KEY }}
+        run: |
+          if [ -n "$CGU_API_KEY" ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo 'Credencial CGU ausente: sondagem nao executada.'
+          fi
+      - name: Confrontar detalhe, historico de itens e emissao oficial
+        if: steps.credential.outputs.enabled == 'true'
+        env:
+          CGU_API_KEY: \${{ secrets.CGU_API_KEY }}
+        run: npm run diagnose:cgu-chronology-2024
