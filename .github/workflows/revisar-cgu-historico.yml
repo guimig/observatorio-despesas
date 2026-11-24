@@ -1,0 +1,101 @@
+name: Revisar cobertura CGU historica ja coletada
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/revisar-cgu-historico.yml'
+      - 'src/review-cgu-history.mjs'
+  schedule:
+    - cron: '41 14 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-main
+  queue: max
+jobs:
+  revisar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar credencial e dados
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: |
+          test -n "$CGU_API_KEY"
+          npm test
+          npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-review-state.json
+          key: cgu-review-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cgu-review-v1-
+      - name: Registrar estado inicial
+        id: state_before
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-cgu-review-state.json
+        run: |
+          if [ -f "$STATE_PATH" ]; then
+            echo "digest=$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+          else
+            echo 'digest=missing' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Revisar fases completas em lote limitado
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          CGU_REVIEW_LIMIT: '4'
+          CGU_REVIEW_STATE_PATH: ${{ runner.temp }}/observatorio-cgu-review-state.json
+        run: |
+          set -o pipefail
+          node src/review-cgu-history.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Validar dados e publicar somente alteracoes canonicas
+        id: commit
+        run: |
+          npm run check:data
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/manifest.json data/months/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: revisar cobertura CGU historica'
+          git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Verificar alteracao operacional
+        id: state_after
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-cgu-review-state.json
+          PREVIOUS_DIGEST: ${{ steps.state_before.outputs.digest }}
+        run: |
+          if [ -f "$STATE_PATH" ] && [ "$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" != "$PREVIOUS_DIGEST" ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/cache/save@v4
+        if: steps.state_after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-review-state.json
+          key: cgu-review-v1-${{ github.run_id }}-${{ github.run_attempt }}
+  publicar:
+    needs: revisar
+    if: needs.revisar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
