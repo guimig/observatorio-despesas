@@ -362,3 +362,7 @@ A recuperação individual CGU também permite filtrar por exercício, sem consu
 ### Cronologia de emissão de NE histórica com divergência CGU
 
 Para a única NE de 2024 cujo detalhe CGU retornou data de exercício posterior, existe um diagnóstico **somente de leitura** (`npm run diagnose:cgu-chronology-2024`, executado apenas no GitHub Actions com Secret). Ele compara datas de operações `original` em uma amostra limitada de itens com a listagem oficial da UG filtrada por `dataEmissao`. Mesmo uma correspondência por código SIAFI não altera automaticamente a nota: a origem segue pendente até homologação da data conflitante. Os logs só apresentam contagens e categorias, não datas, nomes, valores, códigos ou respostas brutas.
+
+### Verificação segura de autenticação da CGU
+
+O workflow `diagnosticar-cronologia-ne-2024.yml` executa um preflight autenticado em três rotas oficiais, usando uma NE controle já confirmada no catálogo, **antes** da única sondagem de emissão. O Secret deve ser interpolado exatamente por `CGU_API_KEY: ${{ secrets.CGU_API_KEY }}`, sem barra invertida literal antes do cifrão. Os testes automatizados verificam essa configuração para evitar regressões. Respostas 401/403 interrompem a investigação sem repetição contínua e não são interpretadas como ausência de documentos. O comando `npm run check:cgu-access` precisa de uma chave configurada no ambiente seguro; nunca inserir o valor diretamente em comandos, repositório ou logs.

@@ -29,7 +29,7 @@ jobs:
       - name: Conferir disponibilidade da chave oficial
         id: credential
         env:
-          CGU_API_KEY: \${{ secrets.CGU_API_KEY }}
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
         run: |
           if [ -n "$CGU_API_KEY" ]; then
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
@@ -37,8 +37,14 @@ jobs:
             echo 'enabled=false' >> "$GITHUB_OUTPUT"
             echo 'Credencial CGU ausente: sondagem nao executada.'
           fi
-      - name: Confrontar detalhe, historico de itens e emissao oficial
+      - name: Conferir autenticacao de listagem, detalhe e itens com NE de controle
+        id: access
         if: steps.credential.outputs.enabled == 'true'
         env:
-          CGU_API_KEY: \${{ secrets.CGU_API_KEY }}
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: npm run check:cgu-access
+      - name: Confrontar detalhe, historico de itens e emissao oficial
+        if: steps.credential.outputs.enabled == 'true' && steps.access.outputs.authorized == 'true'
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
         run: npm run diagnose:cgu-chronology-2024
