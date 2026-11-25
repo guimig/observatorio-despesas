@@ -43,6 +43,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/backfill-cgu.yml'
+      - 'src/backfill-adaptive.mjs'
       - 'src/backfill-cgu.mjs'
       - 'src/backfill.mjs'
       - 'src/historical-collector.mjs'
@@ -116,11 +117,6 @@ jobs:
       - name: Diagnosticar cobertura após o lote
         if: steps.credential.outputs.enabled == 'true'
         run: npm run diagnose:coverage
-      - name: Publicar cobertura no resumo da execucao
-        if: steps.credential.outputs.enabled == 'true'
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-        run: node src/diagnose-coverage.mjs --audit-md >> "$GITHUB_STEP_SUMMARY"
       - name: Validar checkpoint antes de publicar
         if: steps.credential.outputs.enabled == 'true'
         run: npm run check:data
@@ -139,6 +135,9 @@ jobs:
           git commit -m 'data: acrescentar lote historico CGU validado'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Resumir cobertura gravada na main
+        if: steps.credential.outputs.enabled == 'true'
+        run: GITHUB_SHA="$(git rev-parse HEAD)" node src/diagnose-coverage.mjs --audit-md >> "$GITHUB_STEP_SUMMARY"
 
   publicar:
     needs: atualizar

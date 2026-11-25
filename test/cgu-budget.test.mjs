@@ -37,3 +37,22 @@ test('planejamento adaptativo cobre varios meses sem repetir dias nem sair do re
  assert.equal(new Set(tasks.map(x=>x.month)).size,3);
  assert.ok(tasks.every(x=>x.month>='2024-02'&&x.month<='2024-04'));
 });
+test('lote reserva vagas para dia parcial e competencia sem arquivo antes das demais datas',async()=>{
+ const now=new Date('2024-03-10T12:00:00Z');
+ const january={month:'2024-01',coverage:[
+  ...[1,2,3].map(phase=>({date:'2024-01-01',phase,complete:true,invalid:0})),
+  {date:'2024-01-30',phase:2,complete:true,invalid:1}
+ ]};
+ const options={now,slot:0,maxDays:5,loadExisting:async month=>month===january.month?january:null,
+  priorityDates:['2024-01-30','2024-03-05'],prioritize:true,priorityYears:['2024']};
+ const {tasks}=await planAdaptiveBackfill(options);
+ assert.deepEqual(tasks.slice(0,3),[
+  {month:'2024-01',date:'30/01/2024'},
+  {month:'2024-02',date:'01/02/2024'},
+  {month:'2024-03',date:'05/03/2024'}
+ ]);
+ assert.equal(new Set(tasks.map(task=>task.date)).size,5);
+ assert.ok(tasks.every(task=>task.date!=='01/01/2024'));
+ const small=await planAdaptiveBackfill({...options,slot:1,maxDays:1});
+ assert.deepEqual(small.tasks,[{month:'2024-02',date:'02/02/2024'}]);
+});
