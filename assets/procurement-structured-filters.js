@@ -33,3 +33,8 @@ export function isIfcAdhesion(c){
  return c?.source==='pncp'&&c.adhesion===true&&['10635424000186','10635424000348'].includes(c.orgCnpj)&&
   typeof c.pncpId==='string'&&c.pncpId.startsWith(c.orgCnpj+'-2-');
 }
+
+
+export function isAraquariAdhesion(contract){
+ return isIfcAdhesion(contract)&&contract.unitCode==='158459';
+}
