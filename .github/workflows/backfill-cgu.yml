@@ -3,6 +3,10 @@ name: Recuperar historico CGU - Observatorio
 on:
   workflow_dispatch:
     inputs:
+      intensive:
+        description: 'Usar recuperacao automatica intensiva quando nao houver mes nem recheck'
+        type: boolean
+        default: false
       month:
         description: 'Competencia AAAA-MM (vazio = ultima competencia incompleta)'
         type: string
@@ -96,8 +100,8 @@ jobs:
           BACKFILL_MONTH: ${{ inputs.month }}
           BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2024-01' }}
           BACKFILL_DAYS: ${{ inputs.days || '5' }}
-          BACKFILL_INTENSIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
-          BACKFILL_ADAPTIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
+          BACKFILL_INTENSIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
+          BACKFILL_ADAPTIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
           # Lacunas documentadas na issue #88. So voltam a fila se ainda incompletas.
           BACKFILL_PRIORITY_DATES: '2026-10-14,2026-10-15,2026-10-16'
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}

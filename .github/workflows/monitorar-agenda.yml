@@ -1,0 +1,41 @@
+name: Monitorar atrasos de coleta e publicacao
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Apenas verificar sem disparar'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '49 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/monitorar-agenda.yml'
+      - 'src/watchdog-agenda.mjs'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: observatorio-watchdog
+  cancel-in-progress: false
+jobs:
+  monitorar:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Consultar agenda e disparar apenas rotinas atrasadas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WATCHDOG_DRY_RUN: ${{ (github.event_name == 'push' || inputs.dry_run) && 'true' || 'false' }}
+        run: |
+          set -o pipefail
+          node src/watchdog-agenda.mjs | tee -a "$GITHUB_STEP_SUMMARY"

@@ -23,6 +23,8 @@ jobs:
         run: npm run check:syntax
       - name: Testes unitarios
         run: npm test
+      - name: Testar sondagem efemera de arquivos CGU
+        run: python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
       - name: Validar privacidade e esquema dos JSONs versionados
         run: npm run check:data
       - name: Validar diagnostico interanual CGU contra dados canonicos
