@@ -48,9 +48,14 @@
     <section id="dashboard" hidden aria-labelledby="explorer-title">
       <div class="panel explorer document-explorer" aria-labelledby="explorer-title">
         <h2 id="explorer-title" tabindex="-1">Encontrar um documento</h2>
-        <div class="query-fields">
+        <div class="query-fields document-query">
           <label class="filter"><span>Documento, favorecido ou processo</span><input id="search-doc" type="search" placeholder="Ex.: empenho ou fornecedor" autocomplete="off"></label>
-          <label class="filter"><span>Mês dos documentos</span><select id="month-select"></select></label>
+          <fieldset class="document-period">
+            <legend>Período da consulta</legend>
+            <label class="filter"><span>Ano</span><select id="year-select"></select></label>
+            <label class="filter"><span>Mês</span><select id="month-select"></select></label>
+            <label class="filter"><span>Dia</span><select id="day-filter"><option value="all">Todos</option></select></label>
+          </fieldset>
         </div>
         <div class="query-options">
           <div class="phase-options" role="group" aria-label="Tipo de documento">
@@ -62,7 +67,6 @@
           <details class="advanced-filters" id="document-options">
             <summary>Mais opções <span id="document-option-count" hidden></span></summary>
             <div class="advanced-fields">
-              <label class="filter"><span>Dia do documento</span><select id="day-filter"><option value="all">Todos os dias</option></select></label>
               <button id="history-scope" class="button button-secondary" type="button">Buscar no histórico</button>
             </div>
           </details>
@@ -159,7 +163,7 @@
         <a href="#notices-section" data-tab="notices">Licitações e atas</a>
         <a href="#procurement-section" data-tab="contracts">Contratos formais</a>
         <a href="#tender-items-panel" data-tab="items">Itens e resultados</a>
-        <a href="#ifc-adhesions" data-tab="adhesions">Adesões do IFC</a>
+        <a href="#ifc-adhesions" data-tab="adhesions">Adesões de Araquari</a>
       </nav>
     <section id="notices-section" class="panel explorer" data-view="notices" hidden aria-labelledby="notices-title">
       <div class="panel-heading">
@@ -317,8 +321,8 @@
         <div class="pagination"><span id="tender-items-page-info">—</span><button id="tender-items-prev" type="button" class="button button-ghost" disabled>Anterior</button><button id="tender-items-next" type="button" class="button button-ghost" disabled>Próxima</button></div>
       </section>
       <section id="ifc-adhesions" class="panel explorer" data-view="adhesions" hidden aria-labelledby="ifc-adhesions-summary">
-        <h2 id="ifc-adhesions-summary" tabindex="-1">Adesões realizadas pelo IFC</h2>
-        <div id="ifc-adhesions-content" role="status">Carregando instrumentos do IFC…</div>
+        <h2 id="ifc-adhesions-summary" tabindex="-1">Adesões de Araquari</h2>
+        <div id="ifc-adhesions-content" role="status">Carregando adesões…</div>
       </section>
     </section>
     <section class="workspace coverage-workspace" id="cobertura-fontes" data-workspace="coverage" hidden aria-labelledby="coverage-heading">

@@ -1,4 +1,4 @@
-import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion} from './procurement-structured-filters.js';
+import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
@@ -270,7 +270,7 @@ function renderActiveFilters() {
   for (const button of document.querySelectorAll('[data-document-phase]')) {
     button.setAttribute('aria-pressed', String(button.dataset.documentPhase === state.phase));
   }
-  const advancedCount = Number(state.history) + Number(state.day !== 'all');
+  const advancedCount = Number(state.history);
   $('document-option-count').textContent = '(' + advancedCount + ')';
   $('document-option-count').hidden = advancedCount === 0;
   for (const card of document.querySelectorAll('.stat-card')) {
@@ -712,13 +712,31 @@ function refreshFilters() {
   state.page = 0;
   renderTable();
 }
+const monthLabel = new Intl.DateTimeFormat('pt-BR', {month:'long', timeZone:'UTC'});
+function availableMonths(year) {
+  return state.manifest.months.filter(month => month.slice(0, 4) === year).sort();
+}
+function selectPeriod(month) {
+  const year = month.slice(0, 4);
+  $('year-select').value = year;
+  const selector = $('month-select');
+  selector.replaceChildren(...availableMonths(year).map(value =>
+    new Option(monthLabel.format(new Date(value + '-15T12:00:00Z')), value)));
+  selector.value = month;
+}
+function setPeriodBusy(busy) {
+  $('year-select').disabled = busy;
+  $('month-select').disabled = busy;
+  $('day-filter').disabled = busy || state.history;
+}
 function renderDays() {
-  const days = [...new Set(state.data.coverage.map(item => item.date))].sort().reverse();
+  const days = [...new Set([...state.data.coverage, ...state.data.documents]
+    .map(item => item.date).filter(date => date.startsWith(state.month + '-')))].sort();
   const selector = $('day-filter');
-  selector.replaceChildren(element('option', '', 'Todos os dias'));
+  selector.replaceChildren(element('option', '', 'Todos'));
   selector.firstChild.value = 'all';
   days.forEach(day => {
-    const option = element('option', '', localDate(day));
+    const option = element('option', '', day.slice(8));
     option.value = day;
     selector.append(option);
   });
@@ -870,7 +888,7 @@ async function loadMonth(month) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
     !state.manifest.months.includes(month)) throw Error('Competência não disponível');
   state.loadingMonth = true;
-  $('month-select').disabled = true;
+  setPeriodBusy(true);
   $('history-scope').disabled = true;
   $('export-button').disabled = true;
   status('Carregando documentos da competência…');
@@ -879,14 +897,14 @@ async function loadMonth(month) {
     state.month = month;
     state.history = false;
     state.page = 0;
-    $('month-select').value = month;
+    selectPeriod(month);
     updateScope();
     renderAll();
     if(procurementData)renderContracts();
     if(noticesData)renderNotices();
   } finally {
     state.loadingMonth = false;
-    $('month-select').disabled = false;
+    setPeriodBusy(false);
     $('history-scope').disabled = false;
     if (state.data) $('export-button').disabled = !filteredDocuments().length;
   }
@@ -909,7 +927,7 @@ async function searchHistory() {
   state.history = true;
   state.loadingHistory = true;
   $('history-scope').disabled = true;
-  $('month-select').disabled = true;
+  setPeriodBusy(true);
   $('day-filter').value = state.day = 'all';
   updateScope();
   refreshFilters();
@@ -922,7 +940,7 @@ async function searchHistory() {
     }
   } finally {
     state.loadingHistory = false;
-    $('month-select').disabled = false;
+    setPeriodBusy(false);
     $('history-scope').disabled = false;
     updateScope();
     refreshFilters();
@@ -952,13 +970,19 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function initEvents() {
-  $('month-select').addEventListener('change', async event => {
-    try { await loadMonth(event.target.value); }
+  const changePeriod = async month => {
+    try { await loadMonth(month); }
     catch {
-      $('month-select').value = state.month;
-      status('Não foi possível carregar a competência escolhida. A consulta anterior continua disponível.', 'warning');
+      selectPeriod(state.month);
+      status('Não foi possível carregar o mês escolhido. A consulta anterior continua disponível.', 'warning');
     }
+  };
+  $('year-select').addEventListener('change', event => {
+    const months = availableMonths(event.target.value);
+    const sameMonth = event.target.value + state.month.slice(4);
+    changePeriod(months.includes(sameMonth) ? sameMonth : months.at(-1));
   });
+  $('month-select').addEventListener('change', event => changePeriod(event.target.value));
   $('history-scope').addEventListener('click', () => {
     if (!state.history) { searchHistory(); return; }
     state.history = false;
@@ -1043,25 +1067,22 @@ async function init() {
       status('O projeto está publicado, mas a primeira coleta da CGU ainda não foi realizada.');
       return;
     }
-    const selector = $('month-select');
-    selector.replaceChildren();
-    [...manifest.months].sort().reverse().forEach(month => {
-      const option = element('option', '', monthName(month));
-      option.value = month; selector.append(option);
-    });
+    const months = [...manifest.months].sort();
+    const years = [...new Set(months.map(month => month.slice(0, 4)))].reverse();
+    $('year-select').replaceChildren(...years.map(year => new Option(year, year)));
+    const latestMonth = months.at(-1);
     const params = new URLSearchParams(location.search);
     const linkedMonth = params.get('competencia');
     const documentId = params.get('documento');
     const hasLink = manifest.months.includes(linkedMonth) &&
       /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(documentId || '');
     if (hasLink) {
-      selector.value = linkedMonth;
       try { await loadMonth(linkedMonth); }
       catch {
-        await loadMonth([...manifest.months].sort().at(-1));
+        await loadMonth(latestMonth);
         status('A competência da ficha está indisponível. A consulta recente está disponível abaixo.', 'warning');
       }
-    } else await loadMonth(selector.value);
+    } else await loadMonth(latestMonth);
     $('dashboard').hidden = false;
     if (hasLink && state.month === linkedMonth) {
       const doc = state.data.documents.find(entry => entry.id === documentId);
@@ -1193,18 +1214,18 @@ function renderContractCoverage(){
     'os que possuem evidências de Araquari. Processos e publicações podem ser incompletos.';
 }
 function renderIfcAdhesions(){
-  const root=$('ifc-adhesions-content'),summary=$('ifc-adhesions-summary');
-  const rows=(procurementData?.contracts||[]).filter(isIfcAdhesion);
-  const pncp=(procurementData?.contracts||[]).filter(c=>c.source==='pncp');
-  const unknown=pncp.filter(c=>c.adhesion===undefined).length;
-  summary.textContent='Adesões realizadas pelo IFC · '+fmtCount(rows.length)+' instrumento(s) confirmado(s)';
-  root.replaceChildren(element('p','helper','Somente instrumentos do IFC com frutoAdesao=true na fonte oficial. '+fmtCount(unknown)+' instrumentos PNCP ainda sem informação de adesão. Não é contagem de solicitações de adesão nem de atas distintas. Não inclui adesões de outros órgãos às atas gerenciadas pelo IFC.'));
-  if(!rows.length){root.append(element('p','small-muted','Nenhuma adesão confirmada nos documentos consultados até aqui.'));return}
+  const root=$('ifc-adhesions-content');
+  const rows=(procurementData?.contracts||[]).filter(isAraquariAdhesion);
+  root.replaceChildren(element('p','helper','Adesões realizadas pelo IFC com unidade 158459 (Araquari) identificada no instrumento publicado no PNCP.'));
+  if(!rows.length){
+    root.append(element('p','small-muted','Nenhuma adesão de Araquari identificada no acervo consultado.'));
+    return;
+  }
   const list=element('ul');
   for(const c of rows){
     const li=element('li','small-muted'),link=element('a','doc-code',c.number||c.pncpId),url=publicPncpUrl(c);
     if(url){link.href=url;link.target='_blank';link.rel='noopener noreferrer'}
-    li.append(link,document.createTextNode(' · '+(c.kind||'Instrumento PNCP')+' · '+campusEvidenceLabel(campusEvidence(c))+(c.ataControl?' · Ata de origem '+c.ataControl:'')));
+    li.append(link,document.createTextNode(' · '+(c.kind||'Instrumento PNCP')+' · Unidade 158459 (Araquari)'+(c.ataControl?' · Ata de origem '+c.ataControl:'')));
     // Referencias apenas, sem repetir valores financeiros ou tratar NE como contrato formal.
     list.append(li);
   }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {normalizePncp,REITORIA_CNPJ} from '../src/procurement.mjs';
 import {blankProcurement,mergeProcurement,validateProcurement} from '../src/procurement-store.mjs';
 import {mergePncpRecord} from '../src/pncp-record-revisions.mjs';
-import {isIfcAdhesion} from '../assets/procurement-structured-filters.js';
+import {isIfcAdhesion,isAraquariAdhesion} from '../assets/procurement-structured-filters.js';
 import {officialAtaId,scanArpUnit,applyArpUnit,planArpUnitProbes,unitProbeKey} from '../src/arp-details.mjs';
 const now=new Date('2026-11-25T12:00:00Z'),id=REITORIA_CNPJ+'-2-000001/2026',purchase='01612452000197-1-000005/2025';
 const raw={numeroControlePNCP:id,orgaoEntidade:{cnpj:REITORIA_CNPJ},numeroControlePncpCompra:purchase,numeroControlePncpAta:purchase+'-000001',dataPublicacaoPncp:'2026-11-01',frutoAdesao:true,temRemanejamento:false};
@@ -14,6 +14,14 @@ test('IFC aderente a ata externa, nao autorizacao de terceiros nem desconhecido'
  assert.equal(isIfcAdhesion(normalizePncp({...raw,frutoAdesao:false})),false);
  assert.equal(isIfcAdhesion(normalizePncp({...raw,frutoAdesao:undefined,possibilidadeAdesao:true})),false);
  assert.equal(normalizePncp({...raw,numeroControlePncpAta:'01612452000197-1-000006/2025-000001'}).ataControl,undefined);
+});
+test('lista de Araquari exige unidade 158459 no próprio instrumento aderente',()=>{
+ const contract=base();
+ assert.equal(isAraquariAdhesion({...contract,unitCode:'158459'}),true);
+ assert.equal(isAraquariAdhesion({...contract,unitCode:'158461'}),false);
+ assert.equal(isAraquariAdhesion({...contract,unitCode:'158125',process:'23349.000001/2026-01'}),false);
+ assert.equal(isAraquariAdhesion(contract),false);
+ assert.equal(isAraquariAdhesion({...contract,unitCode:'158459',adhesion:false}),false);
 });
 test('coleta e reconsulta preservam evidencia omitida, falso explicito muda registro',()=>{
  const c=base(),scan=record=>({source:'pncp',month:'2026-11',records:[record],status:'complete',skipped:0});
