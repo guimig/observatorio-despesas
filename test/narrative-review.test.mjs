@@ -188,3 +188,7 @@ test('rotina de descricao atualiza documento de pagamento sem valor estimado',as
   assert.doesNotThrow(()=>validateMonth(stored));
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('escopo narrativo invalido e recusado antes de ler fontes',async()=>{
+ await assert.rejects(refreshNarratives({root:'/nao-existe',scope:'outro'}),/Escopo narrativo invalido/);
+});

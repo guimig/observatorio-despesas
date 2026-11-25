@@ -25,7 +25,7 @@ export async function comparePublication(site,expected,{fetcher=fetch}={}){
 
 export async function verifyPublication({
   root=process.cwd(),site=process.env.SITE_BASE,fetcher=fetch,
-  attempts=8,delayMs=8000,sleep=wait
+  attempts=12,delayMs=8000,sleep=wait
 }={}){
   if(!Number.isSafeInteger(attempts)||attempts<1||attempts>15)
     throw Error('Tentativas de verificação inválidas');
@@ -42,7 +42,7 @@ export async function verifyPublication({
     return {path,contents,updated_at:meta.updated_at||''};
   }));
   monthFiles.sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
-  const paths=['index.html','assets/app.js','assets/quality.js','assets/coverage-panel.js','data/manifest.json','data/coverage-index.json'];
+  const paths=['data/coverage-index.json','data/manifest.json','index.html','assets/app.js','assets/style.css','assets/quality.js','assets/coverage-panel.js'];
   const expected={};
   for(const path of paths)expected[path]=await readFile(join(dist,path),'utf8');
   for(const path of ['contracts','notices','atas','ata-participants','tender-items'].map(s=>'data/procurement/'+s+'.json')){
@@ -61,5 +61,5 @@ export async function verifyPublication({
 if(process.argv[1]&&import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
   verifyPublication().then(result=>console.log('Publicação confirmada no Pages: '+
     result.files+' arquivo(s) conferido(s) em '+result.attempt+' tentativa(s).'))
-    .catch(()=>{console.error('A versão publicada no Pages não pôde ser confirmada.');process.exitCode=1;});
+    .catch(error=>{console.error(/^GitHub Pages não corresponde ao build publicado: /.test(error?.message||'')?error.message:'A versão publicada no Pages não pôde ser confirmada.');process.exitCode=1;});
 }

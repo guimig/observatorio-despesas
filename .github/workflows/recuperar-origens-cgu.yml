@@ -35,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-cgu
   queue: max
 
 jobs:
@@ -106,7 +106,7 @@ jobs:
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: recuperar
-    if: needs.recuperar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.recuperar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

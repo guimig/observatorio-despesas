@@ -12,7 +12,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-pncp
   queue: max
 jobs:
   coletar:
@@ -77,7 +77,7 @@ jobs:
           key: pncp-results-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: coletar
-    if: needs.coletar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.coletar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

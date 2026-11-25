@@ -19,11 +19,11 @@ on:
       - '.github/workflows/vinculos-contratacoes-pncp.yml'
       - 'src/pncp-contract-link.mjs'
   schedule:
-    - cron: '56 11 * * 1,3,5'
+    - cron: '56 11 * * *'
 permissions:
   contents: read
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-pncp
   queue: max
 jobs:
   relacionar:
@@ -49,7 +49,7 @@ jobs:
           npm run check:data
       - name: Consultar detalhes de contratos no PNCP (sem credenciais)
         env:
-          PNCP_PURCHASE_BATCH: ${{ inputs.batch || '12' }}
+          PNCP_PURCHASE_BATCH: ${{ inputs.batch || '30' }}
           PNCP_PURCHASE_RECHECK: ${{ inputs.recheck || 'false' }}
         run: npm run collect:pncp-purchase-links
       - name: Validar catálogo após enriquecimento
@@ -69,7 +69,7 @@ jobs:
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: relacionar
-    if: needs.relacionar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.relacionar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

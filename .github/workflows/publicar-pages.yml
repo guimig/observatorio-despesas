@@ -16,6 +16,9 @@ on:
       - 'package.json'
   workflow_dispatch:
   workflow_call:
+  # Consolidar os checkpoints da main; pushes do GITHUB_TOKEN nao disparam on:push.
+  schedule:
+    - cron: '53 0,2,4,6,8,10,12,14,16,18,20,22 * * *'
 
 permissions:
   contents: read
@@ -48,10 +51,23 @@ jobs:
           npm test
           npm run check:data
       - name: Empacotar somente interface e JSONs permitidos
-        run: npm run build:site
+        run: GITHUB_SHA="$(git rev-parse HEAD)" npm run build:site
+      - name: Conferir se a versao ja esta publicada
+        id: current
+        env:
+          SITE_BASE: https://guimig.github.io/observatorio-despesas/
+        run: |
+          if node --input-type=module -e "import {verifyPublication} from './src/verify-pages.mjs'; await verifyPublication({attempts:1})"; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+            echo 'Publicacao ja corresponde ao build atual; nenhum novo artefato.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Configurar GitHub Pages
+        if: steps.current.outputs.current != 'true'
         uses: actions/configure-pages@v5
       - name: Enviar artefato imutavel para Pages
+        if: steps.current.outputs.current != 'true'
         uses: actions/upload-pages-artifact@v4
         with:
           # Reexecucoes de um job preservam o run_id e incrementam run_attempt.
@@ -62,6 +78,7 @@ jobs:
       # mesmo após upload bem-sucedido. Retentativas são apenas de deploy:
       # não repetem coleta nem alteram os JSONs versionados.
       - name: Publicar nova versao - primeira tentativa
+        if: steps.current.outputs.current != 'true'
         id: deployment
         continue-on-error: true
         uses: actions/deploy-pages@v4
@@ -87,6 +104,7 @@ jobs:
         with:
           artifact_name: pages-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Confirmar arquivos efetivamente servidos pelo Pages
+        if: steps.current.outputs.current != 'true'
         env:
           SITE_BASE: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url || steps.deployment_final.outputs.page_url }}
         run: npm run verify:pages

@@ -2,7 +2,7 @@ name: Verificar participacao do Campus em atas PNCP
 on:
   workflow_dispatch:
   schedule:
-    - cron: '21 13 * * 1-5'
+    - cron: '21 13 * * *'
   push:
     branches: [main]
     paths:
@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-pncp
   queue: max
 jobs:
   coletar:
@@ -81,7 +81,7 @@ jobs:
           key: arp-detail-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: coletar
-    if: needs.coletar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.coletar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

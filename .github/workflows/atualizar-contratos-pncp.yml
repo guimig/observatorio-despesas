@@ -21,7 +21,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-pncp
   queue: max
 
 jobs:
