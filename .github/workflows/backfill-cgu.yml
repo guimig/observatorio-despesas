@@ -46,6 +46,7 @@ on:
       - 'src/backfill-adaptive.mjs'
       - 'src/backfill-cgu.mjs'
       - 'src/backfill.mjs'
+      - 'src/cgu-budget.mjs'
       - 'src/historical-collector.mjs'
       - 'src/recover-liquidation-values.mjs'
       - 'src/store.mjs'
