@@ -42,7 +42,7 @@ test('orcamento e repassado a paginacao dos impactos',async()=>{
 test('backfill prioriza lacunas da issue, ignora dia completo e nao duplica tarefas',async()=>{
  const complete={month:'2026-10',coverage:[1,2,3].map(phase=>({date:'2026-10-14',phase,complete:true,invalid:0}))};
  const plan=await planAdaptiveBackfill({now,slot:0,maxDays:5,priorityDates:['2026-10-14','2026-10-15','2026-10-16','2023-12-31'],loadExisting:async m=>m==='2026-10'?complete:null});
- assert.deepEqual(plan.tasks.slice(0,2).map(t=>t.date),['15/10/2026','16/10/2026']);
+ assert.deepEqual(plan.tasks.slice(0,3).map(t=>t.date),['01/01/2024','15/10/2026','16/10/2026']);
  assert.equal(new Set(plan.tasks.map(t=>t.date)).size,plan.tasks.length);
  assert.ok(!plan.tasks.some(t=>t.date==='14/10/2026'||t.date==='31/12/2023'));
 });
