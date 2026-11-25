@@ -26,106 +26,55 @@
         </button>
       </div>
     </div>
+    <nav class="container primary-nav" aria-label="Áreas do Observatório">
+      <a href="#despesas">Despesas</a>
+      <a href="#contratacoes">Contratações</a>
+      <a href="#cobertura-fontes">Cobertura e fontes</a>
+    </nav>
   </header>
   <main id="conteudo" class="container main-content">
-    <div class="hero">
-      <div>
-        <div class="eyebrow">DADOS PÚBLICOS · LABORATÓRIO</div>
-        <h1>Execução documental da despesa</h1>
-        <p>Empenhos, liquidações e pagamentos emitidos pela unidade gestora do IFC Campus Araquari, com dados oficiais da CGU. O período exibido pode conter apenas alguns dias coletados: valores documentais não representam saldos nem execução acumulada.</p>
-      </div>
-      <div class="hero-meta">
-        <span class="meta-label">Fonte de dados</span>
-        <strong>Portal da Transparência · CGU</strong>
-        <span id="updated" class="small-muted">Ainda não publicado</span>
-      </div>
+    <div class="workspace-heading" id="despesas">
+      <h1>Consultar despesas</h1>
+      <a class="button button-secondary" href="#trajectory-section">Trajetória por empenho</a>
     </div>
-    <div id="status" role="status" aria-live="polite" class="notice">Verificando o acervo publicado…</div>
+    <div id="status" role="status" class="notice">Carregando o acervo público da CGU…</div>
 
-    <details class="panel coverage-panel" id="historical-coverage">
-      <summary><strong>Cobertura histórica e atualidade</strong><span>Desde 01/01/2024 · indicadores de coleta e lacunas</span></summary>
-      <div id="coverage-content" class="coverage-content" aria-live="polite"><p class="helper">Abra para carregar o resumo do acervo, sem baixar os documentos mensais.</p></div>
-    </details>
-    <section id="dashboard" hidden>
-      <div class="toolbar panel">
-        <div>
-          <label for="month-select" class="field-label">Competência dos documentos</label>
-          <select id="month-select" aria-label="Selecionar mês dos documentos"></select>
+    <section id="dashboard" hidden aria-labelledby="explorer-title">
+      <section class="panel explorer document-explorer" aria-labelledby="explorer-title">
+        <h2 id="explorer-title" tabindex="-1">Documentos da CGU · UG 158459</h2>
+        <div class="query-fields">
+          <label class="filter"><span>Documento, favorecido ou processo</span><input id="search-doc" type="search" placeholder="Número da NE, processo, CNPJ ou nome" autocomplete="off"></label>
+          <label class="filter"><span>Competência</span><select id="month-select"></select></label>
         </div>
-        <div class="toolbar-right">
-          <span id="coverage-chip" class="pill pill-soft"></span>
-          <button id="export-button" class="button button-secondary" type="button">
-            Exportar CSV
-          </button>
-        </div>
-      </div>
-
-      <div class="section-heading">
-        <div>
-          <h2>Indicadores por fase</h2>
-          <p>Documentos emitidos na competência selecionada; cada fase tem natureza própria.</p>
-        </div>
-      </div>
-      <div class="stats" aria-label="Indicadores das fases">
-        <button class="stat-card" type="button" data-phase="1" aria-label="Filtrar empenhos">
-          <span class="stat-top"><span class="stat-label">Empenhos</span><span class="stat-icon">NE</span></span>
-          <span class="stat-value" id="amount-1">—</span>
-          <span class="stat-foot" id="count-1">Aguardando</span>
-        </button>
-        <button class="stat-card" type="button" data-phase="2" aria-label="Filtrar liquidações">
-          <span class="stat-top"><span class="stat-label">Liquidações</span><span class="stat-icon">NS</span></span>
-          <span class="stat-value" id="amount-2">—</span>
-          <span class="stat-foot" id="count-2">Aguardando</span>
-        </button>
-        <button class="stat-card" type="button" data-phase="3" aria-label="Filtrar pagamentos">
-          <span class="stat-top"><span class="stat-label">Pagamentos</span><span class="stat-icon">PG</span></span>
-          <span class="stat-value" id="amount-3">—</span>
-          <span class="stat-foot" id="count-3">Aguardando</span>
-        </button>
-      </div>
-
-      <div class="insights">
-        <section class="panel chart-panel" aria-labelledby="chart-title">
-          <div class="panel-heading">
-            <h2 id="chart-title">Valores documentais por fase</h2>
-            <span class="small-muted">Escala automática</span>
+        <div class="query-context">
+          <div class="query-scope">
+            <button id="history-scope" class="button button-secondary" type="button">Buscar no histórico disponível</button>
+            <span id="scope-status" role="status">Nesta competência</span>
+            <button id="history-retry" class="button button-ghost" type="button" hidden>Consultar meses indisponíveis</button>
           </div>
-          <div id="phase-chart" class="phase-chart" aria-live="polite"></div>
-          <p class="helper">Comparação descritiva somente dos dias já consultados. A cobertura mensal é indicada separadamente; não representa conversão, disponibilidade financeira ou saldo.</p>
-        </section>
-        <section class="panel" aria-labelledby="quality-title">
-          <div class="panel-heading"><h2 id="quality-title">Cobertura e qualidade</h2></div>
-          <div class="quality-grid">
-            <div class="quality-metric"><strong id="days-covered">—</strong><span>Dias completos / previstos</span></div>
-            <div class="quality-metric"><strong id="incomplete-count">—</strong><span>Consultas parciais</span></div>
-            <div class="quality-metric"><strong id="invalid-count">—</strong><span>Valores indisponíveis</span></div>
-            <div class="quality-metric"><strong id="relations-count">—</strong><span>Vínculos documentais</span></div>
-            <div class="quality-metric"><strong id="liquidation-links">—</strong><span>Liquidações com vínculos consultados</span></div>
-            <div class="quality-metric"><strong id="payment-links">—</strong><span>Pagamentos com vínculos consultados</span></div>
-            <div class="quality-metric"><strong id="item-links">—</strong><span>Empenhos com itens consultados</span></div>
-            <div class="quality-metric"><strong id="multiple-ne-links">—</strong><span>Documentos vinculados a várias NEs</span></div>
-          </div>
-          <p id="quality-detail" class="helper" aria-live="polite">Aguardando auditoria de cobertura e vínculos…</p>
-          <p class="helper">A cobertura diária e as consultas de enriquecimento são métricas diferentes. Sem dados não significa zero; impactos negativos e restos a pagar não constituem automaticamente inconsistências.</p>
-        </section>
-      </div>
-
-      <section class="panel explorer" aria-labelledby="explorer-title">
-        <div class="panel-heading">
-          <div><h2 id="explorer-title">Explorador de documentos</h2><p class="small-muted">Selecione uma linha para consultar seus detalhes e vínculos.</p></div>
-          <span class="pill pill-outline" id="table-count">0 resultados</span>
+          <details class="query-help">
+            <summary aria-label="Entenda a cobertura dos dados"><span aria-hidden="true">?</span></summary>
+            <p>A CGU pode ter dias ainda sem consulta. A cobertura considera os dias encerrados no horário de Brasília. A consulta ao histórico abrange os arquivos publicados.</p>
+            <a href="#cobertura-fontes">Ver cobertura e fontes</a>
+          </details>
         </div>
-        <div class="filters">
-          <label class="filter"><span>Documento, favorecido ou processo</span><input id="search-doc" type="search" placeholder="Documento, CNPJ, CPF mascarado, nome ou processo" autocomplete="off"></label>
-          <label class="filter"><span>Fase</span>
-            <select id="phase-filter"><option value="all">Todas</option><option value="1">Empenho</option><option value="2">Liquidação</option><option value="3">Pagamento</option></select>
-          </label>
-          <label class="filter"><span>Dia</span><select id="day-filter"><option value="all">Todos os dias</option></select></label>
-          <button class="button button-ghost" id="clear-filters" type="button">Limpar</button>
+        <div class="filters document-filters">
+          <label class="filter"><span>Fase</span><select id="phase-filter"><option value="all">Todas</option><option value="1">Empenho</option><option value="2">Liquidação</option><option value="3">Pagamento</option></select></label>
+          <label class="filter"><span>Data do documento</span><select id="day-filter"><option value="all">Todos os dias</option></select></label>
+          <button class="button button-ghost" id="clear-filters" type="button">Limpar filtros</button>
         </div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th scope="col">Documento</th><th scope="col">Emissão</th><th scope="col">Fase</th><th scope="col">Favorecido</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
+        <div id="active-filters" class="active-filters" aria-label="Filtros ativos"></div>
+        <div class="results-toolbar">
+          <span id="table-count" role="status" class="result-count"></span>
+          <button id="export-button" class="button button-secondary" type="button" disabled>Exportar CSV filtrado</button>
+        </div>
+        <div class="results-context">
+          <span id="coverage-chip"></span>
+          <span id="updated"></span>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Tabela de documentos">
+          <table class="document-table">
+            <thead><tr><th scope="col">Documento</th><th scope="col">Data CGU</th><th scope="col">Fase</th><th scope="col" class="document-secondary">Favorecido</th><th scope="col" class="document-secondary">Processo</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
             <tbody id="doc-rows"></tbody>
           </table>
         </div>
@@ -134,9 +83,35 @@
           <div class="page-actions"><button class="button button-secondary" id="previous-page" type="button">Anterior</button><button class="button button-secondary" id="next-page" type="button">Próxima</button></div>
         </div>
       </section>
+      <h2 class="phase-heading">Valores documentais por fase</h2>
+      <p class="small-muted phase-helper">Selecione uma fase para filtrar a competência. Valores dos dias consultados.</p>
+      <div class="stats" aria-label="Indicadores das fases">
+        <button class="stat-card" type="button" aria-pressed="false" data-phase="1" aria-label="Filtrar empenhos">
+          <span class="stat-top"><span class="stat-label">Empenhos</span><span class="stat-icon">NE</span></span>
+          <span class="stat-value" id="amount-1">—</span>
+          <span class="stat-foot" id="count-1">Aguardando</span>
+        </button>
+        <button class="stat-card" type="button" aria-pressed="false" data-phase="2" aria-label="Filtrar liquidações">
+          <span class="stat-top"><span class="stat-label">Liquidações</span><span class="stat-icon">NS</span></span>
+          <span class="stat-value" id="amount-2">—</span>
+          <span class="stat-foot" id="count-2">Aguardando</span>
+        </button>
+        <button class="stat-card" type="button" aria-pressed="false" data-phase="3" aria-label="Filtrar pagamentos">
+          <span class="stat-top"><span class="stat-label">Pagamentos</span><span class="stat-icon">PG</span></span>
+          <span class="stat-value" id="amount-3">—</span>
+          <span class="stat-foot" id="count-3">Aguardando</span>
+        </button>
+      </div>
+
     </section>
 
 
+    <section id="empty-state" class="panel empty-state" hidden>
+      <div class="empty-symbol" aria-hidden="true">◫</div>
+      <h2 id="empty-title">Aguardando primeira coleta</h2>
+      <p id="empty-description">A CGU ainda não tem competências publicadas neste acervo.</p>
+      <button id="retry-manifest" class="button button-secondary" type="button" hidden>Tentar novamente</button>
+    </section>
     <section id="trajectory-section" class="panel explorer" hidden aria-labelledby="trajectory-title">
       <div class="panel-heading">
         <div>
@@ -153,7 +128,7 @@
         <button id="trajectory-load" class="button button-secondary" type="button">Carregar trajetórias</button>
         <button id="trajectory-reload" class="button button-ghost" type="button">Recarregar acervo</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
           <thead><tr><th>Nota de empenho</th><th>Emissão</th><th>Processo</th><th>Elemento</th><th class="align-right">Liquidações vinculadas</th><th class="align-right">Pagamentos vinculados</th><th>Detalhes</th></tr></thead>
           <tbody id="trajectory-rows"><tr><td colspan="7">Use “Carregar trajetórias” para consultar todas as competências.</td></tr></tbody>
@@ -161,64 +136,28 @@
       </div>
       <p class="helper">A ficha não presume que pagamento corresponda a uma liquidação específica. Valores de NE, NS e OB/DF não são somados entre fases para produzir um saldo. NEs de exercícios anteriores podem aparecer como origem de pagamentos ou liquidações de exercícios posteriores.</p>
     </section>
+    <section class="workspace-heading procurement-heading" id="contratacoes" aria-labelledby="procurement-nav-title">
+      <h2 id="procurement-nav-title">Contratações</h2>
+      <nav class="section-nav" aria-label="Consultas de contratações">
+        <a href="#notices-section">Licitações e atas</a>
+        <a href="#procurement-section">Contratos formais</a>
+        <a href="#tender-items-panel" data-open="tender-items-panel">Itens e resultados</a>
+        <a href="#ifc-adhesions" data-open="ifc-adhesions">Adesões do IFC</a>
+      </nav>
+    </section>
     <section id="notices-section" class="panel explorer" hidden aria-labelledby="notices-title">
       <div class="panel-heading">
         <div>
           <div class="eyebrow">PNCP · REITORIA UASG 158125</div>
-          <h2 id="notices-title">Licitações e contratações diretas</h2>
+          <h2 id="notices-title">Licitações, contratações diretas e atas</h2>
           <p class="small-muted">Pregões, concorrências, dispensas, inexigibilidades e demais modalidades publicadas centralmente pelo IFC. No registro de preços, a ata pode existir sem compra, contrato ou empenho posterior.</p>
         </div>
         <span class="pill pill-outline" id="notices-count">Aguardando consulta</span>
       </div>
-      <div class="panel" aria-label="Indicadores de evidência documental das licitações">
-        <h3>Cobertura dos vínculos documentais</h3>
-        <p id="procurement-evidence-summary" class="small-muted" role="status">Aguardando catálogo de licitações.</p>
-        <div id="procurement-evidence-metrics" class="metric-grid"></div>
-        <p class="small-muted">Categorias de evidência são mutuamente exclusivas. “Sem evidência” não significa ausência de contratação ou despesa. A contagem de instrumentos não distingue automaticamente contratos formais de outros instrumentos publicados.</p>
-      </div>
-      <details class="panel" id="procurement-audit-panel">
-        <summary><strong>Auditoria de referências de empenho</strong></summary>
-        <p id="procurement-audit-status" class="small-muted">Aguardando documentos.</p>
-        <div class="filters">
-          <label class="filter"><span>Situação documental</span><select id="procurement-audit-filter">
-            <option value="all">Todas</option>
-            <option value="not_found_in_published_history">Não localizada</option>
-            <option value="not_checked_fully">Conferência incompleta</option>
-            <option value="verified">Conferida</option>
-          </select></label>
-          <label class="filter"><span>Pesquisar referência ou instrumento</span><input id="procurement-audit-search" type="search" placeholder="Número da NE ou instrumento"></label>
-          <button id="procurement-audit-export" type="button" class="button button-secondary">Exportar CSV filtrado</button>
-        </div>
-        <p id="procurement-audit-filter-status" class="small-muted" role="status"></p>
-        <div class="table-scroll"><table class="contracts-table">
-          <thead><tr><th>Instrumento PNCP</th><th>Referência de NE</th><th>Situação documental</th></tr></thead>
-          <tbody id="procurement-audit-rows"><tr><td colspan="3">Nenhuma referência examinada.</td></tr></tbody>
-        </table></div>
-        <p class="small-muted">“Não localizada” significa apenas que a referência não foi encontrada no histórico publicado e carregado. Não demonstra inexistência da despesa, nem irregularidade.</p>
-      </details>
-      <div class="filters" aria-label="Cobertura documental histórica">
-        <button type="button" id="historical-ne-load" class="button button-secondary">Conferir NEs em todas as competências</button>
-        <span id="historical-ne-status" class="small-muted" role="status" aria-live="polite">A conferência de NEs usa inicialmente apenas as competências já abertas.</span>
-      </div>
-      <details id="tender-items-panel" class="panel" style="margin:1rem 0">
-        <summary><strong>Itens e resultados de contratações · IFC</strong></summary>
-        <p class="helper">Quantidades licitadas e resultados homologados por fornecedor são informações distintas. Não representam quantidades registradas em ata, saldo disponível ou aquisição de Araquari. Cobertura incremental.</p>
-        <p id="tender-items-coverage" role="status" aria-live="polite">Carregue os itens para consultar a cobertura.</p>
-        <div class="filters">
-          <label class="filter"><span>Buscar item ou licitação</span><input id="tender-items-search" type="search" placeholder="Descrição, número, ID PNCP ou CNPJ"></label>
-          <label class="filter"><span>Licitação</span><select id="tender-items-procedure"><option value="all">Todas as licitações coletadas</option></select></label>
-          <button id="tender-items-load" type="button" class="button button-secondary">Carregar itens</button>
-        </div>
-        <div class="table-scroll"><table class="contracts-table">
-          <thead><tr><th>Licitação PNCP</th><th>Item</th><th>Descrição</th><th class="align-right">Quantidade licitada · IFC</th><th>Coleta</th><th>Resultados homologados</th></tr></thead>
-          <tbody id="tender-items-rows"><tr><td colspan="6">Clique em Carregar itens.</td></tr></tbody>
-        </table></div>
-        <div class="pagination"><span id="tender-items-page-info">—</span><button id="tender-items-prev" type="button" class="button button-ghost" disabled>Anterior</button><button id="tender-items-next" type="button" class="button button-ghost" disabled>Próxima</button></div>
-      </details>
       <p id="notices-coverage" role="status" aria-live="polite" class="notice">Verificando publicações oficiais…</p>
       <div class="filters">
-        <label class="filter"><span>Objeto, número ou processo</span>
-          <input id="notices-search" type="search" placeholder="Pesquisar edital ou processo" autocomplete="off"></label>
+        <label class="filter"><span>Objeto, processo ou número da ata</span>
+          <input id="notices-search" type="search" placeholder="Pesquisar licitação, processo ou ata" autocomplete="off"></label>
         <label class="filter"><span>Modalidade</span>
           <select id="notices-modality"><option value="all">Todas as modalidades</option></select>
         </label>
@@ -235,7 +174,7 @@
         <label class="filter"><span>Estimado máximo (R$)</span><input id="notices-max-value" inputmode="decimal" placeholder="Sem limite"></label>
         <button type="button" class="button button-ghost" id="notices-reset">Limpar</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
           <thead>
             <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th><th scope="col">Instrumentos decorrentes</th>
@@ -252,6 +191,51 @@
           <button class="button button-secondary" id="notices-next" type="button">Próxima</button>
         </div>
       </div>
+      <details class="panel procurement-tools">
+        <summary>Cobertura dos vínculos documentais</summary>
+        <p id="procurement-evidence-summary" class="small-muted" role="status">Aguardando catálogo de licitações.</p>
+        <div id="procurement-evidence-metrics" class="metric-grid"></div>
+        <p class="small-muted">Categorias de evidência são mutuamente exclusivas. “Sem evidência” não significa ausência de contratação ou despesa. A contagem de instrumentos não distingue automaticamente contratos formais de outros instrumentos publicados.</p>
+      </details>
+      <details class="panel" id="procurement-audit-panel">
+        <summary><strong>Auditoria de referências de empenho</strong></summary>
+        <p id="procurement-audit-status" class="small-muted">Aguardando documentos.</p>
+        <div class="filters">
+          <label class="filter"><span>Situação documental</span><select id="procurement-audit-filter">
+            <option value="all">Todas</option>
+            <option value="not_found_in_published_history">Não localizada</option>
+            <option value="not_checked_fully">Conferência incompleta</option>
+            <option value="verified">Conferida</option>
+          </select></label>
+          <label class="filter"><span>Pesquisar referência ou instrumento</span><input id="procurement-audit-search" type="search" placeholder="Número da NE ou instrumento"></label>
+          <button id="procurement-audit-export" type="button" class="button button-secondary">Exportar CSV filtrado</button>
+        </div>
+        <p id="procurement-audit-filter-status" class="small-muted" role="status"></p>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta"><table class="contracts-table">
+          <thead><tr><th>Instrumento PNCP</th><th>Referência de NE</th><th>Situação documental</th></tr></thead>
+          <tbody id="procurement-audit-rows"><tr><td colspan="3">Nenhuma referência examinada.</td></tr></tbody>
+        </table></div>
+        <p class="small-muted">“Não localizada” significa apenas que a referência não foi encontrada no histórico publicado e carregado. Não demonstra inexistência da despesa, nem irregularidade.</p>
+      <div class="filters" aria-label="Cobertura documental histórica">
+        <button type="button" id="historical-ne-load" class="button button-secondary">Conferir NEs em todas as competências</button>
+        <span id="historical-ne-status" class="small-muted" role="status" aria-live="polite">A conferência de NEs usa inicialmente apenas as competências já abertas.</span>
+      </div>
+      </details>
+      <details id="tender-items-panel" class="panel procurement-tools">
+        <summary><strong>Itens e resultados de contratações · IFC</strong></summary>
+        <p class="helper">Quantidades licitadas e resultados homologados por fornecedor são informações distintas. Não representam quantidades registradas em ata, saldo disponível ou aquisição de Araquari. Cobertura incremental.</p>
+        <p id="tender-items-coverage" role="status" aria-live="polite">Carregue os itens para consultar a cobertura.</p>
+        <div class="filters">
+          <label class="filter"><span>Buscar item ou licitação</span><input id="tender-items-search" type="search" placeholder="Descrição, número, ID PNCP ou CNPJ"></label>
+          <label class="filter"><span>Licitação</span><select id="tender-items-procedure"><option value="all">Todas as licitações coletadas</option></select></label>
+          <button id="tender-items-load" type="button" class="button button-secondary">Carregar itens</button>
+        </div>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta"><table class="contracts-table">
+          <thead><tr><th>Licitação PNCP</th><th>Item</th><th>Descrição</th><th class="align-right">Quantidade licitada · IFC</th><th>Coleta</th><th>Resultados homologados</th></tr></thead>
+          <tbody id="tender-items-rows"><tr><td colspan="6">Clique em Carregar itens.</td></tr></tbody>
+        </table></div>
+        <div class="pagination"><span id="tender-items-page-info">—</span><button id="tender-items-prev" type="button" class="button button-ghost" disabled>Anterior</button><button id="tender-items-next" type="button" class="button button-ghost" disabled>Próxima</button></div>
+      </details>
       <p class="helper">A publicação centralizada é feita pela Reitoria. Uma licitação pode gerar ata(s) de registro de preços, contratos formais, instrumentos substitutivos ou nenhum instrumento decorrente identificado nesta base. A ata registra condições para compras futuras e não obriga a Administração a contratar (Lei 14.133/2021, art. 83). A ausência de empenho em licitação/SRP não é, por si, pendência ou irregularidade; a base ainda não inventaria atas. A NE substitutiva não é contada como contrato formal e não é somada novamente à execução financeira. O processo 23349 é somente indício de Araquari.</p>
     </section>
 
@@ -292,7 +276,7 @@
         <label class="filter"><span>Vigente na data</span><input id="contract-active-on" type="date"></label>
         <button type="button" class="button button-ghost" id="clear-contract-filters">Limpar</button>
       </div>
-      <div class="table-scroll">
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
           <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Licitação de origem</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor contratual</th><th scope="col">Detalhes</th></tr></thead>
           <tbody id="contract-rows"></tbody>
@@ -308,12 +292,27 @@
       <p class="helper">O PNCP publica contratos e empenhos substitutivos na mesma coleção. Esta tabela contém apenas contratos formais; os outros instrumentos permanecem identificados na fonte e não são somados novamente aos documentos financeiros. O órgão publicador é a Reitoria (UASG 158125), não necessariamente o campus beneficiário. A NE da UG 158459 é evidência prioritária, e o processo SIPAC 23349 é indício secundário sujeito a erro manual. Nenhum vínculo PNCP, isoladamente, comprova a execução financeira por Araquari.</p>
     </section>
 
-    <section id="empty-state" class="panel empty-state" hidden>
-      <div class="empty-symbol" aria-hidden="true">◫</div>
-      <h2 id="empty-title">Aguardando primeira coleta</h2>
-      <p id="empty-description">O Observatório está preparado. Assim que o Secret CGU_API_KEY for cadastrado no novo repositório e a coleta for executada, os documentos publicados aparecerão aqui.</p>
-      <a class="inline-link" href="https://github.com/guimig/observatorio-despesas/actions">Verificar GitHub Actions</a>
-    </section>
+    <section class="coverage-workspace" id="cobertura-fontes" aria-labelledby="coverage-heading">
+      <h2 id="coverage-heading">Cobertura e fontes</h2>
+      <details class="panel coverage-panel" id="historical-coverage">
+        <summary><strong>Cobertura histórica e atualidade</strong><span>Desde 2024</span></summary>
+        <div id="coverage-content" class="coverage-content"><p>Abra para consultar o resumo da coleta.</p></div>
+      </details>
+      <details class="panel monthly-quality" id="monthly-quality" hidden>
+        <summary id="quality-title">Qualidade da competência selecionada</summary>
+          <div class="quality-grid">
+            <div class="quality-metric"><strong id="days-covered">—</strong><span>Dias completos / previstos</span></div>
+            <div class="quality-metric"><strong id="incomplete-count">—</strong><span>Consultas parciais</span></div>
+            <div class="quality-metric"><strong id="invalid-count">—</strong><span>Valores indisponíveis</span></div>
+            <div class="quality-metric"><strong id="relations-count">—</strong><span>Vínculos documentais</span></div>
+            <div class="quality-metric"><strong id="liquidation-links">—</strong><span>Liquidações com vínculos consultados</span></div>
+            <div class="quality-metric"><strong id="payment-links">—</strong><span>Pagamentos com vínculos consultados</span></div>
+            <div class="quality-metric"><strong id="item-links">—</strong><span>Empenhos com itens consultados</span></div>
+            <div class="quality-metric"><strong id="multiple-ne-links">—</strong><span>Documentos vinculados a várias NEs</span></div>
+          </div>
+          <p id="quality-detail" class="helper" aria-live="polite">Aguardando auditoria de cobertura e vínculos…</p>
+          <p class="helper">A cobertura diária e as consultas de enriquecimento são métricas diferentes. Sem dados não significa zero; impactos negativos e restos a pagar não constituem automaticamente inconsistências.</p>
+      </details>
     <section class="methodology">
       <h2>Como interpretar estes dados</h2>
       <p>A consulta é documental e limitada à <strong>UG 158459</strong>. A UO 26422 representa o IFC como um todo. As somas de empenhos, liquidações e pagamentos não devem ser subtraídas diretamente, porque os documentos podem se referir a empenhos de períodos diferentes, inclusive restos a pagar.</p>
@@ -323,15 +322,20 @@
         <a href="https://github.com/guimig/observatorio-despesas" target="_blank" rel="noopener noreferrer">Código-fonte e metodologia</a>
       </div>
     </section>
+    </section>
   </main>
 
   <dialog id="document-dialog" aria-labelledby="dialog-title" class="document-dialog">
     <div class="dialog-content">
       <div class="dialog-heading">
-        <div><div class="eyebrow">FICHA DOCUMENTAL</div><h2 id="dialog-title">Documento</h2></div>
+        <div><div class="eyebrow">FICHA DOCUMENTAL</div><h2 id="dialog-title" tabindex="-1">Documento</h2></div>
         <button type="button" class="icon-button" id="close-dialog" aria-label="Fechar detalhes">✕</button>
       </div>
       <dl id="dialog-fields" class="document-fields"></dl>
+      <div class="document-actions">
+        <button id="document-trajectory" class="button button-secondary" type="button" hidden>Consultar trajetória deste empenho</button>
+        <a id="document-permalink" class="inline-link" target="_blank" rel="noopener noreferrer" hidden>Link para esta ficha</a>
+      </div>
       <h3 id="dialog-relations-title">Relacionamentos documentais</h3>
       <div id="dialog-relations" class="relations"></div>
       <p class="helper">Relações confirmadas pelos empenhos impactados da CGU. A ausência de vínculo não comprova inexistência de relação. Vínculos em outras competências podem exigir carregamento adicional.</p>
@@ -359,7 +363,7 @@
   <dialog id="record-dialog" aria-labelledby="record-title" class="document-dialog">
     <div class="dialog-content">
       <div class="dialog-heading">
-        <div><div id="record-eyebrow" class="eyebrow">FICHA DE CONTRATAÇÃO</div><h2 id="record-title">Detalhes</h2></div>
+        <div><div id="record-eyebrow" class="eyebrow">FICHA DE CONTRATAÇÃO</div><h2 id="record-title" tabindex="-1">Detalhes</h2></div>
         <button type="button" class="icon-button" id="close-record-dialog" aria-label="Fechar detalhes">✕</button>
       </div>
       <dl id="record-fields" class="document-fields"></dl>

@@ -9,6 +9,8 @@ export function showDialogFromTop(dialog,frame=callback=>requestAnimationFrame(c
   };
   reset();
   // Evita que foco automatico e layout apos showModal restaurem a rolagem anterior.
-  dialog.querySelector('.dialog-heading button')?.focus({preventScroll:true});
+  const start=dialog.querySelector('.dialog-heading h2[tabindex="-1"]') ||
+    dialog.querySelector('.dialog-heading button');
+  start?.focus({preventScroll:true});
   frame(reset);
 }

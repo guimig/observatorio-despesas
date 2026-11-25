@@ -30,7 +30,12 @@ const contractsPerPage=20;
 const cache = new Map();
 let commitmentTrajectories=[];
 let trajectoryReady=false;
-const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0 };
+const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0,
+  history: false, loadingHistory: false, loadingMonth: false };
+const pendingMonths = new Map();
+const dateTime = new Intl.DateTimeFormat('pt-BR', {
+  dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo'
+});
 
 function element(tag, className, content) {
   const node = document.createElement(tag);
@@ -100,6 +105,7 @@ function showCatalogDetail(record,kind){
 function status(message, kind = '') {
   $('status').className = 'notice' + (kind ? ' ' + kind : '');
   $('status').textContent = message;
+  $('status').hidden = !message;
 }
 function localDate(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—';
@@ -132,25 +138,9 @@ function renderStats() {
       (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponível(is)' : '')+
       (stat.overlap ? ' · sobreposição entre fases (total monetário suspenso)' : '');
   });
-  const valid = stats.filter(s => Number.isSafeInteger(s.sum));
-  const max = Math.max(1, ...valid.map(s => Math.abs(s.sum)));
-  const chart = $('phase-chart');
-  chart.replaceChildren();
-  stats.forEach((stat, i) => {
-    const row = element('div', 'phase-row');
-    const name = element('span', 'phase-name', phaseNames[i + 1]);
-    const track = element('div', 'phase-track');
-    track.setAttribute('role', 'img');
-    track.setAttribute('aria-label', phaseNames[i + 1] + ': ' + fmtMoney(stat.sum));
-    const fill = element('div', 'phase-fill');
-    fill.style.width = Number.isSafeInteger(stat.sum)
-      ? Math.max(0, Math.min(100, Math.abs(stat.sum) / max * 100)) + '%' : '0%';
-    track.append(fill);
-    row.append(name, track, element('span', 'phase-total', fmtMoney(stat.sum)));
-    chart.append(row);
-  });
 }
 function renderQuality() {
+  $('monthly-quality').hidden = false;
   const audit=auditMonth(state.data),coverage=audit.coverage;
   $('days-covered').textContent=fmtCount(coverage.completeDays)+'/'+fmtCount(coverage.expectedDays);
   $('incomplete-count').textContent=fmtCount(coverage.partialQueries);
@@ -174,18 +164,10 @@ function renderQuality() {
     '). Aparições em fases distintas não comprovam operações financeiras adicionais. Esses casos não significam automaticamente erro contábil.';
   const hasGaps=coverage.status!=='completa',structural=audit.issues.length>0;
   $('coverage-chip').textContent=structural?'Dados exigem revisão':
-    coverage.status==='completa'?'Dias encerrados consultados':
-    coverage.status==='sem_dias_encerrados'?'Sem dias encerrados':'Cobertura diária parcial';
-  status(structural
-    ?'A auditoria identificou registros que exigem revisão estrutural, sem modificar os dados originais.'
-    :hasGaps
-      ?'Cobertura parcial: '+coverage.completeDays+' de '+coverage.expectedDays+
-        ' dias encerrados com três fases válidas. '+coverage.missingDays+
-        ' dia(s) sem consulta e '+coverage.partialDays+' parcialmente consultado(s). '+
-        'Enriquecimento documental informado separadamente.'
-      :'Todos os dias encerrados possuem três fases válidas. '+
-        'O enriquecimento dos vínculos é medido à parte; não se trata de conciliação contábil.',
-    structural||hasGaps?'warning':'success');
+    coverage.status==='sem_dias_encerrados'?'Sem dias encerrados':
+    (hasGaps?'Cobertura parcial':'Cobertura completa')+' · '+coverage.completeDays+
+    ' de '+coverage.expectedDays+' dias encerrados';
+  status(structural?'A auditoria encontrou registros que exigem revisão.':'', structural?'warning':'');
 }
 function formatCnpj(value) {
   return /^\d{14}$/.test(value || '') ? value.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : value;
@@ -196,78 +178,139 @@ function beneficiaryLabel(doc, monthData = state.data) {
   const name = monthData.beneficiaries?.[doc.partyRef] || 'Pessoa jurídica';
   return name + ' · CNPJ ' + formatCnpj(doc.partyRef);
 }
+function searchText(value) {
+  return String(value ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
 function filteredDocuments() {
-  return state.data.documents.filter(doc => {
-    if (state.phase !== 'all' && String(doc.phase) !== state.phase &&
-      !(state.data.phaseObservations||[]).some(item=>
-        item.id===doc.id&&String(item.phase)===state.phase)) return false;
-    if (state.day !== 'all' && doc.date !== state.day) return false;
-    const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
-      doc.partyRef && state.data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {})];
-    if (state.search && !fields.filter(Boolean).join(' ').toLowerCase().includes(state.search)) return false;
-    return true;
-  });
+  const months = state.history
+    ? [...cache.values()].sort((a, b) => b.month.localeCompare(a.month))
+    : [state.data];
+  const query = searchText(state.search);
+  const compactCode = value => searchText(value).replace(/[.\/\s-]/g, '');
+  const code = compactCode(query);
+  const exact = [], matches = [];
+  for (const data of months) {
+    const observed = new Set((data.phaseObservations || [])
+      .filter(item => String(item.phase) === state.phase).map(item => item.id));
+    for (const doc of data.documents) {
+      if (state.phase !== 'all' && String(doc.phase) !== state.phase && !observed.has(doc.id)) continue;
+      if (state.day !== 'all' && doc.date !== state.day) continue;
+      const codes = [doc.id, doc.process, doc.partyRef].filter(Boolean).map(compactCode);
+      const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
+        doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {})];
+      const exactCode = code && codes.includes(code);
+      if (!query || exactCode || searchText(fields.filter(Boolean).join(' ')).includes(query) ||
+          (code && codes.some(value => value.includes(code)))) {
+        (exactCode ? exact : matches).push({doc, data});
+      }
+    }
+  }
+  return exact.concat(matches);
+}
+function renderActiveFilters() {
+  const root = $('active-filters');
+  root.replaceChildren();
+  const add = (label, control, resetValue) => {
+    const button = element('button', 'filter-chip', label + ' ×');
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Remover filtro ' + label);
+    button.addEventListener('click', () => {
+      control.value = resetValue;
+      control.dispatchEvent(new Event(control.type === 'search' ? 'input' : 'change'));
+      control.focus();
+    });
+    root.append(button);
+  };
+  if (state.search) add('Busca: ' + state.search, $('search-doc'), '');
+  if (state.phase !== 'all') add(phaseNames[state.phase], $('phase-filter'), 'all');
+  if (state.day !== 'all') add(localDate(state.day), $('day-filter'), 'all');
+  $('clear-filters').disabled = !root.childElementCount;
+  for (const card of document.querySelectorAll('.stat-card')) {
+    card.setAttribute('aria-pressed', String(!state.history && card.dataset.phase === state.phase));
+  }
 }
 function renderTable() {
   const all = filteredDocuments();
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
   state.page = Math.min(Math.max(0, state.page), totalPages - 1);
   const shown = all.slice(state.page * pageSize, (state.page + 1) * pageSize);
-  $('table-count').textContent = fmtCount(all.length) + ' resultado(s)';
-  $('page-information').textContent = 'Página ' + (state.page + 1) + ' de ' + totalPages;
+  $('table-count').textContent = fmtCount(all.length) + (all.length === 1 ? ' resultado' : ' resultados');
+  $('export-button').disabled = !all.length || state.loadingHistory || state.loadingMonth;
+  $('page-information').textContent = all.length
+    ? 'Página ' + (state.page + 1) + ' de ' + totalPages : '';
+  renderActiveFilters();
   $('previous-page').disabled = state.page === 0;
   $('next-page').disabled = state.page >= totalPages - 1;
   const body = $('doc-rows');
   body.replaceChildren();
   if (!shown.length) {
     const row = element('tr');
-    const td = element('td', '', 'Nenhum documento para os filtros selecionados.');
+    const message = state.loadingHistory ? 'Carregando competências do histórico…'
+      : 'Nenhum documento corresponde aos filtros nas competências consultadas.';
+    const td = element('td', '', message);
     td.colSpan = 7;
     row.append(td); body.append(row);
     return;
   }
-  shown.forEach(doc => {
+  shown.forEach(({doc, data}) => {
     const row = element('tr');
     const id = element('td', 'doc-code', doc.id);
     const date = element('td', '', localDate(doc.date));
     const phase = element('td');
     phase.append(element('span', 'phase-label', phaseNames[doc.phase] || 'Outro'));
-    const others=(state.data.phaseObservations||[]).filter(item=>item.id===doc.id);
+    const others=(data.phaseObservations||[]).filter(item=>item.id===doc.id);
     if(others.length)phase.append(element('span','small-muted',
       ' · também consta em '+others.map(item=>phaseNames[item.phase]).join(', ')));
-    const beneficiary = element('td', 'beneficiary-cell', beneficiaryLabel(doc));
-    const process = element('td', 'doc-code', doc.process || '—');
+    const beneficiary = element('td', 'beneficiary-cell document-secondary', beneficiaryLabel(doc,data));
+    const process = element('td', 'doc-code document-secondary', doc.process || '—');
     const amount = element('td', 'align-right', fmtMoney(doc.cents));
     const details = element('td');
     const button = element('button', 'details-button', 'Ver detalhes');
     button.type = 'button';
     button.setAttribute('aria-label', 'Ver detalhes do documento ' + doc.id);
-    button.addEventListener('click', () => showDocument(doc));
+    button.addEventListener('click', () => showDocument(doc, data));
     details.append(button);
     row.append(id, date, phase, beneficiary, process, amount, details);
     row.addEventListener('click', event => {
-      if (event.target !== button) showDocument(doc);
+      if (event.target === button) return;
+      button.focus({preventScroll:true});
+      showDocument(doc, data);
     });
     body.append(row);
   });
 }
+async function fetchMonth(month) {
+  if (cache.has(month)) return cache.get(month);
+  if (!pendingMonths.has(month)) {
+    const request = (async () => {
+      const response = await fetch('./data/months/' + month + '.json', {cache:'no-store'});
+      if (!response.ok) throw Error('Arquivo mensal indisponível');
+      const data = await response.json();
+      if (data?.schema_version !== 1 || data.unit !== '158459' || data.month !== month ||
+          !Array.isArray(data.documents) || !Array.isArray(data.coverage) ||
+          !Array.isArray(data.relations)) throw Error('Dados mensais incompatíveis');
+      cache.set(month, data);
+      return data;
+    })().finally(() => pendingMonths.delete(month));
+    pendingMonths.set(month, request);
+  }
+  return pendingMonths.get(month);
+}
 async function locateLinkedDocument(id) {
-  const cached = [...cache.values()];
-  for(const data of cached) {
-    const doc=data.documents.find(entry=>entry.id===id);
-    if(doc) return {doc,data};
+  for (const data of cache.values()) {
+    const doc = data.documents.find(entry => entry.id === id);
+    if (doc) return {doc, data};
   }
-  for(const month of [...state.manifest.months].sort().reverse()){
-    if(cache.has(month))continue;
-    const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
-    if(!response.ok)continue;
-    const data=await response.json();
-    if(data?.schema_version!==1||data.unit!=='158459'||data.month!==month||
-      !Array.isArray(data.documents)||!Array.isArray(data.relations))continue;
-    cache.set(month,data);
-    const doc=data.documents.find(entry=>entry.id===id);
-    if(doc)return {doc,data};
+  let unavailable = false;
+  for (const month of [...state.manifest.months].sort().reverse()) {
+    if (cache.has(month)) continue;
+    try {
+      const data = await fetchMonth(month);
+      const doc = data.documents.find(entry => entry.id === id);
+      if (doc) return {doc, data};
+    } catch { unavailable = true; }
   }
+  if (unavailable) throw Error('Há competências indisponíveis');
   return null;
 }
 function contractSourceName(source){
@@ -299,13 +342,7 @@ async function loadHistoricalNeEvidence(){
   for(const month of months){
    indicator.textContent='Conferindo competências históricas: '+(completed+failed)+' de '+months.length+' pendentes…';
    try{
-    const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
-    if(!response.ok)throw Error('Arquivo mensal indisponível');
-    const data=await response.json();
-    if(data.schema_version!==1||data.unit!=='158459'||data.month!==month||
-       !Array.isArray(data.documents)||!Array.isArray(data.relations)||
-       !Array.isArray(data.coverage))throw Error('Dados mensais incompatíveis');
-    cache.set(month,data);completed++;
+    await fetchMonth(month);completed++;
    }catch{failed++}
   }
   indicator.textContent='Conferência histórica: '+fmtCount(cache.size)+' de '+
@@ -512,10 +549,21 @@ function showDocument(doc, monthData = state.data) {
   $('dialog-trajectory-section').hidden=true;
   $('dialog-relations-title').hidden=false;
   $('dialog-title').textContent = doc.id;
+  $('document-trajectory').hidden = doc.phase !== 1;
+  const permalink = new URL(location.pathname, location.origin);
+  permalink.searchParams.set('competencia', monthData.month);
+  permalink.searchParams.set('documento', doc.id);
+  $('document-permalink').href = permalink;
+  $('document-permalink').hidden = false;
   const fields = $('dialog-fields');
   fields.replaceChildren();
   const entries = [
-    ['Documento SIAFI', doc.id],
+    ['Unidade gestora', '158459 · IFC Araquari'],
+    ['Data informada na listagem CGU', localDate(doc.date)],
+    ['Processo administrativo', doc.process || 'Não informado'],
+    [doc.valueSource==='impactos_cgu'?'Valor recuperado dos impactos CGU':'Valor documental', fmtMoney(doc.cents)],
+    ['Fonte', 'CGU / Portal da Transparência'],
+    ['Favorecido', beneficiaryLabel(doc,monthData)],
     ['Espécie do documento', documentSpecies(doc).label],
     ['Fase de divulgação original', financialPhaseDescription(doc.phase)],
     ['Outros filtros da CGU em que aparece',
@@ -524,10 +572,6 @@ function showDocument(doc, monthData = state.data) {
           ' (valor informado divergente)':o.amountRelation==='unknown'?
           ' (comparação de valores indisponível)':' (mesmo valor informado)'))
         .join('; ')||'Nenhum outro filtro identificado'],
-    ['Data informada na listagem CGU', localDate(doc.date)], [doc.valueSource==='impactos_cgu'?'Valor recuperado dos impactos CGU':'Valor documental', fmtMoney(doc.cents)],
-    ['Unidade gestora', '158459 · IFC Araquari'],
-    ['Favorecido', beneficiaryLabel(doc,monthData)],
-    ['Processo administrativo', doc.process || 'Não informado'],
     ['Grupo de despesa', doc.nature?.group || 'Não informado'],
     ['Elemento', doc.nature?.element || 'Não informado'],
     ['Programa', doc.nature?.program || 'Não informado'],
@@ -535,8 +579,7 @@ function showDocument(doc, monthData = state.data) {
     ['Consulta de vínculos',doc.phase===3
       ?(doc.paymentLinksChecked?'Concluída nesta base':'Aguardando enriquecimento')
       :doc.phase===2?(doc.liquidationLinksChecked?'Concluída nesta base':
-        'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis'],
-    ['Fonte', 'CGU / Portal da Transparência']
+        'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
   appendDetailField(fields,'Descrição / observação do documento SIAFI',
@@ -626,27 +669,16 @@ function renderDays() {
 function renderAll() {
   renderDays(); renderStats(); renderQuality(); renderTable();
   $('updated').textContent = state.data.updated_at
-    ? 'Arquivo atualizado em ' + new Date(state.data.updated_at).toLocaleString('pt-BR')
+    ? 'Arquivo atualizado em ' + dateTime.format(new Date(state.data.updated_at)) + ' (Brasília)'
     : 'Sem registro de atualização';
 }
 
 async function loadAllTrajectoryMonths(){
-  if(trajectoryReady)return;
-  status('Carregando competências para reconstruir as trajetórias…');
+  if(trajectoryReady || !state.manifest)return;
+  $('trajectory-status').textContent='Carregando competências para reconstruir as trajetórias…';
   const months=[...state.manifest.months].sort();
   const loaded=[];
-  for(const month of months){
-    if(!cache.has(month)){
-      const response=await fetch('./data/months/'+month+'.json',{cache:'no-store'});
-      if(!response.ok)throw Error('Não foi possível carregar '+month);
-      const data=await response.json();
-      if(data?.schema_version!==1||data.unit!=='158459'||data.month!==month||
-        !Array.isArray(data.documents)||!Array.isArray(data.relations))
-        throw Error('Dados incompatíveis em '+month);
-      cache.set(month,data);
-    }
-    loaded.push(cache.get(month));
-  }
+  for (const month of months) loaded.push(await fetchMonth(month));
   commitmentTrajectories=buildCommitmentTrajectories(loaded);
   const audit=auditCommitmentTrajectories(loaded);
   trajectoryReady=true;
@@ -701,6 +733,8 @@ function renderTrajectoryLinks(target,links,emptyText){
 }
 function showCommitmentTrajectory(entry){
   $('dialog-trajectory-section').hidden=false;
+  $('document-trajectory').hidden = true;
+  $('document-permalink').hidden = true;
   $('dialog-relations-title').hidden=true;
   $('dialog-title').textContent='Trajetória da NE · '+entry.id;
   const fields=$('dialog-fields');fields.replaceChildren();
@@ -755,36 +789,85 @@ async function initTrajectories(){
     catch{$('trajectory-status').textContent='Falha ao carregar uma ou mais competências. Os dados originais foram preservados.';}
     finally{$('trajectory-reload').disabled=false;}
   });
-  $('trajectory-load').addEventListener('click',async()=>{
+  $('trajectory-load').addEventListener('click',loadTrajectoryView);
+  $('document-trajectory').addEventListener('click',()=>{
+    $('trajectory-search').value = $('dialog-title').textContent;
+    $('document-dialog').close();
+    $('trajectory-search').focus();
+    if (trajectoryReady) renderCommitmentTrajectories();
+    else loadTrajectoryView();
+  });
+}
+async function loadTrajectoryView(){
+    if ($('trajectory-load').disabled) return;
     $('trajectory-load').disabled=true;
     try{await loadAllTrajectoryMonths();}
     catch{$('trajectory-status').textContent='Não foi possível reconstruir as trajetórias. Verifique a disponibilidade dos JSONs mensais.';}
     finally{$('trajectory-load').disabled=false;}
-  });
 }
 
 async function loadMonth(month) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) ||
     !state.manifest.months.includes(month)) throw Error('Competência não disponível');
-  status('Carregando documentos e vínculos da competência…');
-  if (!cache.has(month)) {
-    const url = './data/months/' + month + '.json';
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) throw Error('Arquivo mensal não disponível');
-    const data = await response.json();
-    if (data.schema_version !== 1 || data.unit !== '158459' || data.month !== month ||
-      !Array.isArray(data.documents) || !Array.isArray(data.coverage) ||
-      !Array.isArray(data.relations)) throw Error('Dados mensais incompatíveis');
-    cache.set(month, data);
+  state.loadingMonth = true;
+  $('month-select').disabled = true;
+  $('history-scope').disabled = true;
+  $('export-button').disabled = true;
+  status('Carregando documentos da competência…');
+  try {
+    state.data = await fetchMonth(month);
+    state.month = month;
+    state.history = false;
+    state.page = 0;
+    $('month-select').value = month;
+    updateScope();
+    renderAll();
+    if(procurementData)renderContracts();
+    if(noticesData)renderNotices();
+  } finally {
+    state.loadingMonth = false;
+    $('month-select').disabled = false;
+    $('history-scope').disabled = false;
+    if (state.data) $('export-button').disabled = !filteredDocuments().length;
   }
-  state.month = month;
-  state.data = cache.get(month);
-  state.page = 0; state.phase = 'all'; state.search = ''; state.day = 'all';
-  $('phase-filter').value = 'all';
-  $('search-doc').value = '';
-  renderAll();
-  if(procurementData)renderContracts();
-  if(noticesData)renderNotices();
+}
+function updateScope() {
+  const history = state.history;
+  $('scope-status').textContent = history
+    ? (state.loadingHistory ? 'Carregando histórico · ' : '') +
+      fmtCount(cache.size) + ' de ' + fmtCount(state.manifest.months.length) + ' competências publicadas carregadas'
+    : 'Nesta competência';
+  $('history-scope').textContent = history ? 'Voltar à competência' : 'Buscar no histórico disponível';
+  $('day-filter').disabled = history;
+  $('coverage-chip').hidden = history;
+  $('updated').hidden = history;
+  $('history-retry').hidden = !history || state.loadingHistory || cache.size === state.manifest.months.length;
+}
+async function searchHistory() {
+  if (state.loadingHistory || state.loadingMonth || !state.data) return;
+  state.history = true;
+  state.loadingHistory = true;
+  $('history-scope').disabled = true;
+  $('month-select').disabled = true;
+  $('day-filter').value = state.day = 'all';
+  updateScope();
+  refreshFilters();
+  const months = [...state.manifest.months].sort().reverse();
+  try {
+    for (const month of months) {
+      if (cache.has(month)) continue;
+      try { await fetchMonth(month); } catch { /* A próxima tentativa usa apenas os meses ausentes. */ }
+      updateScope();
+    }
+  } finally {
+    state.loadingHistory = false;
+    $('month-select').disabled = false;
+    $('history-scope').disabled = false;
+    updateScope();
+    refreshFilters();
+    if(noticesData)renderNotices();
+    if(procurementData)renderContracts();
+  }
 }
 function csvCell(value) {
   const text = String(value ?? '');
@@ -794,24 +877,44 @@ function csvCell(value) {
 function exportCsv() {
   const rows = filteredDocuments();
   const data = ['documento,data_emissao,fase,valor_centavos,favorecido,processo'];
-  for (const row of rows) {
+  for (const {doc:row, data:monthData} of rows) {
     data.push([row.id, row.date, phaseNames[row.phase],
       row.cents === null ? '' : row.cents,
-      beneficiaryLabel(row), row.process || ''].map(csvCell).join(','));
+      beneficiaryLabel(row,monthData), row.process || ''].map(csvCell).join(','));
   }
   const blob = new Blob(['\uFEFF' + data.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = element('a');
   link.href = url;
-  link.download = 'observatorio-ug-158459-' + state.month + '.csv';
+  link.download = 'observatorio-ug-158459-' + (state.history ? 'historico' : state.month) + '.csv';
   document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function initEvents() {
   $('month-select').addEventListener('change', async event => {
     try { await loadMonth(event.target.value); }
-    catch { status('Não foi possível carregar esta competência. Dados anteriores preservados.', 'warning'); }
+    catch {
+      $('month-select').value = state.month;
+      status('Não foi possível carregar a competência escolhida. A consulta anterior continua disponível.', 'warning');
+    }
   });
+  $('history-scope').addEventListener('click', () => {
+    if (!state.history) { searchHistory(); return; }
+    state.history = false;
+    updateScope();
+    refreshFilters();
+  });
+  $('history-retry').addEventListener('click', searchHistory);
+  for (const link of document.querySelectorAll('[data-open]')) {
+    link.addEventListener('click', () => { $(link.dataset.open).open = true; });
+  }
+  const openLinkedSection = () => {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target instanceof HTMLDetailsElement) target.open = true;
+  };
+  window.addEventListener('hashchange', openLinkedSection);
+  openLinkedSection();
+  $('retry-manifest').addEventListener('click', init);
   $('search-doc').addEventListener('input', event => {
     state.search = event.target.value.trim().toLowerCase(); refreshFilters();
   });
@@ -828,8 +931,14 @@ function initEvents() {
   });
   for (const card of document.querySelectorAll('.stat-card')) {
     card.addEventListener('click', () => {
-      state.phase = card.dataset.phase; $('phase-filter').value = state.phase;
-      refreshFilters(); $('explorer-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (state.loadingHistory || state.loadingMonth) return;
+      const active = !state.history && state.phase === card.dataset.phase;
+      state.history = false;
+      state.phase = active ? 'all' : card.dataset.phase;
+      $('phase-filter').value = state.phase;
+      updateScope();
+      refreshFilters();
+      $('explorer-title').focus();
     });
   }
   $('previous-page').addEventListener('click', () => { state.page--; renderTable(); });
@@ -846,7 +955,9 @@ function initEvents() {
   });
 }
 async function init() {
-  initEvents();
+  $('empty-state').hidden = true;
+  $('retry-manifest').hidden = true;
+  status('Carregando o acervo público da CGU…');
   try {
     const response = await fetch('./data/manifest.json', { cache: 'no-store' });
     if (!response.ok) throw Error('Manifesto indisponível');
@@ -865,10 +976,30 @@ async function init() {
       const option = element('option', '', monthName(month));
       option.value = month; selector.append(option);
     });
+    const params = new URLSearchParams(location.search);
+    const linkedMonth = params.get('competencia');
+    const documentId = params.get('documento');
+    const hasLink = manifest.months.includes(linkedMonth) &&
+      /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(documentId || '');
+    if (hasLink) {
+      selector.value = linkedMonth;
+      try { await loadMonth(linkedMonth); }
+      catch {
+        await loadMonth([...manifest.months].sort().at(-1));
+        status('A competência da ficha está indisponível. A consulta recente está disponível abaixo.', 'warning');
+      }
+    } else await loadMonth(selector.value);
     $('dashboard').hidden = false;
-    await loadMonth(selector.value);
+    if (hasLink && state.month === linkedMonth) {
+      const doc = state.data.documents.find(entry => entry.id === documentId);
+      if (doc) {
+        $('search-doc').focus({preventScroll:true});
+        showDocument(doc, state.data);
+      } else status('Documento não localizado na competência indicada pelo link.', 'warning');
+    }
   } catch {
     $('dashboard').hidden = true; $('empty-state').hidden = false;
+    $('retry-manifest').hidden = false;
     $('empty-title').textContent = 'Dados indisponíveis';
     $('empty-description').textContent =
       'Não foi possível carregar a base pública. Verifique a publicação do GitHub Pages e o status da coleta.';
@@ -1078,6 +1209,10 @@ function noticeEvidence(notice) {
   return assessNoticeAttribution(notice,procurementData?.contracts||[],loadedCguDocuments());
 }
 function filteredNotices() {
+  const query = searchText(noticesState.query);
+  const ataMatches = new Set(query ? (atasData?.atas || []).filter(ata =>
+    [ata.id, ata.number].some(value => searchText(value).includes(query)))
+    .map(ata => ata.procurementId) : []);
   return (noticesData?.notices||[]).filter(item=>{
     if(!filterStructuredNotice(item,noticesState))return false;
     if(noticesState.modality!=='all' && String(item.modality)!==noticesState.modality)
@@ -1090,8 +1225,8 @@ function filteredNotices() {
       MODALITIES[item.modality],item.unitCode,item.published,item.month,
       item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents,
       item.disputeMode,item.legalBasisCode,item.proposalStart,item.proposalEnd];
-    return !noticesState.query||values.filter(Boolean).join(' ').toLowerCase()
-      .includes(noticesState.query);
+    return !query || ataMatches.has(item.pncpId) ||
+      searchText(values.filter(Boolean).join(' ')).includes(query);
   });
 }
 let latestProcurementAudit=null;
@@ -1190,7 +1325,8 @@ function renderNotices() {
       docCell.append(link);
     }else docCell.append(element('span','doc-code',notice.number||notice.pncpId));
     const linked=groupPublishedInstruments(procurementData?.contracts||[],notice.pncpId);
-    const ataCount=(atasData?.atas||[]).filter(a=>a.procurementId===notice.pncpId).length;
+    const noticeAtas=(atasData?.atas||[]).filter(a=>a.procurementId===notice.pncpId);
+    const ataCount=noticeAtas.length;
     const ataChecked=(atasData?.checks||[]).some(c=>c.procurementId===notice.pncpId);
     const related=element('td','');
     const financial=procurementFinancialEvidence(notice,procurementData?.contracts||[],loadedCguDocuments());
@@ -1230,13 +1366,16 @@ function renderNotices() {
       const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
       ataLabel.title='Atas institucionais do órgão publicador. Quantidade licitada, registrada e saldo disponível são indicadores distintos. Não há atribuição automática de quantidades a Araquari nem presunção de compra ou empenho.';
       related.append(ataLabel);
-      if(arpDetailsById){
-        const records=atasData.atas.filter(a=>a.procurementId===notice.pncpId).map(a=>({ata:a,detail:arpDetailsById.get(a.id)})).filter(x=>x.detail);
+      {
+        const records=noticeAtas.map(ata=>({ata,detail:arpDetailsById?.get(ata.id)}));
         if(records.length){
           const expanded=element('details'),summary=element('summary','relation-link','Detalhes de '+fmtCount(records.length)+' ata(s)');expanded.append(summary);
           for(const {ata,detail} of records){
             const sub=element('details'),head=element('summary','', 'Ata '+(ata.number||ata.sequence));sub.append(head);
-            if(detail.compras){
+            if (!detail?.unitItems?.some(item=>item.units.some(unit=>unit.unitCode==='158459'))) {
+              sub.append(element('p','helper','Quantidade de Araquari sem registro confirmado nesta base.'));
+            }
+            if(detail?.compras){
               sub.append(element('p','helper','Itens identificados pelo controle oficial da ata no Compras.gov. Quantidades totais da ata; não são saldo de Araquari nem necessariamente exclusivas do IFC.'));
               const list=element('ul');for(const i of detail.compras.items){
                 const parts=['Item '+i.number,i.supplierCnpj?'CNPJ '+i.supplierCnpj:'CPF '+i.supplierCpfMasked,i.excluded?'Excluído':null,i.homologatedSupplier!==undefined?'Homologado fornecedor: '+i.homologatedSupplier:null,i.committedQuantity!==undefined?'Quantidade empenhada informada: '+i.committedQuantity:null,i.unitPrice!==undefined?'Unitário informado (R$): '+i.unitPrice:null];
@@ -1247,7 +1386,7 @@ function renderNotices() {
                 for(const entry of detail.unitItems)for(const u of entry.units)sub.append(element('p','small-muted','Item '+entry.number+' · '+(u.unitCode==='158459'?'UASG Araquari':'UASG Reitoria')+' · Quantidade registrada informada: '+new Intl.NumberFormat('pt-BR',{maximumFractionDigits:8}).format(Number(u.registered))+(u.sourceUpdatedAt?' · Atualização da fonte '+localDate(u.sourceUpdatedAt):'')));
               }
             }
-            if(Object.hasOwn(detail,'instruments')){
+            if(detail && Object.hasOwn(detail,'instruments')){
               sub.append(element('p','helper',detail.instruments.length?'Instrumentos vinculados diretamente pelo PNCP; unidade administrativa não equivale automaticamente à UG SIAFI.':'Consulta sem instrumento IFC identificado.'));
               for(const i of detail.instruments){
                 const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\d{14})-2-(\d{6})\/(20\d{2})$/.exec(i.pncpId);
@@ -1487,6 +1626,7 @@ function initTenderItems(){
 }
 
 initTenderItems();
+initEvents();
 init();
 initTrajectories();
 initProcurement().then(()=>{if(noticesData)renderNotices();});
