@@ -15,11 +15,11 @@ on:
       - 'src/pncp-notices-detail.mjs'
       - 'src/backfill-pncp-linked-notices.mjs'
   schedule:
-    - cron: '13 13 * * 1'
+    - cron: '23 13 * * *'
 permissions:
   contents: read
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-pncp
   queue: max
 jobs:
   historico:
@@ -62,7 +62,7 @@ jobs:
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: historico
-    if: needs.historico.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.historico.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

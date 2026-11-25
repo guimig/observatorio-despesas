@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-cgu
   queue: max
 
 jobs:

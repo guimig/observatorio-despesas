@@ -40,7 +40,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-cgu
   queue: max
 
 jobs:
@@ -151,7 +151,7 @@ jobs:
           key: cgu-history-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: atualizar
-    if: needs.atualizar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.atualizar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

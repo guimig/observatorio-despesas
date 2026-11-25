@@ -52,7 +52,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observatorio-coleta-main
+  group: observatorio-coleta-cgu
   queue: max
 
 jobs:
@@ -138,7 +138,7 @@ jobs:
 
   publicar:
     needs: atualizar
-    if: needs.atualizar.outputs.changed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.atualizar.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

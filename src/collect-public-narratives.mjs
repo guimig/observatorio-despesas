@@ -7,6 +7,7 @@ import {readProcurement,validateProcurement} from './procurement-store.mjs';
 import {fetchNoticeDetail} from './pncp-notices-detail.mjs';
 import {contractDetailUrl} from './pncp-contract-link.mjs';
 import {requestPublicJSON} from './procurement.mjs';
+import {createCguBudget} from './cgu-budget.mjs';
 import {collectDayPhase} from './cgu.mjs';
 import {persistWindow,validateMonth,validatePublishedData} from './store.mjs';
 import {planNarrativeReviews,applyNarrativeReview,planCommitmentNarratives,planOtherDocumentNarratives} from './narrative-review.mjs';
@@ -30,14 +31,15 @@ export async function refreshNarratives({
   root=process.cwd(),now=new Date(),token=process.env.CGU_API_KEY||'',
   noticeDetail=fetchNoticeDetail,contractDetail=async id=>
     requestPublicJSON(contractDetailUrl(id)),
-  collect=collectDayPhase,batch=5,commitmentDays=2,otherPhaseDays=1,dryRun=false
+  collect=collectDayPhase,batch=5,commitmentDays=2,otherPhaseDays=1,dryRun=false,scope='all',budget
 }={}){
-  const notices=await readNotices(root),contracts=await readProcurement(root);
-  const months=await readMonths(root);
+  if(!['all','cgu','pncp'].includes(scope))throw Error('Escopo narrativo invalido');
+  const notices=scope==='cgu'?null:await readNotices(root),contracts=scope==='cgu'?null:await readProcurement(root);
+  const months=scope==='pncp'?[]:await readMonths(root);
   const noticePlan=notices?planNarrativeReviews(notices,{kind:'notice',now,batch}):[];
   const contractPlan=contracts?planNarrativeReviews(contracts,{kind:'contract',now,batch}):[];
-  const commitmentPlan=token?planCommitmentNarratives(months,{now,batch:commitmentDays}):[];
-  const otherPlan=token?planOtherDocumentNarratives(months,{now,batch:otherPhaseDays}):[];
+  const commitmentPlan=token&&scope!=='pncp'?planCommitmentNarratives(months,{now,batch:commitmentDays}):[];
+  const otherPlan=token&&scope!=='pncp'?planOtherDocumentNarratives(months,{now,batch:otherPhaseDays}):[];
   const report={notices:noticePlan.length,contracts:contractPlan.length,
     commitmentDates:commitmentPlan.length,otherDocumentDates:otherPlan.length,
     reviewedNotices:0,reviewedContracts:0,
@@ -71,8 +73,9 @@ export async function refreshNarratives({
     await atomicJson(join(root,'data','procurement','contracts.json'),nextContracts);
   }
   for(const date of commitmentPlan){
+    if(budget?.stopped())break;
     try{
-      const patch=await collect(brDate(date),1,{token,maxPages:30,maxImpactPages:8});
+      const patch=await collect(brDate(date),1,{token,maxPages:30,maxImpactPages:8,...(budget?{budget}:{})});
       if(patch.coverage.complete!==true||patch.coverage.invalid!==0){
         report.failures++;continue;
       }
@@ -82,8 +85,9 @@ export async function refreshNarratives({
     }catch{report.failures++;}
   }
   for(const item of otherPlan){
+    if(budget?.stopped())break;
     try{
-      const patch=await collect(brDate(item.date),item.phase,{token,maxPages:30,maxImpactPages:8});
+      const patch=await collect(brDate(item.date),item.phase,{token,maxPages:30,maxImpactPages:8,...(budget?{budget}:{})});
       if(patch.coverage.complete!==true||patch.coverage.invalid!==0){
         report.failures++;continue;
       }
@@ -93,10 +97,12 @@ export async function refreshNarratives({
     }catch{report.failures++;}
   }
   await validatePublishedData(root);
+  if(budget)report.telemetry=budget.snapshot();
   return report;
 }
 async function main(){
-  const report=await refreshNarratives({dryRun:process.argv.includes('--dry-run'),
+  const scope=process.env.NARRATIVE_SCOPE||'all';
+  const report=await refreshNarratives({scope,budget:scope==='pncp'?undefined:createCguBudget(),dryRun:process.argv.includes('--dry-run'),
     batch:Number(process.env.NARRATIVE_BATCH||5),
     commitmentDays:Number(process.env.NARRATIVE_CGU_DAYS||2),
     otherPhaseDays:Number(process.env.NARRATIVE_OTHER_PHASE_DAYS||1)});

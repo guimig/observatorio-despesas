@@ -25,7 +25,7 @@ export function scopeMonths(now=new Date(),{includeCurrent=true}={}){
 /** Uma consulta integral durante o mes corrente nao comprova cobertura do mes encerrado. */
 export function closedCatalogCoverage(c){return c?.status==='complete'&&(c.skipped||0)===0&&c.closedMonth===true}
 /** Completo exige evidencia por fonte/modalidade; ausencia nunca e zero. */
-export function planCatalogMonth(coverage,{keys,kind,now=new Date(),slot=Math.floor(now.getTime()/86400000)}={}){
+export function planCatalogMonth(coverage,{keys,kind,now=new Date(),slot=Math.floor(now.getTime()/28800000)}={}){
  if(!Array.isArray(keys)||!keys.length||!['source','modality'].includes(kind)||!Number.isSafeInteger(slot)||slot<0)
   throw Error('Plano de cobertura contratual invalido');
  const months=scopeMonths(now,{includeCurrent:false}),byMonth=new Map();
