@@ -1209,12 +1209,12 @@ function noticeEvidence(notice) {
   return assessNoticeAttribution(notice,procurementData?.contracts||[],loadedCguDocuments());
 }
 function filteredNotices() {
+  const query = searchText(noticesState.query);
+  const ataMatches = new Set(query ? (atasData?.atas || []).filter(ata =>
+    [ata.id, ata.number].some(value => searchText(value).includes(query)))
+    .map(ata => ata.procurementId) : []);
   return (noticesData?.notices||[]).filter(item=>{
-    const ataMatch = noticesState.query && (atasData?.atas || []).some(ata =>
-      ata.procurementId === item.pncpId && [ata.id, ata.number].some(value =>
-        searchText(value).includes(searchText(noticesState.query))));
-    const filters = ataMatch ? {...noticesState, query:''} : noticesState;
-    if(!filterStructuredNotice(item,filters))return false;
+    if(!filterStructuredNotice(item,noticesState))return false;
     if(noticesState.modality!=='all' && String(item.modality)!==noticesState.modality)
       return false;
     const evidence=noticeEvidence(item);
@@ -1225,8 +1225,8 @@ function filteredNotices() {
       MODALITIES[item.modality],item.unitCode,item.published,item.month,
       item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents,
       item.disputeMode,item.legalBasisCode,item.proposalStart,item.proposalEnd];
-    return !noticesState.query||values.filter(Boolean).join(' ').toLowerCase()
-      .includes(noticesState.query);
+    return !query || ataMatches.has(item.pncpId) ||
+      searchText(values.filter(Boolean).join(' ')).includes(query);
   });
 }
 let latestProcurementAudit=null;
