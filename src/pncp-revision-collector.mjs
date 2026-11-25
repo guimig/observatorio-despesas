@@ -34,10 +34,12 @@ export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
   const eligible=entries.filter(item=>item.source==='pncp'&&item.pncpId)
     .filter(item=>{
       const time=new Date((item.recheckedAt||'')+'T00:00:00Z').getTime();
-      return !Number.isFinite(time)||now.getTime()-time>=frequency(item,kind,now)*DAY;
+      const interval=kind==='contract'&&item.adhesion===undefined?7:frequency(item,kind,now);
+      return !Number.isFinite(time)||now.getTime()-time>=interval*DAY;
     }).sort((a,b)=>{
       const aCheck=a.recheckedAt||'',bCheck=b.recheckedAt||'';
-      return aCheck.localeCompare(bCheck)||
+      const external=c=>kind==='contract'&&c.adhesion===undefined&&c.procurementId&&!c.procurementId.startsWith('10635424');
+      return Number(Boolean(external(b)))-Number(Boolean(external(a)))||aCheck.localeCompare(bCheck)||
         Number(Boolean(b.process?.startsWith('23349.')))-
         Number(Boolean(a.process?.startsWith('23349.')))||
         String(b.published||b.publishedMonth).localeCompare(String(a.published||a.publishedMonth))||

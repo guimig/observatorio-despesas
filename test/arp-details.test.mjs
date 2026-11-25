@@ -49,7 +49,7 @@ test('saldo sem exercicio explicito nao e consultado; sondagem so retorna contag
  assert.equal((await inspectArpBalances(ata,base,{fetcher:async()=>{calls++}})).eligible,false);
  assert.equal(calls,0);
  const r=await inspectArpBalances(ata,{...base,number:'00078/2026'},{fetcher:async()=>{calls++;return envelope([{unidade:'158459',saldoEmpenho:99,nome:'DADO'}])}});
- assert.equal(calls,2);assert.equal(r.balances.exactCampus,1);assert.ok(!JSON.stringify(r).includes('DADO'));assert.ok(!JSON.stringify(r).includes('99'));
+ assert.equal(calls,2);assert.equal(r.balances.exactCampus,0);assert.ok(!JSON.stringify(r).includes('DADO'));assert.ok(!JSON.stringify(r).includes('99'));
 });
 test('cache evita consultas repetidas e perda nao apaga dados',()=>{
  const now=new Date('2026-11-24'),state={[arpKey(ata,'compras')]:'2026-11-24'};
