@@ -1,7 +1,7 @@
 /** Distribui capacidade entre meses sem repetir dias completos nem criar fila persistente. */
 import {scopeMonths,assertScopeMonth,FIRST_MONTH} from './collection-scope.mjs';
 import {planHistoricalDays,currentDateInBrazil} from './backfill.mjs';
-import {BACKFILL_LIMITS,INTENSIVE_LIMITS} from './cgu-budget.mjs';
+import {BACKFILL_LIMITS,HISTORICAL_INTENSIVE_LIMITS} from './cgu-budget.mjs';
 
 const brazilianDate=date=>`${date.slice(8,10)}/${date.slice(5,7)}/${date.slice(0,4)}`;
 
@@ -9,7 +9,7 @@ export async function planAdaptiveBackfill({now=new Date(),earliestMonth=FIRST_M
  loadExisting=async()=>null,priorityYears=[],prioritize=false,slot=Math.floor(now.getTime()/14400000),
  maxDays=BACKFILL_LIMITS.days,priorityDates=[]}={}){
  assertScopeMonth(earliestMonth);
- if(!Number.isSafeInteger(slot)||slot<0||!Number.isSafeInteger(maxDays)||maxDays<1||maxDays>INTENSIVE_LIMITS.days)
+ if(!Number.isSafeInteger(slot)||slot<0||!Number.isSafeInteger(maxDays)||maxDays<1||maxDays>HISTORICAL_INTENSIVE_LIMITS.days)
   throw Error('Plano adaptativo invalido');
  const months=scopeMonths(now).filter(m=>m>=earliestMonth);
  const offset=slot%Math.max(1,months.length),ordered=months.slice(offset).concat(months.slice(0,offset));

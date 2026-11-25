@@ -1,6 +1,6 @@
 import {FIRST_MONTH} from './collection-scope.mjs';
 import {planAdaptiveBackfill} from './backfill-adaptive.mjs';
-import {createCguBudget,BACKFILL_LIMITS,INTENSIVE_LIMITS,collectionLimits} from './cgu-budget.mjs';
+import {createCguBudget,BACKFILL_LIMITS,HISTORICAL_INTENSIVE_LIMITS} from './cgu-budget.mjs';
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -34,7 +34,7 @@ async function main() {
     Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
   const adaptive=process.env.BACKFILL_ADAPTIVE==='true'&&!process.env.BACKFILL_MONTH&&process.env.BACKFILL_RECHECK!=='true';
   const intensive=adaptive&&process.env.BACKFILL_INTENSIVE==='true';
-  const adaptivePlan=adaptive?await planAdaptiveBackfill({maxDays:intensive?INTENSIVE_LIMITS.days:BACKFILL_LIMITS.days,now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
+  const adaptivePlan=adaptive?await planAdaptiveBackfill({maxDays:intensive?HISTORICAL_INTENSIVE_LIMITS.days:BACKFILL_LIMITS.days,now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
   const month = adaptive?adaptivePlan.tasks[0]?.month:await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
     earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,
@@ -61,16 +61,17 @@ async function main() {
       '. Cobertura existente preservada.');
     return;
   }
+  const limits=intensive&&days.length>BACKFILL_LIMITS.days?HISTORICAL_INTENSIVE_LIMITS:BACKFILL_LIMITS;
   console.log('Modo de recuperação: '+(prioritize?'NEs referenciadas sem documento':'cobertura recente')+'. Anos pendentes: '+priorityYears.join(', '));
   console.log('Plano histórico: ' + (adaptive?'adaptativo, '+adaptivePlan.eligibleMonths+' competencias elegiveis':month) + '; ' + days.length +
     ' dia(s) elegível(is) para o lote.');
+  console.log('Limites do lote histórico: '+JSON.stringify(limits));
   if (process.argv.includes('--dry-run')) {
     console.log('Simulação: nenhuma consulta e nenhum arquivo gravado.');
     return;
   }
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
-  const limits=collectionLimits({intensive,backlog:days.length});
   const budget=createCguBudget(limits);
   let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0,attemptedDays=0,attemptedPhases=0,consultedPhases=0,deferredPhases=0,valuesRecovered=0,valuesAttempted=0,valuesUnresolved=0;
   const failureKinds={};
