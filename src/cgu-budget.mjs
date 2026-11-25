@@ -1,9 +1,16 @@
 /** Limites internos conservadores, nao a quota contratual da CGU. Uma chamada
  * sequencial a cada 1,5s, contando inclusive paginacao e tentativas HTTP. */
 export const BACKFILL_LIMITS=Object.freeze({requests:120,durationMs:8*60*1000,spacingMs:1500,days:21});
+// A capacidade ampliada continua sequencial, sem reduzir o intervalo entre chamadas.
+export const INTENSIVE_LIMITS=Object.freeze({...BACKFILL_LIMITS,requests:240,days:42});
+export function collectionLimits({intensive=false,backlog=0,threshold=21}={}){
+ if(!Number.isSafeInteger(backlog)||backlog<0||!Number.isSafeInteger(threshold)||threshold<1)
+  throw Error('Passivo operacional invalido');
+ return intensive&&backlog>threshold?INTENSIVE_LIMITS:BACKFILL_LIMITS;
+}
 export function createCguBudget({requests=BACKFILL_LIMITS.requests,durationMs=BACKFILL_LIMITS.durationMs,
  spacingMs=BACKFILL_LIMITS.spacingMs,clock=()=>Date.now(),sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
- if(!Number.isSafeInteger(requests)||requests<1||requests>120||!Number.isSafeInteger(durationMs)||durationMs<1||durationMs>BACKFILL_LIMITS.durationMs||
+ if(!Number.isSafeInteger(requests)||requests<1||requests>INTENSIVE_LIMITS.requests||!Number.isSafeInteger(durationMs)||durationMs<1||durationMs>BACKFILL_LIMITS.durationMs||
     !Number.isSafeInteger(spacingMs)||spacingMs<0)throw Error('Limite operacional invalido');
  const start=clock();let count=0,last=null,stop=null,consecutive=0;
  const responses={};

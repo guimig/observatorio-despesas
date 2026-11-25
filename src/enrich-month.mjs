@@ -1,7 +1,7 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import {createCguBudget} from './cgu-budget.mjs';
+import {createCguBudget,collectionLimits} from './cgu-budget.mjs';
 import {inScopeMonth} from './collection-scope.mjs';
 import {stateKey,validDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
@@ -191,7 +191,7 @@ async function main(){
   if(selected&&!manifest.months.includes(selected))throw Error('Competência não disponível');
   // Rodadas de seis horas evitam repetir indefinidamente os primeiros IDs
   // sem manter histórico adicional de tentativas em arquivos públicos.
-  const slot=Math.floor(Date.now()/21600000);
+  const slot=Math.floor(Date.now()/14400000);
   const statePath=process.env.CGU_HISTORY_STATE_PATH;
   const historyState=await readOperationalState(statePath);
   const args={slot,historyState,
@@ -223,7 +223,8 @@ async function main(){
   }
   const token=process.env.CGU_API_KEY;
   if(!token)throw Error('CGU_API_KEY não disponível');
-  const budget=createCguBudget();
+  const limits=collectionLimits({intensive:process.env.ENRICH_INTENSIVE==='true',backlog:tasks.length,threshold:50});
+  const budget=createCguBudget(limits);
   let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0;
   const failures=[];
   for(const task of tasks){
@@ -263,7 +264,7 @@ async function main(){
     successes++;if(recheck)completedReviews++;
     links+=outcome.links?.length||0;items+=outcome.items?.length||0;
   }
-  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,...budget.snapshot()}));
+  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,limits,...budget.snapshot()}));
   await validatePublishedData(root);
   await saveOperationalState(statePath,historyState);
   console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+

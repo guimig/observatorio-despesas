@@ -2,7 +2,7 @@ name: Coletar itens licitados PNCP
 on:
   workflow_dispatch:
   schedule:
-    - cron: '43 14 * * *'
+    - cron: '43 2,14 * * *'
   push:
     branches: [main]
     paths:
@@ -43,8 +43,8 @@ jobs:
           if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
       - name: Coletar itens e resultados PNCP
         env:
-          PNCP_TENDER_ITEMS_LIMIT: '5'
-          PNCP_RESULT_LIMIT: '15'
+          PNCP_TENDER_ITEMS_LIMIT: '10'
+          PNCP_RESULT_LIMIT: '60'
           PNCP_RESULT_STATE_PATH: ${{ runner.temp }}/observatorio-pncp-results.json
         run: |
           set -o pipefail

@@ -8,7 +8,7 @@ on:
       - 'src/pncp-atas.mjs'
       - 'src/collect-pncp-atas.mjs'
   schedule:
-    - cron: '43 12 * * 2,5'
+    - cron: '43 12 * * *'
 permissions:
   contents: read
 concurrency:
@@ -52,7 +52,7 @@ jobs:
           fi
       - name: Consultar atas de compras SRP publicadas
         env:
-          PNCP_ATA_LIMIT: '12'
+          PNCP_ATA_LIMIT: '24'
           ATA_STATE_PATH: ${{ runner.temp }}/observatorio-ata-state.json
         run: npm run collect:pncp-atas
       - name: Validar catalogo minimo

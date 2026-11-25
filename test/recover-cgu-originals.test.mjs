@@ -73,7 +73,7 @@ test('11 NEs antigas são selecionadas por relacao CGU e não pelo montante',()=
  assert.equal(selected.filter(x=>x.slice(11,15)==='2025').length,9);
  assert.deepEqual(chooseNeBatch(selected,{limit:3,slot:0}),selected.slice(0,3));
  assert.deepEqual(chooseNeBatch(selected,{limit:3,slot:1}),selected.slice(3,6));
- assert.throws(()=>chooseNeBatch(selected,{limit:6}));
+ assert.throws(()=>chooseNeBatch(selected,{limit:16}));
 });
 test('nota original ja presente na lista nao volta ao lote e referencia futura e ignorada',()=>{
  const withOrigin=[...references(),listing([{id:note24,date:'2024-06-03',phase:1}],[])];

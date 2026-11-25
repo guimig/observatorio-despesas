@@ -1,3 +1,4 @@
+import {createCguBudget} from './cgu-budget.mjs';
 import {FIRST_YEAR,inScopeNe} from './collection-scope.mjs';
 /**
  * Recupera por codigo completo NE do mesmo exercicio ou anterior ja referenciada
@@ -110,7 +111,7 @@ export function missingReferencedNe(sources,{scope='interannual'}={}){
 export function chooseNeBatch(targets,{limit=3,slot=0}={}){
  if(!Array.isArray(targets)||targets.some(id=>!inScopeNe(id))||
    new Set(targets).size!==targets.length||
-   !Number.isSafeInteger(limit)||limit<1||limit>5||
+   !Number.isSafeInteger(limit)||limit<1||limit>15||
    !Number.isSafeInteger(slot)||slot<0)throw Error('Plano NE invalido');
  const ordered=[...targets].sort((a,b)=>a.slice(11,15).localeCompare(b.slice(11,15))||
     a.localeCompare(b));
@@ -194,23 +195,26 @@ async function parseBounded(response){
  }
 }
 export async function fetchCguOriginal(id,{
- token,fetchFn=fetch,wait=delay,timeoutMs=18000
+ token,fetchFn=fetch,wait=delay,timeoutMs=18000,budget
 }={}){
  if(!inScopeNe(id)||typeof token!=='string'||!token||
    !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)
    throw Error('Consulta CGU nao autorizada');
  const url=detailUrl(id);
  for(let attempt=0;attempt<2;attempt++){
+   if(budget)await budget.beforeRequest();
    let res;
    try{
      res=await fetchFn(url,{headers:{
        Accept:'application/json','chave-api-dados':token
      },redirect:'error',signal:AbortSignal.timeout(timeoutMs)});
    }catch{
-     if(attempt===0){await wait(1000);continue;}
+     budget?.observe(null);
+     if(attempt===0&&!budget?.stopped()){await wait(1000);continue;}
      throw coded('network');
    }
-   if([429,500,502,503,504].includes(res.status)&&attempt===0){
+   budget?.observe(res.status);
+   if([429,500,502,503,504].includes(res.status)&&attempt===0&&!budget?.stopped()){
      try{await res.body?.cancel?.();}catch{}
      await wait(1500);
      continue;
@@ -243,7 +247,7 @@ const byYear=targets=>targets.reduce((obj,id)=>{
  */
 export async function recoverReferencedNe({
  root=process.cwd(),token,now=new Date(),limit=3,slot=0,
- year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal
+ year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal,budget
 }={}){
  if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)||Number(year)<FIRST_YEAR))
    throw Error('Exercicio CGU de destino invalido');
@@ -259,9 +263,10 @@ export async function recoverReferencedNe({
  if(dryRun||!selected.length)return output;
  if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
  for(const id of selected){
+   if(budget?.stopped())break;
    output.attempted++;
    try{
-     const raw=await fetchCguOriginal(id,{token,fetchFn,wait});
+     const raw=await fetchCguOriginal(id,{token,fetchFn,wait,budget});
      const doc=normalizeOriginalDetail(id,raw,{now});
      const result=await persist(root,doc,now);
      if(result.changed)output.recovered++;
@@ -271,6 +276,7 @@ export async function recoverReferencedNe({
      output.failures[reason]=(output.failures[reason]||0)+1;
    }
  }
+ if(budget)output.telemetry=budget.snapshot();
  if(persist===persistTargetedOriginal)
    await validatePublishedData(root);
  if(Object.keys(output.failures).length)output.status='partial';
@@ -309,11 +315,11 @@ async function main(){
    const max=Number(process.env.CGU_ORIGINAL_LIMIT??3);
    const slot=process.env.CGU_ORIGINAL_SLOT===undefined||
      process.env.CGU_ORIGINAL_SLOT===''?
-       Math.floor(Date.now()/86400000):Number(process.env.CGU_ORIGINAL_SLOT);
+       Math.floor(Date.now()/43200000):Number(process.env.CGU_ORIGINAL_SLOT);
    const selectedYear=process.env.CGU_ORIGINAL_YEAR;
    const year=!selectedYear||selectedYear==='all'?null:selectedYear;
    const result=await recoverReferencedNe({root:resolve(process.cwd()),
-     token:process.env.CGU_API_KEY,limit:max,slot,year,
+     token:process.env.CGU_API_KEY,limit:max,slot,year,budget:createCguBudget({requests:30}),
      scope:process.env.CGU_ORIGINAL_SCOPE||'interannual',
      dryRun:process.argv.includes('--dry-run')});
    console.log('NEs referenciadas: '+JSON.stringify(result)+
