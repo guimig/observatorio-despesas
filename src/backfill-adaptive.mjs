@@ -44,11 +44,12 @@ export async function planAdaptiveBackfill({now=new Date(),earliestMonth=FIRST_M
  // reaproveitam capacidade. Reserva metade para origens referenciadas, se houver.
  const primary=candidates.filter(x=>prioritize&&x.priority),ordinary=candidates.filter(x=>!prioritize||!x.priority);
  const makeQueue=groups=>Array.from({length:7},(_,i)=>groups.flatMap(x=>x.dates[i]?[{month:x.month,date:x.dates[i]}]:[])).flat();
- // Adiantar as vagas reservadas para que o orçamento alcance os dois grupos.
- // Um lote de um dia alterna as vagas. As demais tarefas mantêm a rotação geral.
+ // Um lote de um dia alterna as vagas de retomada e de abertura.
+ // Após as datas investigadas, a próxima competência sem arquivo também
+ // antecede a fila geral, que pode ficar para outro lote por falta de orçamento.
  const reserved=slot%2===0?[partialDays[0],missingMonths[0]]:[missingMonths[0],partialDays[0]];
  const tasks=[],seen=new Set();
- for(const task of reserved.concat(targeted)){
+ for(const task of [...reserved,...targeted,missingMonths[1]]){
   if(tasks.length===maxDays)break;
   if(!task||seen.has(task.date))continue;
   tasks.push(task);

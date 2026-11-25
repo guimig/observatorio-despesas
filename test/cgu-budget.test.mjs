@@ -56,3 +56,17 @@ test('lote reserva vagas para dia parcial e competencia sem arquivo antes das de
  const small=await planAdaptiveBackfill({...options,slot:1,maxDays:1});
  assert.deepEqual(small.tasks,[{month:'2024-02',date:'02/02/2024'}]);
 });
+
+test('duas competências sem arquivo ganham vaga antes da fila geral',async()=>{
+ const now=new Date('2025-04-10T12:00:00Z');
+ const missing=new Set(['2025-01','2025-02']);
+ const {tasks}=await planAdaptiveBackfill({now,slot:0,maxDays:4,
+  loadExisting:async month=>missing.has(month)?null:{month,coverage:[]},
+  prioritize:true,priorityYears:['2024'],priorityDates:['2024-10-14']});
+ assert.deepEqual(tasks.slice(0,3),[
+  {month:'2025-01',date:'01/01/2025'},
+  {month:'2024-10',date:'14/10/2024'},
+  {month:'2025-02',date:'01/02/2025'}
+ ]);
+ assert.equal(new Set(tasks.map(task=>task.date)).size,4);
+});
