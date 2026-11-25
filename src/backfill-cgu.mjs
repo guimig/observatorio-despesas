@@ -1,6 +1,6 @@
 import {FIRST_MONTH} from './collection-scope.mjs';
 import {planAdaptiveBackfill} from './backfill-adaptive.mjs';
-import {createCguBudget,BACKFILL_LIMITS} from './cgu-budget.mjs';
+import {createCguBudget,BACKFILL_LIMITS,INTENSIVE_LIMITS,collectionLimits} from './cgu-budget.mjs';
 /** Recuperação CGU por pequenos lotes, com checkpoints no próprio JSON mensal. */
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -33,7 +33,8 @@ async function main() {
   const prioritize=preference==='true'||(preference==='auto' &&
     Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
   const adaptive=process.env.BACKFILL_ADAPTIVE==='true'&&!process.env.BACKFILL_MONTH&&process.env.BACKFILL_RECHECK!=='true';
-  const adaptivePlan=adaptive?await planAdaptiveBackfill({now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
+  const intensive=adaptive&&process.env.BACKFILL_INTENSIVE==='true';
+  const adaptivePlan=adaptive?await planAdaptiveBackfill({maxDays:intensive?INTENSIVE_LIMITS.days:BACKFILL_LIMITS.days,now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
   const month = adaptive?adaptivePlan.tasks[0]?.month:await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
     earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,
@@ -69,7 +70,8 @@ async function main() {
   }
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY ausente no repositório');
-  const budget=createCguBudget();
+  const limits=collectionLimits({intensive,backlog:days.length});
+  const budget=createCguBudget(limits);
   let completedDays=0,partiallyRecoveredDays=0,failedPhases=0,totalDocs=0,attemptedDays=0,attemptedPhases=0,consultedPhases=0,deferredPhases=0,valuesRecovered=0,valuesAttempted=0,valuesUnresolved=0;
   const failureKinds={};
   for(const {month,date} of days){
@@ -110,7 +112,7 @@ async function main() {
     });
     let latest=await readExisting(month),recovered=0;
     if(!options.recheck&&canResumeLiquidations(latest,isoDate(date))&&!budget.stopped()){
-      const resume=await recoverLiquidationValues(latest,isoDate(date),{token,budget,slot:Math.floor(now.getTime()/43200000),now,
+      const resume=await recoverLiquidationValues(latest,isoDate(date),{token,budget,slot:Math.floor(now.getTime()/14400000),now,
         persist:(id,value)=>persistEnrichment(process.cwd(),month,id,value,now)});
       latest=resume.data;recovered=resume.summary.recovered;
       valuesRecovered+=recovered;valuesAttempted+=resume.summary.attempted;valuesUnresolved+=resume.summary.unresolved;
@@ -129,7 +131,7 @@ async function main() {
   }
   await validatePublishedData(process.cwd());
   const measurement=budget.snapshot();
-  console.log('Telemetria CGU backfill: '+JSON.stringify({adaptive,plannedDays:days.length,attemptedDays,completedDays,partiallyRecoveredDays,attemptedPhases,consultedPhases,failedPhases,deferredPhases,valuesRecovered,valuesAttempted,valuesUnresolved,documents:totalDocs,...measurement,limits:BACKFILL_LIMITS}));
+  console.log('Telemetria CGU backfill: '+JSON.stringify({adaptive,plannedDays:days.length,attemptedDays,completedDays,partiallyRecoveredDays,attemptedPhases,consultedPhases,failedPhases,deferredPhases,valuesRecovered,valuesAttempted,valuesUnresolved,documents:totalDocs,...measurement,limits}));
   console.log('Resultado da coleta histórica: '+completedDays+
     ' dia(s) com tres fases completas; '+partiallyRecoveredDays+
     ' dia(s) com novas fases mas incompletos; '+failedPhases+

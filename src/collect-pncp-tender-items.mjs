@@ -45,7 +45,7 @@ async function main(){
  let data;try{data=JSON.parse(await readFile(path,'utf8'))}
  catch(e){if(e.code==='ENOENT')data={schema_version:1,procedures:[]};else throw e}
  validateTenderCatalog(data,notices);
- const slot=Math.floor(Date.now()/86400000);
+ const slot=Math.floor(Date.now()/43200000);
  const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||5),slot);
  console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,srpNotices:notices.filter(n=>n.srp===true).length,already:data.procedures.length,selected:plan.length,remaining:notices.filter(n=>inScopePurchaseId(n.pncpId)&&!data.procedures.some(p=>p.pncpId===n.pncpId)).length}));
  if(process.argv.includes('--dry-run'))return;
@@ -55,12 +55,12 @@ async function main(){
    const items=await fetchTenderItems(notice.pncpId);
    data.procedures.push({pncpId:notice.pncpId,checkedAt:new Date().toISOString().slice(0,10),items});
    success++;
-  }catch(e){failed++;console.warn('Falha na consulta de itens: '+notice.pncpId+'; dados parciais descartados');}
+  }catch(e){failed++;console.warn('Falha na consulta de itens: '+notice.pncpId+'; dados parciais descartados');if([401,403,429].includes(e.status))break;}
  }
  const statePath=process.env.PNCP_RESULT_STATE_PATH;
  const state=await readOperationalState(statePath);
  const resultPlan=planItemResults(data.procedures,{state,limit:Number(process.env.PNCP_RESULT_LIMIT||15),slot});
- const deadline=Date.now()+4*60*1000;
+ const deadline=Date.now()+6*60*1000;
  let resultSuccess=0,resultFailed=0,resultChanged=0,resultRows=0;
  for(const item of resultPlan){
   if(Date.now()>=deadline)break;

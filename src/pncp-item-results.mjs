@@ -82,7 +82,7 @@ export function applyItemResults(item,results){
  return {...item,results};
 }
 export function planItemResults(procedures,{state={},now=new Date(),limit=15,slot=Math.floor(now.getTime()/86400000)}={}){
- if(!Number.isSafeInteger(limit)||limit<1||limit>30||!Number.isSafeInteger(slot)||slot<0)throw Error('Limite de resultados invalido');
+ if(!Number.isSafeInteger(limit)||limit<1||limit>60||!Number.isSafeInteger(slot)||slot<0)throw Error('Limite de resultados invalido');
  const today=now.toISOString().slice(0,10);
  const eligible=procedures.filter(p=>ID.test(p.pncpId)&&inScopePurchaseId(p.pncpId)).sort((a,b)=>a.pncpId.localeCompare(b.pncpId));
  const off=slot%Math.max(1,eligible.length);

@@ -44,11 +44,9 @@ on:
       - 'src/historical-collector.mjs'
       - 'src/recover-liquidation-values.mjs'
       - 'src/store.mjs'
-  # Lotes pequenos diariamente: primeiro o mês anterior, depois as competências históricas.
-  # Dois lotes limitados por dia, com rodizio entre competencias.
+  # Seis rodadas distribuidas, evitando inicio da hora; somente lacunas.
   schedule:
-    - cron: '13 11 * * *'
-    - cron: '13 21 * * *'
+    - cron: '13 1,5,9,13,17,21 * * *'
 
 permissions:
   contents: read
@@ -98,6 +96,7 @@ jobs:
           BACKFILL_MONTH: ${{ inputs.month }}
           BACKFILL_EARLIEST_MONTH: ${{ inputs.earliest_month || '2024-01' }}
           BACKFILL_DAYS: ${{ inputs.days || '5' }}
+          BACKFILL_INTENSIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
           BACKFILL_ADAPTIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
           # Lacunas documentadas na issue #88. So voltam a fila se ainda incompletas.
           BACKFILL_PRIORITY_DATES: '2026-10-14,2026-10-15,2026-10-16'

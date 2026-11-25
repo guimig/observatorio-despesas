@@ -34,9 +34,7 @@ on:
       - 'src/enrich-month.mjs'
       - 'src/audit-cgu-interannual.mjs'
   schedule:
-    - cron: '17 12 * * *'
-    - cron: '17 22 * * *'
-    - cron: '17 17 * * *'
+    - cron: '37 2,6,10,14,18,22 * * *'
 
 permissions:
   contents: read
@@ -106,10 +104,11 @@ jobs:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           ENRICH_MONTH: ${{ inputs.month }}
           ENRICH_PRIORITY: ${{ github.event_name == 'schedule' && 'round_robin' || 'newest' }}
-          ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '12' }}
-          ENRICH_PAYMENTS: ${{ inputs.payments || '15' }}
-          ENRICH_ITEMS: ${{ inputs.items || '7' }}
-          ENRICH_HISTORY_ITEMS: '10'
+          ENRICH_INTENSIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
+          ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '30' }}
+          ENRICH_PAYMENTS: ${{ inputs.payments || '36' }}
+          ENRICH_ITEMS: ${{ inputs.items || '15' }}
+          ENRICH_HISTORY_ITEMS: ${{ github.event_name != 'workflow_dispatch' && '20' || '10' }}
           CGU_HISTORY_STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
         run: |
           set -o pipefail

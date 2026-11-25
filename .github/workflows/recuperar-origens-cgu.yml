@@ -3,11 +3,11 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Maximo de NEs consultadas por rodada (ate 5)'
+        description: 'Maximo de NEs consultadas por rodada (ate 15)'
         type: choice
         required: true
         default: '3'
-        options: ['1','3','5']
+        options: ['1','3','5','10','15']
       slot:
         description: 'Rodada de paginacao logica (vazio = automatica)'
         type: string
@@ -29,7 +29,7 @@ on:
       - 'src/recover-cgu-originals.mjs'
       - '.github/workflows/recuperar-origens-cgu.yml'
   schedule:
-    - cron: '31 13 * * *'
+    - cron: '31 7,19 * * *'
 
 permissions:
   contents: read
@@ -81,7 +81,7 @@ jobs:
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-          CGU_ORIGINAL_LIMIT: ${{ inputs.limit || '3' }}
+          CGU_ORIGINAL_LIMIT: ${{ inputs.limit || '15' }}
           CGU_ORIGINAL_YEAR: ${{ inputs.year || 'all' }}
           CGU_ORIGINAL_SCOPE: ${{ inputs.scope || 'all' }}
           CGU_ORIGINAL_SLOT: ${{ inputs.slot || '' }}
