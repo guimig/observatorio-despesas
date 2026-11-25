@@ -52,3 +52,23 @@ test('baseline publico omite identificadores SIAFI e gera resumo de auditoria',(
  assert.equal(markdown.includes(ne),false);
  assert.equal(JSON.stringify(baseline).includes(ne),false);
 });
+
+test('baseline lista meses sem arquivo e usa somente dias encerrados nas linhas',()=>{
+ const localNight=new Date('2026-03-02T02:30:00Z'); // 1º de março em Brasília
+ const report=diagnoseCoverage([month('2026-03',['2026-03-01'])],{
+  now:localNight,earliestMonth:'2026-02'
+ });
+ const baseline=auditBaseline(report);
+ const [february,march]=baseline.months;
+ assert.equal(february.month,'2026-02');
+ assert.equal(february.hasFile,false);
+ assert.equal(february.missingDays,28);
+ assert.equal(february.pendingTotal,null);
+ assert.equal(march.month,'2026-03');
+ assert.equal(march.hasFile,true);
+ assert.equal(march.fullyCoveredDays,0);
+ assert.equal(march.daysWithCoverage,0);
+ assert.equal(march.expectedDays,0);
+ assert.equal(baseline.history.closedDays,28);
+ assert.match(baselineMarkdown(baseline),/\| 2026-02 \| Ausente \| 0\/28 \| 0 \| 28 \| — \|/);
+});

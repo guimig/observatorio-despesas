@@ -6,6 +6,24 @@ import { pathToFileURL } from 'node:url';
 import {auditMonth, closedDaysInMonth} from '../assets/quality.js';
 
 export function auditBaseline(report,{revision='unknown'}={}){
+  const months=report.months.map(({month,daysWithCoverage,fullyCoveredDays,documents,relations,
+    expectedDays,partialDays,missingDays,coveragePercent,
+    pendingLiquidations,pendingPayments,pendingItems,pendingTotal})=>({
+    month,hasFile:true,daysWithCoverage,fullyCoveredDays,expectedDays,partialDays,missingDays,
+    coveragePercent,documents,relations,pendingLiquidations,pendingPayments,pendingItems,pendingTotal
+  }));
+  if(report.asOf){
+    const reference=new Date(report.asOf+'T12:00:00Z');
+    for(const month of report.history?.monthsMissing||[]){
+      const expectedDays=closedDaysInMonth(month,reference);
+      months.push({
+        month,hasFile:false,daysWithCoverage:0,fullyCoveredDays:0,expectedDays,partialDays:0,
+        missingDays:expectedDays,coveragePercent:0,documents:null,relations:null,
+        pendingLiquidations:null,pendingPayments:null,pendingItems:null,pendingTotal:null
+      });
+    }
+    months.sort((a,b)=>a.month.localeCompare(b.month));
+  }
   return {
     schemaVersion:1,
     unit:'158459',
@@ -22,13 +40,7 @@ export function auditBaseline(report,{revision='unknown'}={}){
     asOf:report.asOf||null,
     history:report.history||null,
     phaseCounts:report.phaseCounts||null,
-    months:report.months.map(({month,daysWithCoverage,fullyCoveredDays,documents,relations,
-      expectedDays,partialDays,missingDays,coveragePercent,
-      pendingLiquidations,pendingPayments,pendingItems,pendingTotal})=>({
-      month,daysWithCoverage,fullyCoveredDays,expectedDays,partialDays,missingDays,
-      coveragePercent,documents,relations,
-      pendingLiquidations,pendingPayments,pendingItems,pendingTotal
-    })),
+    months,
     caveat:report.note
   };
 }
@@ -81,10 +93,10 @@ export function baselineMarkdown(baseline){
     `Referencias a NEs fora do recorte inicial: ${baseline.commitmentsBeforeCutoff||0} (nao entram na fila de origens).`,
     `Documentos canônicos: ${baseline.documents}; aparições adicionais em outras fases: ${baseline.phaseObservations?.total??0}; divergências de valores informados: ${baseline.phaseObservations?.amountDisagreements??0}; vínculos: ${baseline.relations}; NEs referenciadas sem documento: ${baseline.commitmentsMissing}; enriquecimentos pendentes: ${baseline.pendingEnrichment}.`,
     '',
-    '| Competencia | Dias completos / encerrados | Parciais | Ausentes | Enriquecimentos pendentes |',
-    '| --- | ---: | ---: | ---: | ---: |'
+    '| Competência | Arquivo | Dias completos / encerrados | Parciais | Ausentes | Enriquecimentos pendentes |',
+    '| --- | --- | ---: | ---: | ---: | ---: |'
   ];
-  for(const m of baseline.months)lines.push(`| ${m.month} | ${m.fullyCoveredDays}/${m.expectedDays??'?'} | ${m.partialDays??'?'} | ${m.missingDays??'?'} | ${m.pendingTotal} |`);
+  for(const m of baseline.months)lines.push(`| ${m.month} | ${m.hasFile===false?'Ausente':'Publicado'} | ${m.fullyCoveredDays}/${m.expectedDays??'?'} | ${m.partialDays??'?'} | ${m.missingDays??'?'} | ${m.pendingTotal??'—'} |`);
   lines.push('',
     'Uma fase consultada nao implica enriquecimento ou conciliacao contabile; ausencia de registro nunca equivale a despesa zero.');
   return lines.join('\n')+'\n';
@@ -106,17 +118,14 @@ export function diagnoseCoverage(months,{now=new Date(),earliestMonth=FIRST_MONT
       if(item.amountRelation==='different')observedDisagreements++;
     }
     for(const relation of month.relations)refs.add(relation.to);
-    const dates=new Set(month.coverage.map(c=>c.date));
-    const complete=month.coverage.filter(c=>c.complete===true&&c.invalid===0);
-    const fullyCovered=[...dates].filter(date=>[1,2,3].every(phase=>
-      complete.some(c=>c.date===date&&c.phase===phase)));
     const audit=auditMonth(month,{now}).coverage;
     const pendingLiquidations=month.documents.filter(doc=>doc.phase===2&&doc.liquidationLinksChecked!==true).length;
     const pendingPayments=month.documents.filter(doc=>doc.phase===3&&doc.paymentLinksChecked!==true).length;
     const pendingItems=month.documents.filter(doc=>doc.phase===1&&!Object.hasOwn(month.itemsByDocument||{},doc.id)).length;
     monthsSummary.push({month:month.month,pendingLiquidations,pendingPayments,pendingItems,
-      pendingTotal:pendingLiquidations+pendingPayments+pendingItems,daysWithCoverage:dates.size,
-      fullyCoveredDays:fullyCovered.length,expectedDays:audit.expectedDays,
+      pendingTotal:pendingLiquidations+pendingPayments+pendingItems,
+      daysWithCoverage:audit.completeDays+audit.partialDays,
+      fullyCoveredDays:audit.completeDays,expectedDays:audit.expectedDays,
       partialDays:audit.partialDays,missingDays:audit.missingDays,
       coveragePercent:audit.expectedDays?Number((100*audit.completeDays/audit.expectedDays).toFixed(2)):null,
       documents:month.documents.length,relations:month.relations.length});
