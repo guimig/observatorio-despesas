@@ -3,6 +3,10 @@ name: Enriquecer liquidações, pagamentos e itens CGU
 on:
   workflow_dispatch:
     inputs:
+      intensive:
+        description: 'Permitir orcamento intensivo quando houver passivo'
+        type: boolean
+        default: false
       month:
         description: 'Competencia AAAA-MM (vazio = distribuir entre meses com pendencias)'
         required: false
@@ -12,13 +16,13 @@ on:
         required: false
         type: choice
         default: '12'
-        options: ['5','10','12','20']
+        options: ['5','10','12','20','30']
       payments:
         description: 'Pagamentos por lote'
         required: false
         type: choice
         default: '15'
-        options: ['5','10','15','30']
+        options: ['5','10','15','30','36']
       items:
         description: 'Empenhos para detalhar por lote'
         required: false
@@ -104,11 +108,11 @@ jobs:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           ENRICH_MONTH: ${{ inputs.month }}
           ENRICH_PRIORITY: ${{ github.event_name == 'schedule' && 'round_robin' || 'newest' }}
-          ENRICH_INTENSIVE: ${{ github.event_name != 'workflow_dispatch' && 'true' || 'false' }}
+          ENRICH_INTENSIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
           ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '30' }}
           ENRICH_PAYMENTS: ${{ inputs.payments || '36' }}
           ENRICH_ITEMS: ${{ inputs.items || '15' }}
-          ENRICH_HISTORY_ITEMS: ${{ github.event_name != 'workflow_dispatch' && '20' || '10' }}
+          ENRICH_HISTORY_ITEMS: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && '20' || '10' }}
           CGU_HISTORY_STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
         run: |
           set -o pipefail

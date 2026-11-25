@@ -1,0 +1,32 @@
+name: Sondar arquivos oficiais diarios CGU sem persistir dados
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: 'Data de arquivo desde 2024 (amostra)'
+        type: string
+        default: '2026-10-16'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sondar-arquivos-cgu.yml'
+      - 'src/probe_cgu_downloads.py'
+permissions:
+  contents: read
+jobs:
+  sondar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Testar filtro, tamanho e privacidade
+        run: python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
+      - name: Consultar metadados e uma amostra limitada
+        env:
+          CGU_PROBE_DATE: ${{ inputs.day || '2026-10-16' }}
+        run: |
+          set -o pipefail
+          python3 src/probe_cgu_downloads.py | tee -a "$GITHUB_STEP_SUMMARY"
