@@ -16,6 +16,11 @@ on:
       - 'package.json'
   workflow_dispatch:
   workflow_call:
+  # Publica o backfill sem manter a fila CGU ocupada enquanto o Pages propaga.
+  workflow_run:
+    workflows: ['Recuperar historico CGU - Observatorio']
+    types: [completed]
+    branches: [main]
   # Consolidar os checkpoints da main; pushes do GITHUB_TOKEN nao disparam on:push.
   schedule:
     - cron: '53 0,2,4,6,8,10,12,14,16,18,20,22 * * *'
@@ -31,6 +36,11 @@ concurrency:
 
 jobs:
   publicar:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       (github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'push'))
     runs-on: ubuntu-22.04
     timeout-minutes: 12
     environment:
