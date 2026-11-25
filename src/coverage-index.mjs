@@ -1,4 +1,5 @@
 /** Indice agregado derivado no build, nao uma segunda base de dados. */
+import {isIfcAdhesion} from '../assets/procurement-structured-filters.js';
 import {scopeMonths,brazilMonth,FIRST_DATE,inScopeNe,closedCatalogCoverage} from './collection-scope.mjs';
 import {currentDateInBrazil} from './backfill.mjs';
 import {auditMonth,closedDaysInMonth} from '../assets/quality.js';
@@ -72,6 +73,10 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    srp:srp.length,srpAtasChecked:srp.filter(n=>ataIds.has(n.pncpId)).length,srpItemsChecked:srp.filter(n=>tenderIds.has(n.pncpId)).length,
    tenderItems:tenderItems.length,itemResultsChecked:tenderItems.filter(i=>Object.hasOwn(i,'results')).length,
    itemResults:tenderItems.reduce((n,i)=>n+(i.results?.length||0),0),
+   ifcAdhesionInstruments:contracts.filter(isIfcAdhesion).length,
+   adhesionUnknown:contracts.filter(c=>c.source==='pncp'&&c.adhesion===undefined).length,
+   arpUnitItems:(participants?.details||[]).reduce((n,d)=>n+(d.unitItems?.length||0),0),
+   arpCampusUnitItems:(participants?.details||[]).reduce((n,d)=>n+(d.unitItems||[]).filter(i=>i.units.some(u=>u.unitCode==='158459')).length,0),
    arpItemsMatched:(participants?.details||[]).filter(d=>d.compras).length,
    arpItemRows:(participants?.details||[]).reduce((n,d)=>n+(d.compras?.items.length||0),0),
    arpInstrumentChecks:(participants?.details||[]).filter(d=>Object.hasOwn(d,'instruments')).length,

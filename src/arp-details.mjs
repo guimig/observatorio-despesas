@@ -111,8 +111,8 @@ export async function inspectArpBalances(ata,compras,{fetcher=requestPublicJSON}
   const rows=body?.resultado??body?.data??body?.dados;
   if(!Array.isArray(rows))throw Error('Resposta nao reconhecida');
   return {rows:rows.length,pages:body.totalPaginas??null,fields:Object.keys(Object.fromEntries(rows.flatMap(r=>Object.keys(r||{}).filter(k=>/^[a-zA-Z][a-zA-Z0-9]{0,60}$/.test(k)).map(k=>[k,true])))).sort(),
-   exactCampus:rows.filter(r=>text(r.unidade)==='158459'||text(r.codigoUnidadeParticipante)==='158459').length,
-   prefixCampus:rows.filter(r=>/^158459(?:\s|-)/.test(text(r.unidade))).length};
+   exactCampus:rows.filter(r=>text(r.codigoUnidade)==='158459').length,
+   exactReitoria:rows.filter(r=>text(r.codigoUnidade)==='158125').length};
  };
  const result={eligible:true};
  for(const [key,url] of [['units',query('3_consultarUnidadesItem',{...params,numeroItem:String(compras.items[0].number)})],
@@ -120,6 +120,64 @@ export async function inspectArpBalances(ata,compras,{fetcher=requestPublicJSON}
   try{result[key]=await inspect(url)}catch(e){result[key]={error:e.status?'http_'+e.status:'format'}}
  }
  return result;
+}
+/** Somente registros de unidades administrativas identificadas no cadastro Compras.gov.
+ * quantidadeRegistrada pertence ao registro retornado, nao comprova reserva interna.
+ * unidade no endpoint de saldo e unidade de medida; nunca interpretar como UASG.
+ */
+export function unitProbeUrl(ata,compras,number){
+ if(compras.control!==officialAtaId(ata)||!/^\d{1,10}\/20\d{2}$/.test(compras.number)||
+  Number(compras.number.slice(-4))<2024||!['158125','158459'].includes(compras.manager)||
+  !pos(number)||!compras.items.some(i=>i.number===number))throw Error('Identidade de item de ata nao comprovada');
+ return page=>query('3_consultarUnidadesItem',{numeroAta:compras.number,unidadeGerenciadora:compras.manager,
+  numeroItem:String(number),pagina:String(page),tamanhoPagina:'100'});
+}
+export async function scanArpUnit(ata,compras,number,{fetcher=requestPublicJSON,maxPages=4}={}){
+ const rows=await allPages(unitProbeUrl(ata,compras,number),{fetcher,maxPages});
+ if(!rows.length)return {ok:false,reason:'empty'};
+ const out=[],seen=new Set();
+ for(const row of rows){
+  if(text(row.numeroAta)!==compras.number||text(row.unidadeGerenciadora)!==compras.manager||
+    Number(row.numeroItem)!==number)return {ok:false,reason:'identity_mismatch'};
+  const code=text(row.codigoUnidade);
+  if(!['158125','158459'].includes(code))continue;
+  const registered=decimal(row.quantidadeRegistrada);
+  if(registered===null||seen.has(code))return {ok:false,reason:'ambiguous_quantity'};
+  seen.add(code);
+  const item={unitCode:code,registered};
+  const updated=day(row.dataHoraAtualizacao);
+  if(updated&&inScopeDate(updated))item.sourceUpdatedAt=updated;
+  out.push(item);
+ }
+ if(!out.length)return {ok:false,reason:'no_verified_ifc_unit'};
+ return {ok:true,data:{number,units:out.sort((a,b)=>a.unitCode.localeCompare(b.unitCode))}};
+}
+export const unitProbeKey=(ata,compras,number)=>stateKey(['arp-unit-v2',ata.id,compras.control,compras.number,compras.manager,number]);
+export function planArpUnitProbes(atas,details,{state={},now=new Date(),limit=6}={}){
+ const byId=new Map(atas.map(a=>[a.id,a])),today=now.toISOString().slice(0,10),tasks=[];
+ for(const d of details){
+  const ata=byId.get(d.ataId),c=d.compras;
+  if(!ata||!c||!/^\d{1,10}\/20\d{2}$/.test(c.number)||Number(c.number.slice(-4))<2024)continue;
+  for(const number of [...new Set(c.items.map(i=>i.number))]){
+   const key=unitProbeKey(ata,c,number),last=state[key];
+   const known=d.unitItems?.some(x=>x.number===number);
+   if(validDay(last)&&last<=today&&now.getTime()-Date.parse(last+'T00:00:00Z')<(known?30:7)*86400000)continue;
+   tasks.push({ata,compras:c,number,key,last:last||'',known:Boolean(known)});
+  }
+ }
+ // Uma ata por volta; priorizar itens nunca sondados.
+ tasks.sort((a,b)=>Number(a.known)-Number(b.known)||a.last.localeCompare(b.last)||a.ata.id.localeCompare(b.ata.id)||a.number-b.number);
+ const out=[],used=new Set();
+ for(const t of tasks){if(out.length>=limit)break;if(used.has(t.ata.id))continue;out.push(t);used.add(t.ata.id)}
+ for(const t of tasks){if(out.length>=limit)break;if(!out.includes(t))out.push(t)}
+ return out;
+}
+export function applyArpUnit(detail,ata,entry){
+ const old=detail.unitItems||[],previous=old.find(x=>x.number===entry.number);
+ if(previous?.units.some(u=>!entry.units.some(v=>v.unitCode===u.unitCode)))throw Error('Unidade confirmada ausente');
+ const next={...detail,unitItems:old.filter(x=>x.number!==entry.number).concat(entry).sort((a,b)=>a.number-b.number)};
+ validateArpDetails([next],[ata]);
+ return JSON.stringify(next)===JSON.stringify(detail)?detail:next;
 }
 export async function scanAtaInstruments(ata,{fetcher=requestPublicJSON,maxPages=8}={}){
  officialAtaId(ata);
@@ -144,7 +202,7 @@ export function validateArpDetails(details,atas){
  const byId=new Map(atas.map(a=>[a.id,a])),seen=new Set();
  for(const d of details){
   const ata=byId.get(d.ataId);
-  if(!ata||seen.has(d.ataId)||Object.keys(d).some(k=>!['ataId','compras','instruments'].includes(k))||
+  if(!ata||seen.has(d.ataId)||Object.keys(d).some(k=>!['ataId','compras','instruments','unitItems'].includes(k))||
     (!d.compras&&!Object.hasOwn(d,'instruments')))throw Error('Evidencia de ata invalida');
   seen.add(d.ataId);officialAtaId(ata);
   if(d.compras){
@@ -162,6 +220,22 @@ export function validateArpDetails(details,atas){
      ['homologatedItem','homologatedSupplier','committedQuantity','unitPrice','totalPrice'].some(k=>i[k]!==undefined&&(typeof i[k]!=='string'||decimal(i[k])!==i[k])))
       throw Error('Item ARP invalido');
     keys.add(itemKey(i));
+   }
+  }
+  if(Object.hasOwn(d,'unitItems')){
+   if(!d.compras||!Array.isArray(d.unitItems)||!d.unitItems.length)throw Error('Registro de unidade sem ata');
+   const items=new Set();
+   for(const entry of d.unitItems){
+    if(!pos(entry.number)||items.has(entry.number)||!d.compras.items.some(i=>i.number===entry.number)||
+     Object.keys(entry).some(k=>!['number','units'].includes(k))||!Array.isArray(entry.units)||!entry.units.length)
+      throw Error('Unidade sem item identificado');
+    items.add(entry.number);const codes=new Set();
+    for(const u of entry.units){
+     if(!['158125','158459'].includes(u.unitCode)||codes.has(u.unitCode)||typeof u.registered!=='string'||decimal(u.registered)!==u.registered||
+      Object.keys(u).some(k=>!['unitCode','registered','sourceUpdatedAt'].includes(k))||
+      (u.sourceUpdatedAt!==undefined&&(!validDay(u.sourceUpdatedAt)||!inScopeDate(u.sourceUpdatedAt))))throw Error('Quantidade de unidade invalida');
+     codes.add(u.unitCode);
+    }
    }
   }
   if(Object.hasOwn(d,'instruments')){
@@ -187,6 +261,8 @@ export function applyArpDetail(previous,ata,kind,value){
  if(kind==='compras'&&old.compras?.items.some(i=>!value.items.some(v=>itemKey(v)===itemKey(i))))
   throw Error('Item confirmado ausente; nao presumir exclusao');
  const next={...old,[kind]:value};
+ // Se a identidade do numero da ata mudou, nao manter dados de unidade antigos.
+ if(kind==='compras'&&old.compras&&(old.compras.number!==value.number||old.compras.manager!==value.manager))delete next.unitItems;
  validateArpDetails([next],[ata]);
  return JSON.stringify(next)===JSON.stringify(old)?old:next;
 }

@@ -3,7 +3,7 @@ import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {readOperationalState,saveOperationalState} from './operational-state.mjs';
 import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
-import {applyArpDetail,planArpDetails,arpKey,scanComprasArp,scanAtaInstruments,inspectArpBalances} from './arp-details.mjs';
+import {applyArpDetail,planArpDetails,arpKey,scanComprasArp,scanAtaInstruments,inspectArpBalances,planArpUnitProbes,scanArpUnit,applyArpUnit} from './arp-details.mjs';
 const path='data/procurement/ata-participants.json';
 async function main(){
  const {atas}=JSON.parse(await readFile('data/procurement/atas.json','utf8'));
@@ -15,9 +15,21 @@ async function main(){
  const details=new Map((data.details||[]).map(d=>[d.ataId,d]));
  const statePath=process.env.ARP_DETAIL_STATE_PATH,state=await readOperationalState(statePath);
  const now=new Date(),today=now.toISOString().slice(0,10);
- const report={compras:{},instruments:{},balanceProbe:[]};
+ const report={compras:{},instruments:{},units:{},balanceProbe:[]};
  const start=Date.now(),count=(kind,reason)=>{const r=report[kind];r[reason]=(r[reason]||0)+1};
  let changed=false,probeCount=0;
+ // Sondagem independente: usa atas ja identificadas, mesmo sem novos itens.
+ for(const task of planArpUnitProbes(atas,[...details.values()],{state,now})){
+  if(Date.now()-start>90000)break;
+  try{
+   const result=await scanArpUnit(task.ata,task.compras,task.number);
+   if(!result.ok){count('units',result.reason);state[task.key]=today;continue}
+   const before=details.get(task.ata.id),next=applyArpUnit(before,task.ata,result.data);
+   if(next!==before){details.set(task.ata.id,next);changed=true;count('units','changed')}
+   state[task.key]=today;count('units','success');
+   for(const u of result.data.units)count('units',u.unitCode==='158459'?'campusRows':'reitoriaRows');
+  }catch(e){count('units',e.status?'http_'+e.status:'validation_or_conflict');if([401,403,429].includes(e.status))break}
+ }
  for(const kind of ['compras','instruments']){
   const eligible=kind==='compras'?atas.filter(a=>a.starts&&byNotice.has(a.procurementId)):atas;
   const plan=planArpDetails(eligible,[...details.values()],{kind,state,now,limit:5});

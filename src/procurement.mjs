@@ -144,6 +144,14 @@ export function normalizePncp(row){
     signed:iso(row.dataAssinatura),starts:iso(row.dataVigenciaInicio),
     ends:iso(row.dataVigenciaFim),amountCents:amount(row.valorGlobal)
   };
+  // Adesao e atributo do instrumento do orgao aderente, nao da ata gerenciada.
+  if(id.startsWith(org+'-2-')){
+    if(typeof row.frutoAdesao==='boolean')contract.adhesion=row.frutoAdesao;
+    if(typeof row.temRemanejamento==='boolean')contract.remanejamento=row.temRemanejamento;
+    const control=row.numeroControlePncpAta??row.numeroControlePNCPAta;
+    if(typeof control==='string'&&/^\d{14}-1-\d{6}\/20\d{2}-\d{6}$/.test(control)&&
+       (!contract.procurementId||control.slice(0,-7)===contract.procurementId))contract.ataControl=control;
+  }
   const vendor=supplier(row,'niFornecedor','tipoPessoa','nomeRazaoSocialFornecedor');
   Object.assign(contract,vendor);
   const object=publicNarrativeText(row.objetoContrato);

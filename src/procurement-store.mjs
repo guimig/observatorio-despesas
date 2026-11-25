@@ -18,7 +18,8 @@ const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
  'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','objectCheckedAt','kind',
  'sourceUpdatedAt','recheckedAt','lastChangedAt','revisionCount',
- 'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt'];
+ 'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt',
+ 'adhesion','ataControl','remanejamento'];
 
 export const blankProcurement=()=>({
   schema_version:1,unit:CAMPUS_UG,contracts:[],coverage:[]
@@ -92,6 +93,13 @@ export function validateProcurement(data){
     }else if(!contract.id.startsWith('compras:'+CAMPUS_UG+':')||
              contract.scope!=='campus'||contract.unitCode!==CAMPUS_UG) {
       throw Error('Identificação Compras.gov inválida');
+    }
+    if(['adhesion','ataControl','remanejamento'].some(k=>contract[k]!==undefined)){
+      if(contract.source!=='pncp'||!contract.pncpId.startsWith(contract.orgCnpj+'-2-')||
+       ['adhesion','remanejamento'].some(k=>contract[k]!==undefined&&typeof contract[k]!=='boolean')||
+       (contract.ataControl!==undefined&&(!/^\d{14}-1-\d{6}\/20\d{2}-\d{6}$/.test(contract.ataControl)||
+        (contract.procurementId&&contract.ataControl.slice(0,-7)!==contract.procurementId))))
+       throw Error('Evidencia de adesao/ata PNCP invalida');
     }
     if(contract.commitmentStatus!==undefined){
       if(contract.source!=='pncp' ||
@@ -240,6 +248,11 @@ export function mergeProcurement(current,scans,now=new Date()){
             copy.procurementLinkStatus=old.procurementLinkStatus;
             copy.procurementLinkAt=old.procurementLinkAt;
           }
+          // O resumo pode omitir os atributos da adesao; nao apagar evidencia.
+          if(sameInstrument)for(const k of ['adhesion','ataControl','remanejamento']){
+            if(copy[k]===undefined&&old[k]!==undefined)copy[k]=old[k];
+          }
+          if(copy.ataControl&&copy.procurementId&&copy.ataControl.slice(0,-7)!==copy.procurementId)delete copy.ataControl;
           next.contracts.push(copy);
         }
       }

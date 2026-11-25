@@ -46,7 +46,7 @@ jobs:
           npm run pncp-revisions:plan >> "$GITHUB_STEP_SUMMARY"
       - name: Reconsulta pontual a PNCP
         env:
-          PNCP_REVISIONS_BATCH: ${{ inputs.batch || '4' }}
+          PNCP_REVISIONS_BATCH: ${{ inputs.batch || (github.event_name == 'push' && '12') || '4' }}
         run: npm run recheck:pncp
       - name: Verificar integridade e privacidade dos JSONs
         run: npm run check:data

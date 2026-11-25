@@ -27,3 +27,9 @@ export function parseReaisFilter(value){
  const cents=Math.round(n*100);
  return Number.isSafeInteger(cents)?cents:null;
 }
+
+/** Aderente e o titular do instrumento PNCP; nao o gerenciador da ata. */
+export function isIfcAdhesion(c){
+ return c?.source==='pncp'&&c.adhesion===true&&['10635424000186','10635424000348'].includes(c.orgCnpj)&&
+  typeof c.pncpId==='string'&&c.pncpId.startsWith(c.orgCnpj+'-2-');
+}

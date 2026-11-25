@@ -1,4 +1,4 @@
-import {filterStructuredNotice,filterStructuredContract,parseReaisFilter} from './procurement-structured-filters.js';
+import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
@@ -75,6 +75,11 @@ function showCatalogDetail(record,kind){
     ['Valor contratual',fmtMoney(record.amountCents)],
     ['Evidência de Araquari',campusEvidenceLabel(campusEvidence(record))]
   ];
+  if(!isNotice&&record.source==='pncp'){
+    data.push(['Adesão realizada pelo IFC',isIfcAdhesion(record)?'Sim — IFC aderente':record.adhesion===false?'Não':'Não informado']);
+    if(record.ataControl)data.push(['Controle PNCP da ata de origem',record.ataControl]);
+    if(record.remanejamento!==undefined)data.push(['Remanejamento informado pelo PNCP',record.remanejamento?'Sim':'Não']);
+  }
   if(record.recheckedAt)data.push(['Última reconsulta ao PNCP',localDate(record.recheckedAt)]);
   if(record.sourceUpdatedAt)data.push(['Atualização informada pelo PNCP',
     localDate(record.sourceUpdatedAt)]);
@@ -977,12 +982,33 @@ function renderContractCoverage(){
       ' · '+fmtCount(totals.other+totals.unclassified)+' instrumento(s) não classificados como termo de contrato':'')+
     '. Total da coleção PNCP/Compras: '+fmtCount(procurementData.contracts.length)+
     ' instrumento(s). Sem somar valores entre cadastros.';
+  renderIfcAdhesions();
   $('contract-coverage').textContent=labels.join(' · ')+
     '. A seção abaixo mostra apenas contratos formais. Por padrão, destaca somente '+
     'os que possuem evidências de Araquari. Processos e publicações podem ser incompletos.';
 }
+function renderIfcAdhesions(){
+  const root=$('ifc-adhesions-content'),summary=$('ifc-adhesions-summary');
+  const rows=(procurementData?.contracts||[]).filter(isIfcAdhesion);
+  const pncp=(procurementData?.contracts||[]).filter(c=>c.source==='pncp');
+  const unknown=pncp.filter(c=>c.adhesion===undefined).length;
+  summary.textContent='Adesões realizadas pelo IFC · '+fmtCount(rows.length)+' instrumento(s) confirmado(s)';
+  if(!$('ifc-adhesions').open)return;
+  root.replaceChildren(element('p','helper','Somente instrumentos do IFC com frutoAdesao=true na fonte oficial. '+fmtCount(unknown)+' instrumentos PNCP ainda sem informação de adesão. Não é contagem de solicitações de adesão nem de atas distintas. Não inclui adesões de outros órgãos às atas gerenciadas pelo IFC.'));
+  if(!rows.length){root.append(element('p','small-muted','Nenhuma adesão confirmada nos documentos consultados até aqui.'));return}
+  const list=element('ul');
+  for(const c of rows){
+    const li=element('li','small-muted'),link=element('a','doc-code',c.number||c.pncpId),url=publicPncpUrl(c);
+    if(url){link.href=url;link.target='_blank';link.rel='noopener noreferrer'}
+    li.append(link,document.createTextNode(' · '+(c.kind||'Instrumento PNCP')+' · '+campusEvidenceLabel(campusEvidence(c))+(c.ataControl?' · Ata de origem '+c.ataControl:'')));
+    // Referencias apenas, sem repetir valores financeiros ou tratar NE como contrato formal.
+    list.append(li);
+  }
+  root.append(list);
+}
 async function initProcurement(){
   $('procurement-section').hidden=false;
+  $('ifc-adhesions').addEventListener('toggle',renderIfcAdhesions);
   $('contract-search').addEventListener('input',value=>{
     contractsState.query=value.target.value.trim().toLowerCase();
     contractsState.page=0;renderContracts();
@@ -1211,18 +1237,22 @@ function renderNotices() {
           for(const {ata,detail} of records){
             const sub=element('details'),head=element('summary','', 'Ata '+(ata.number||ata.sequence));sub.append(head);
             if(detail.compras){
-              sub.append(element('p','helper','Itens identificados pelo controle oficial da ata no Compras.gov. Quantidades institucionais; não são saldo de Araquari.'));
+              sub.append(element('p','helper','Itens identificados pelo controle oficial da ata no Compras.gov. Quantidades totais da ata; não são saldo de Araquari nem necessariamente exclusivas do IFC.'));
               const list=element('ul');for(const i of detail.compras.items){
                 const parts=['Item '+i.number,i.supplierCnpj?'CNPJ '+i.supplierCnpj:'CPF '+i.supplierCpfMasked,i.excluded?'Excluído':null,i.homologatedSupplier!==undefined?'Homologado fornecedor: '+i.homologatedSupplier:null,i.committedQuantity!==undefined?'Quantidade empenhada informada: '+i.committedQuantity:null,i.unitPrice!==undefined?'Unitário informado (R$): '+i.unitPrice:null];
                 list.append(element('li','small-muted',parts.filter(Boolean).join(' · ')));
               }sub.append(list);
+              if(detail.unitItems?.length){
+                sub.append(element('p','helper','Registros de unidade informados pelo Compras.gov (não somados; não comprovam reserva interna por campus).'));
+                for(const entry of detail.unitItems)for(const u of entry.units)sub.append(element('p','small-muted','Item '+entry.number+' · '+(u.unitCode==='158459'?'UASG Araquari':'UASG Reitoria')+' · Quantidade registrada informada: '+new Intl.NumberFormat('pt-BR',{maximumFractionDigits:8}).format(Number(u.registered))+(u.sourceUpdatedAt?' · Atualização da fonte '+localDate(u.sourceUpdatedAt):'')));
+              }
             }
             if(Object.hasOwn(detail,'instruments')){
               sub.append(element('p','helper',detail.instruments.length?'Instrumentos vinculados diretamente pelo PNCP; unidade administrativa não equivale automaticamente à UG SIAFI.':'Consulta sem instrumento IFC identificado.'));
               for(const i of detail.instruments){
                 const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\d{14})-2-(\d{6})\/(20\d{2})$/.exec(i.pncpId);
                 if(m){link.href='https://pncp.gov.br/app/contratos/'+m[1]+'/'+m[3]+'/'+Number(m[2]);link.target='_blank';link.rel='noopener noreferrer'}
-                row.append(link,document.createTextNode((i.unitCode?' · Unidade PNCP '+i.unitCode:'')+(i.adhesion===true?' · Adesão':'')));sub.append(row);
+                row.append(link,document.createTextNode((i.unitCode?' · Unidade PNCP '+i.unitCode:'')+(i.adhesion===true?' · Adesão realizada pelo IFC':'')));sub.append(row);
               }
             }expanded.append(sub);
           }related.append(expanded);
