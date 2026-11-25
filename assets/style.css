@@ -184,3 +184,136 @@ html[data-theme=dark]{color-scheme:dark;--bg:#0d1822;--surface:#192936;--surface
   .document-table td:first-child { max-width: 7rem; }
   .document-dialog { width: calc(100% - 1rem); max-height: 92dvh; }
 }
+
+/* Áreas e abas de consulta */
+:root {
+  --bg: #f5f7f6;
+  --ink: #182f2d;
+  --brand: #126457;
+  --brandStrong: #104b40;
+  --tab-active: #e5f4ef;
+  --header-bg: #123d36;
+  --header-ink: #f3faf7;
+}
+html[data-theme=dark] {
+  --bg: #0d1c1b;
+  --surface: #162927;
+  --surface2: #203733;
+  --ink: #f0f9f6;
+  --muted: #acc6bf;
+  --brand: #82dac4;
+  --brandStrong: #9ce7d5;
+  --tab-active: #20463e;
+  --header-bg: #102e29;
+}
+.site-header { background: var(--header-bg); color: var(--header-ink); }
+.header-inner { min-height: 64px; }
+.site-header .brand-icon { background: #2e6658; color: #fff; box-shadow: inset 0 0 0 1px #ffffff28; }
+.site-header .brand-subtitle, .site-header .pill { color: #d4e8e1; }
+.site-header .pill { border-color: #ffffff45; }
+.site-header .icon-button { background: #ffffff12; border-color: #ffffff45; color: var(--header-ink); min-width: 44px; min-height: 44px; }
+.primary-nav { gap: .35rem; }
+.primary-nav a {
+  color: var(--header-ink);
+  padding: .55rem 1rem;
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  text-decoration: none;
+}
+.primary-nav a:hover { background: #ffffff19; }
+.primary-nav a[aria-current] { background: var(--bg); color: var(--brandStrong); }
+.view-heading { margin-bottom: 1rem; }
+.view-heading h1, .coverage-workspace h1 { margin: 0; font-size: clamp(1.55rem, 3vw, 2.1rem); letter-spacing: -.035em; }
+.view-heading p { margin: .25rem 0 0; color: var(--muted); }
+.view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  margin-bottom: 1rem;
+  padding-bottom: .35rem;
+  border-bottom: 1px solid var(--border);
+}
+.view-tabs a, .phase-options button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: .45rem .8rem;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: .9rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+.view-tabs a[aria-current], .phase-options button[aria-pressed=true] {
+  color: var(--brandStrong);
+  background: var(--tab-active);
+}
+.view-tabs a:hover, .phase-options button:hover { color: var(--brandStrong); }
+.query-options { display: flex; flex-wrap: wrap; align-items: start; gap: .45rem 1rem; margin: .7rem 0 .25rem; }
+.phase-options { display: flex; flex-wrap: wrap; gap: .25rem; }
+.phase-options button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+}
+.phase-options button[aria-pressed=true] { border-color: var(--brand); }
+.advanced-filters { color: var(--muted); }
+.advanced-filters > summary, .catalog-note > summary {
+  cursor: pointer;
+  min-height: 42px;
+  padding: .55rem .35rem;
+  color: var(--brandStrong);
+  font-size: .875rem;
+  font-weight: 680;
+}
+.query-options .advanced-filters { margin-left: auto; }
+.query-options .advanced-filters[open] { flex: 1 1 100%; margin-left: 0; }
+.advanced-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+  align-items: end;
+  padding: .75rem;
+  background: var(--surface2);
+  border-radius: 10px;
+  margin-bottom: .5rem;
+}
+.advanced-fields .filter { flex: 1 1 10rem; min-width: 0; }
+.advanced-fields :is(input, select) { max-width: 100%; }
+.catalog-note { margin: 0 0 .5rem; }
+.catalog-note p { margin: 0; }
+.catalog-query > label { min-width: 0; }
+.catalog-query > label span { display: block; }
+.filter-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.filter-feedback .active-filters { margin: 0; }
+.filter-feedback:has(.active-filters:empty):has(button[hidden]) { display: none; }
+.coverage-help {
+  display: inline-grid;
+  place-items: center;
+  min-height: 36px;
+  min-width: 36px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-weight: 750;
+}
+.button-primary { background: var(--brandStrong); border: 1px solid var(--brandStrong); color: var(--surface); }
+#trajectory-section, #notices-section, #procurement-section, .coverage-workspace { margin-top: 0; }
+.summary-view > .button { display: inline-flex; align-items: center; }
+.summary-view p { margin-top: .3rem; }
+#tender-items-panel > h2, #ifc-adhesions > h2 { margin: 0 0 .5rem; }
+#doc-rows button.button-ghost { margin-left: .5rem; }
+@media (max-width: 650px) {
+  .primary-nav a { padding: .4rem .55rem; }
+  .view-heading p { font-size: .92rem; }
+  .view-tabs a, .phase-options button { font-size: .83rem; padding-inline: .55rem; }
+  .query-options { gap: .25rem .5rem; }
+  .query-options .advanced-filters { margin-left: 0; }
+  .results-context #updated { flex: 1 1 100%; }
+}
+@media (max-width: 420px) {
+  .phase-options button { font-size: .76rem; padding-inline: .38rem; }
+  .view-heading, .view-tabs { margin-bottom: .65rem; }
+  .document-explorer h2 { margin-bottom: .65rem; }
+  .query-fields { gap: .5rem; }
+  .results-context { gap: .2rem .45rem; }
+}

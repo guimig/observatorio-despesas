@@ -37,6 +37,48 @@ const dateTime = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo'
 });
 
+const views = {
+  despesas: ['expenses', 'documents', 'expenses-heading'],
+  'trajectory-section': ['expenses', 'trajectory', 'trajectory-title'],
+  'resumo-despesas': ['expenses', 'summary', 'summary-title'],
+  contratacoes: ['procurement', 'notices', 'procurement-nav-title'],
+  'notices-section': ['procurement', 'notices', 'notices-title'],
+  'procurement-section': ['procurement', 'contracts', 'procurement-title'],
+  'tender-items-panel': ['procurement', 'items', 'items-title'],
+  'ifc-adhesions': ['procurement', 'adhesions', 'ifc-adhesions-summary'],
+  'cobertura-fontes': ['coverage', null, 'coverage-heading']
+};
+const initialRoute = () => location.hash.slice(1) || 'despesas';
+
+function showView(route, focus = false) {
+  const [area, view, heading] = Object.hasOwn(views, route) ? views[route] : views.despesas;
+  for (const section of document.querySelectorAll('[data-workspace]')) {
+    section.hidden = section.dataset.workspace !== area;
+  }
+  for (const section of document.querySelectorAll('[data-view]')) {
+    section.hidden = section.dataset.view !== view;
+  }
+  for (const link of document.querySelectorAll('[data-area], [data-tab]')) {
+    const current = link.dataset.area === area || link.dataset.tab === view;
+    if (current) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  if (view === 'items' && !tenderItemsState.data) loadTenderItems();
+  if (area === 'coverage') $('historical-coverage').open = true;
+  if (focus) {
+    window.scrollTo({top:0, behavior:'instant'});
+    $(heading).focus({preventScroll:true});
+  }
+}
+function navigateTo(route) {
+  const url = new URL(location.href);
+  url.searchParams.delete('competencia');
+  url.searchParams.delete('documento');
+  url.hash = route;
+  if (url.href !== location.href) history.pushState(null, '', url);
+  showView(route, true);
+}
+
 function element(tag, className, content) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -128,6 +170,7 @@ function summarize(phase) {
   return { count, sum, complete, invalid, overlap };
 }
 function renderStats() {
+  $('summary-month').textContent = monthName(state.month) + ' · CGU · UG 158459';
   const stats = [1, 2, 3].map(summarize);
   stats.forEach((stat, index) => {
     const phase = index + 1;
@@ -222,9 +265,14 @@ function renderActiveFilters() {
     root.append(button);
   };
   if (state.search) add('Busca: ' + state.search, $('search-doc'), '');
-  if (state.phase !== 'all') add(phaseNames[state.phase], $('phase-filter'), 'all');
   if (state.day !== 'all') add(localDate(state.day), $('day-filter'), 'all');
-  $('clear-filters').disabled = !root.childElementCount;
+  $('clear-filters').hidden = !root.childElementCount && state.phase === 'all';
+  for (const button of document.querySelectorAll('[data-document-phase]')) {
+    button.setAttribute('aria-pressed', String(button.dataset.documentPhase === state.phase));
+  }
+  const advancedCount = Number(state.history) + Number(state.day !== 'all');
+  $('document-option-count').textContent = '(' + advancedCount + ')';
+  $('document-option-count').hidden = advancedCount === 0;
   for (const card of document.querySelectorAll('.stat-card')) {
     card.setAttribute('aria-pressed', String(!state.history && card.dataset.phase === state.phase));
   }
@@ -248,6 +296,16 @@ function renderTable() {
     const message = state.loadingHistory ? 'Carregando competências do histórico…'
       : 'Nenhum documento corresponde aos filtros nas competências consultadas.';
     const td = element('td', '', message);
+    if (state.search && !state.history) {
+      const expand = element('button', 'button button-ghost', 'Buscar no histórico');
+      expand.type = 'button';
+      expand.addEventListener('click', () => {
+        $('document-options').open = true;
+        $('search-doc').focus({preventScroll:true});
+        searchHistory();
+      });
+      td.append(expand);
+    }
     td.colSpan = 7;
     row.append(td); body.append(row);
     return;
@@ -781,29 +839,31 @@ function showCommitmentTrajectory(entry){
   showDialogFromTop($('document-dialog'));
 }
 async function initTrajectories(){
-  $('trajectory-section').hidden=false;
-  $('trajectory-search').addEventListener('input',renderCommitmentTrajectories);
-  $('trajectory-reload').addEventListener('click',async()=>{
-    $('trajectory-reload').disabled=true;
-    try{trajectoryReady=false;await loadAllTrajectoryMonths();}
-    catch{$('trajectory-status').textContent='Falha ao carregar uma ou mais competências. Os dados originais foram preservados.';}
-    finally{$('trajectory-reload').disabled=false;}
+  $('trajectory-search').addEventListener('input',()=>{
+    if (trajectoryReady) renderCommitmentTrajectories();
+  });
+  $('trajectory-search').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.isComposing) loadTrajectoryView();
   });
   $('trajectory-load').addEventListener('click',loadTrajectoryView);
   $('document-trajectory').addEventListener('click',()=>{
     $('trajectory-search').value = $('dialog-title').textContent;
     $('document-dialog').close();
+    navigateTo('trajectory-section');
     $('trajectory-search').focus();
     if (trajectoryReady) renderCommitmentTrajectories();
     else loadTrajectoryView();
   });
 }
 async function loadTrajectoryView(){
-    if ($('trajectory-load').disabled) return;
+    if (!state.manifest || $('trajectory-load').disabled || trajectoryReady) return;
     $('trajectory-load').disabled=true;
     try{await loadAllTrajectoryMonths();}
     catch{$('trajectory-status').textContent='Não foi possível reconstruir as trajetórias. Verifique a disponibilidade dos JSONs mensais.';}
-    finally{$('trajectory-load').disabled=false;}
+    finally{
+      $('trajectory-load').hidden=trajectoryReady;
+      $('trajectory-load').disabled=false;
+    }
 }
 
 async function loadMonth(month) {
@@ -836,8 +896,9 @@ function updateScope() {
   $('scope-status').textContent = history
     ? (state.loadingHistory ? 'Carregando histórico · ' : '') +
       fmtCount(cache.size) + ' de ' + fmtCount(state.manifest.months.length) + ' competências publicadas carregadas'
-    : 'Nesta competência';
-  $('history-scope').textContent = history ? 'Voltar à competência' : 'Buscar no histórico disponível';
+    : '';
+  $('scope-status').hidden = !history;
+  $('history-scope').textContent = history ? 'Voltar ao mês selecionado' : 'Buscar no histórico';
   $('day-filter').disabled = history;
   $('coverage-chip').hidden = history;
   $('updated').hidden = history;
@@ -905,28 +966,37 @@ function initEvents() {
     refreshFilters();
   });
   $('history-retry').addEventListener('click', searchHistory);
-  for (const link of document.querySelectorAll('[data-open]')) {
-    link.addEventListener('click', () => { $(link.dataset.open).open = true; });
+  for (const link of document.querySelectorAll('a[href^="#"]')) {
+    const route = link.hash.slice(1);
+    if (!Object.hasOwn(views, route)) continue;
+    link.addEventListener('click', event => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      navigateTo(route);
+    });
   }
-  const openLinkedSection = () => {
-    const target = document.getElementById(location.hash.slice(1));
-    if (target instanceof HTMLDetailsElement) target.open = true;
-  };
-  window.addEventListener('hashchange', openLinkedSection);
-  openLinkedSection();
+  document.querySelector('.skip-link').addEventListener('click', event => {
+    event.preventDefault();
+    $('conteudo').focus();
+  });
+  window.addEventListener('hashchange', () => showView(initialRoute(), true));
+  showView(initialRoute());
   $('retry-manifest').addEventListener('click', init);
   $('search-doc').addEventListener('input', event => {
     state.search = event.target.value.trim().toLowerCase(); refreshFilters();
   });
-  $('phase-filter').addEventListener('change', event => {
-    state.phase = event.target.value; refreshFilters();
-  });
+  for (const button of document.querySelectorAll('[data-document-phase]')) {
+    button.addEventListener('click', () => {
+      state.phase = button.dataset.documentPhase;
+      refreshFilters();
+    });
+  }
   $('day-filter').addEventListener('change', event => {
     state.day = event.target.value; refreshFilters();
   });
   $('clear-filters').addEventListener('click', () => {
     state.search = ''; state.phase = 'all'; state.day = 'all';
-    $('search-doc').value = ''; $('phase-filter').value = 'all'; $('day-filter').value = 'all';
+    $('search-doc').value = ''; $('day-filter').value = 'all';
     refreshFilters();
   });
   for (const card of document.querySelectorAll('.stat-card')) {
@@ -935,10 +1005,9 @@ function initEvents() {
       const active = !state.history && state.phase === card.dataset.phase;
       state.history = false;
       state.phase = active ? 'all' : card.dataset.phase;
-      $('phase-filter').value = state.phase;
       updateScope();
       refreshFilters();
-      $('explorer-title').focus();
+      navigateTo('despesas');
     });
   }
   $('previous-page').addEventListener('click', () => { state.page--; renderTable(); });
@@ -946,11 +1015,15 @@ function initEvents() {
   $('export-button').addEventListener('click', exportCsv);
   $('close-dialog').addEventListener('click', () => $('document-dialog').close());
   $('close-record-dialog').addEventListener('click', () => $('record-dialog').close());
-  const theme = localStorage.getItem('observatorio-tema');
-  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  const applyTheme = theme => {
+    document.documentElement.dataset.theme = theme;
+    $('theme-toggle').setAttribute('aria-pressed', String(theme === 'dark'));
+    $('theme-icon').textContent = theme === 'dark' ? '☀' : '☾';
+  };
+  applyTheme(localStorage.getItem('observatorio-tema') === 'dark' ? 'dark' : 'light');
   $('theme-toggle').addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
+    applyTheme(next);
     localStorage.setItem('observatorio-tema', next);
   });
 }
@@ -993,6 +1066,7 @@ async function init() {
     if (hasLink && state.month === linkedMonth) {
       const doc = state.data.documents.find(entry => entry.id === documentId);
       if (doc) {
+        showView('despesas');
         $('search-doc').focus({preventScroll:true});
         showDocument(doc, state.data);
       } else status('Documento não localizado na competência indicada pelo link.', 'warning');
@@ -1124,7 +1198,6 @@ function renderIfcAdhesions(){
   const pncp=(procurementData?.contracts||[]).filter(c=>c.source==='pncp');
   const unknown=pncp.filter(c=>c.adhesion===undefined).length;
   summary.textContent='Adesões realizadas pelo IFC · '+fmtCount(rows.length)+' instrumento(s) confirmado(s)';
-  if(!$('ifc-adhesions').open)return;
   root.replaceChildren(element('p','helper','Somente instrumentos do IFC com frutoAdesao=true na fonte oficial. '+fmtCount(unknown)+' instrumentos PNCP ainda sem informação de adesão. Não é contagem de solicitações de adesão nem de atas distintas. Não inclui adesões de outros órgãos às atas gerenciadas pelo IFC.'));
   if(!rows.length){root.append(element('p','small-muted','Nenhuma adesão confirmada nos documentos consultados até aqui.'));return}
   const list=element('ul');
@@ -1138,8 +1211,6 @@ function renderIfcAdhesions(){
   root.append(list);
 }
 async function initProcurement(){
-  $('procurement-section').hidden=false;
-  $('ifc-adhesions').addEventListener('toggle',renderIfcAdhesions);
   $('contract-search').addEventListener('input',value=>{
     contractsState.query=value.target.value.trim().toLowerCase();
     contractsState.page=0;renderContracts();
@@ -1196,6 +1267,7 @@ async function initProcurement(){
     $('contract-coverage').textContent=
       'Aguardando primeira sincronização PNCP/Compras.gov; nenhuma contratação foi presumida.';
     $('contract-coverage').className='notice warning';
+    $('ifc-adhesions-content').textContent='Catálogo de instrumentos indisponível.';
     renderContracts();
   }
 }
@@ -1418,7 +1490,7 @@ function renderNotices() {
         $('contract-scope').value='all';
         $('contract-attribution').value='all';
         renderContracts();
-        $('procurement-section').scrollIntoView({behavior:'smooth',block:'start'});
+        navigateTo('procurement-section');
       });
       related.append(button);
     }
@@ -1470,7 +1542,6 @@ function renderNoticesCoverage() {
   $('notices-coverage').className='notice'+(partial||missing?' warning':' success');
 }
 async function initNotices() {
-  $('notices-section').hidden=false;
   const selector=$('notices-modality');
   Object.keys(MODALITIES).sort((a,b)=>Number(a)-Number(b)).forEach(key=>{
     const option=element('option','',MODALITIES[key]);option.value=key;
