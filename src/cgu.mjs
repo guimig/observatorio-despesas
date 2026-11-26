@@ -179,11 +179,12 @@ export function normalizeBeneficiary(row) {
 export const CGU_NATURE_FIELDS=Object.freeze({
  group:'grupo',element:'elemento',program:'programa',action:'acao',
  function:'funcao',subfunction:'subfuncao',budgetPlan:'planoOrcamentario',
- locator:'localizador',economicCategory:'categoriaEconomica',amendmentAuthor:'autorEmenda'
+ locator:'localizadorGasto',economicCategory:'categoria',amendmentAuthor:'autor',
+ applicationMode:'modalidade',subtitle:'subTitulo'
 });
 export function normalizeBudgetNature(row){
  return Object.fromEntries(Object.entries(CGU_NATURE_FIELDS)
-  .map(([key,source])=>[key,shortPublicText(row?.[source],120)])
+  .map(([key,source])=>[key,key==='amendmentAuthor'?publicNarrativeText(row?.[source],120):shortPublicText(row?.[source],120)])
   .filter(([,value])=>value));
 }
 

@@ -6,6 +6,7 @@ import {publicItemDescription} from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procurement.mjs';
 import {CONTRACT_FIELDS} from './pncp-record-revisions.mjs';
+import {validateCommitmentMetadata} from './pncp-commitment-fields.mjs';
 
 const SOURCE=new Set(['pncp','compras']);
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -18,7 +19,7 @@ const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
  'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','objectCheckedAt','kind',
  'sourceUpdatedAt','recheckedAt','lastChangedAt','revisionCount',
- 'commitmentStatus','commitmentAt','commitmentRefs','procurementLinkStatus','procurementLinkAt',
+ 'commitmentStatus','commitmentAt','commitmentRefs','commitmentAudit','commitmentDetails','procurementLinkStatus','procurementLinkAt',
  'adhesion','ataControl','remanejamento'];
 
 export const blankProcurement=()=>({
@@ -123,6 +124,10 @@ export function validateProcurement(data){
            !/^158459(?:\d{5})?20\d{2}NE\d{6}$/.test(ref))) {
         throw Error('NE oficial incompatível com a UG 158459');
       }
+    }
+    if(contract.commitmentAudit!==undefined||contract.commitmentDetails!==undefined){
+      if(contract.commitmentStatus!=='complete')throw Error('Metadados PNCP sem consulta completa');
+      validateCommitmentMetadata(contract.commitmentAudit,contract.commitmentDetails,contract.commitmentRefs);
     }
     if(contract.procurementId!==undefined&&!PURCHASE_ID.test(contract.procurementId))
       throw Error('Referência de contratação PNCP inválida');
@@ -237,6 +242,8 @@ export function mergeProcurement(current,scans,now=new Date()){
             copy.commitmentAt=old.commitmentAt;
             if(old.commitmentStatus==='complete'){
               copy.commitmentRefs=structuredClone(old.commitmentRefs);
+              for(const key of ['commitmentAudit','commitmentDetails'])
+                if(old[key]!==undefined)copy[key]=structuredClone(old[key]);
             }
           }
           // O detalhe do contrato confirma o vínculo. Uma atualização do
@@ -294,8 +301,19 @@ export function applyCommitmentResult(existing,id,result,now=new Date()){
   updated.commitmentStatus=result.status;
   if(result.status==='complete'){
     updated.commitmentRefs=[...new Set(result.refs)].sort();
+    if(result.audit!==undefined||result.details!==undefined){
+      validateCommitmentMetadata(result.audit,result.details,updated.commitmentRefs);
+      updated.commitmentAudit=structuredClone(result.audit);
+      updated.commitmentDetails=structuredClone(result.details);
+    }else if(updated.commitmentAudit!==undefined){
+      // Legacy caller cannot replace audited references with a narrower payload.
+      if(JSON.stringify(contract.commitmentRefs)!==JSON.stringify(updated.commitmentRefs))
+        throw Error('Reconsulta legada nao pode modificar evidencia detalhada');
+    }
   }else{
     delete updated.commitmentRefs;
+    delete updated.commitmentAudit;
+    delete updated.commitmentDetails;
   }
   const before=structuredClone(original);
   const after=structuredClone(next);

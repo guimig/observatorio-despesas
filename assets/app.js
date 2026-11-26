@@ -21,6 +21,22 @@ const fmtCount = n => new Intl.NumberFormat('pt-BR').format(n);
 const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
 let procurementData=null;
+let indexedCommitmentCatalog=null,pncpCommitmentIndex=new Map();
+function pncpCommitmentEvidence(doc){
+  if(doc?.phase!==1||!procurementData)return [];
+  if(indexedCommitmentCatalog!==procurementData){
+    indexedCommitmentCatalog=procurementData;pncpCommitmentIndex=new Map();
+    for(const instrument of procurementData.contracts||[]){
+      if(instrument.source!=='pncp'||instrument.commitmentStatus!=='complete')continue;
+      for(const detail of instrument.commitmentDetails||[]){
+        if(!instrument.commitmentRefs?.includes(detail.id))continue;
+        if(!pncpCommitmentIndex.has(detail.id))pncpCommitmentIndex.set(detail.id,[]);
+        pncpCommitmentIndex.get(detail.id).push({instrument,detail});
+      }
+    }
+  }
+  return pncpCommitmentIndex.get(doc.id)||[];
+}
 let noticesData=null;
 let atasData=null;
 let arpDetailsById=null;
@@ -226,7 +242,8 @@ function filteredDocuments() {
       if (state.day !== 'all' && doc.date !== state.day) continue;
       const codes = [doc.id, doc.process, doc.partyRef].filter(Boolean).map(compactCode);
       const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
-        doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {})];
+        doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {}),
+        ...pncpCommitmentEvidence(doc).flatMap(({detail:d})=>[d.pi,d.nature,d.amendment,d.amendmentInfo?.author])];
       const exactCode = code && codes.includes(code);
       if (!query || exactCode || searchText(fields.filter(Boolean).join(' ')).includes(query) ||
           (code && codes.some(value => value.includes(code)))) {
@@ -659,13 +676,40 @@ function showDocument(doc, monthData = state.data) {
     ['Ação orçamentária', doc.nature?.action || 'Não informada'],
     ['Plano orçamentário (PO)', doc.nature?.budgetPlan || 'Não informado pela CGU'],
     ['Localizador de gasto', doc.nature?.locator || 'Não informado pela CGU'],
-    ...(doc.nature?.amendmentAuthor?[['Autor de emenda (CGU)',doc.nature.amendmentAuthor]]:[]),
+    ['Subtítulo', doc.nature?.subtitle || 'Não informado pela CGU'],
+    ['Modalidade orçamentária (CGU)',doc.nature?.applicationMode || 'Não informada pela CGU'],
+    ...(doc.nature?.amendmentAuthor?[['Autor informado pela CGU',doc.nature.amendmentAuthor]]:[]),
     ['Consulta de vínculos',doc.phase===3
       ?(doc.paymentLinksChecked?'Concluída nesta base':'Aguardando enriquecimento')
       :doc.phase===2?(doc.liquidationLinksChecked?'Concluída nesta base':
         'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
+  if(doc.phase===1){
+    const evidence=pncpCommitmentEvidence(doc);
+    const unique=key=>[...new Set(evidence.map(({detail})=>detail[key]).filter(v=>v!==undefined))].join(' · ');
+    appendDetailField(fields,'Plano interno (PI) · PNCP',
+      unique('pi')||'Não recuperado com identidade SIAFI integral');
+    if(evidence.length){
+      if(unique('nature'))appendDetailField(fields,'ND informada no PNCP',unique('nature'));
+      if(unique('amendment'))appendDetailField(fields,'Emenda informada no PNCP',unique('amendment'));
+      appendDetailField(fields,'Evidências PNCP · por registro, valores não somados',
+        evidence.slice(0,12).map(({instrument,detail:d})=>[
+          'Instrumento '+instrument.pncpId+' / registro '+d.seq,
+          d.pi&&'PI '+d.pi,d.nature&&'ND '+d.nature,
+          d.issueDate&&'Emissão PNCP '+localDate(d.issueDate),
+          d.status&&('Situação PNCP: '+(d.status===1?'Empenhado':'Cancelado')),
+          d.statusDate&&'Data da situação '+localDate(d.statusDate),
+          d.totalCents!==undefined&&'Total declarado '+fmtMoney(d.totalCents),
+          d.subitemCents!==undefined&&'Subitem '+fmtMoney(d.subitemCents),
+          d.amendment&&'Emenda '+d.amendment,d.amendmentInfo?.author,
+          d.included&&'Inclusão '+localDate(d.included),
+          d.updated&&'Atualização '+localDate(d.updated)
+        ].filter(Boolean).join(' · ')).join('\n')+
+        (evidence.length>12?'\nMais '+(evidence.length-12)+' registro(s) no catálogo.':''),
+        {long:true});
+    }
+  }
   appendDetailField(fields,'Descrição / observação do documento SIAFI',
     doc.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
