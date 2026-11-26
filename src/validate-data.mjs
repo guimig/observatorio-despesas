@@ -1,5 +1,6 @@
 import {readFile} from 'node:fs/promises';
 import { validatePublishedData } from './store.mjs';
+import {readPublicDictionaries} from './siop-public-catalog.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
@@ -10,6 +11,7 @@ import { auditMonth } from '../assets/quality.js';
 
 try {
   const result = await validatePublishedData(process.cwd());
+  await readPublicDictionaries(process.cwd());
   const procurement = await readProcurement(process.cwd());
   const notices = await readNotices(process.cwd());
   const atas = await readAtas(process.cwd());

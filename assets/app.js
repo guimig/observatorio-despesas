@@ -1,3 +1,4 @@
+import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
@@ -20,7 +21,7 @@ const fmtMoney = cents => Number.isSafeInteger(cents)
 const fmtCount = n => new Intl.NumberFormat('pt-BR').format(n);
 const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
-let procurementData=null;
+let procurementData=null,siopCatalog=null;
 let indexedCommitmentCatalog=null,pncpCommitmentIndex=new Map();
 function pncpCommitmentEvidence(doc){
   if(doc?.phase!==1||!procurementData)return [];
@@ -55,7 +56,7 @@ const contractsPerPage=20;
 const cache = new Map();
 let commitmentTrajectories=[];
 let trajectoryReady=false;
-const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0,
+const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetGroup:'all',budgetMetric:'count',
   historyYear: null, loadingHistory: false, loadingMonth: false };
 const pendingMonths = new Map();
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
@@ -235,7 +236,11 @@ function beneficiaryLabel(doc, monthData = state.data) {
 function searchText(value) {
   return String(value ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
-function filteredDocuments() {
+function confirmedPi(doc){
+ return pncpCommitmentEvidence(doc).map(({detail})=>detail.pi).filter(Boolean);
+}
+function budgetGroupFor(doc){return budgetBucket(doc,state.budgetDimension,{confirmedPi:confirmedPi(doc)});}
+function filteredDocuments({ignoreBudget=false}={}) {
   const months = state.historyYear
     ? availableMonths(state.historyYear).reverse().map(month => cache.get(month)).filter(Boolean)
     : [state.data];
@@ -249,6 +254,7 @@ function filteredDocuments() {
     for (const doc of data.documents) {
       if (state.phase !== 'all' && String(doc.phase) !== state.phase && !observed.has(doc.id)) continue;
       if (state.day !== 'all' && doc.date !== state.day) continue;
+      if(!ignoreBudget&&state.budgetGroup!=='all'&&budgetGroupFor(doc).key!==state.budgetGroup)continue;
       const codes = [doc.id, doc.process, doc.partyRef].filter(Boolean).map(compactCode);
       const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
         doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {}),
@@ -279,6 +285,7 @@ function renderActiveFilters() {
   };
   if (state.search) add('Busca: ' + state.search, $('search-doc'), '');
   if (state.day !== 'all') add(localDate(state.day), $('day-filter'), 'all');
+  if(state.budgetGroup!=='all')add('Classificação: '+($('budget-group').selectedOptions[0]?.textContent||'selecionada'),$('budget-group'),'all');
   $('clear-filters').hidden = !root.childElementCount && state.phase === 'all';
   for (const button of document.querySelectorAll('[data-document-phase]')) {
     button.setAttribute('aria-pressed', String(button.dataset.documentPhase === state.phase));
@@ -321,8 +328,81 @@ function renderDocumentPagination(totalPages) {
       nav.querySelector('[aria-current="page"]')).focus({preventScroll:true});
   }
 }
+function renderBudgetPanel(base){
+ const groups=summarizeBudget(base,state.budgetDimension,{confirmedPi});
+ const selector=$('budget-group');
+ const options=groups.map(g=>new Option(g.label+' ('+fmtCount(g.count)+')',g.key));
+ if(state.budgetGroup!=='all'&&!groups.some(g=>g.key===state.budgetGroup))
+  options.push(new Option('Classificação selecionada (sem documentos no recorte)',state.budgetGroup));
+ selector.replaceChildren(new Option('Todas','all'),...options);selector.value=state.budgetGroup;
+ const single=['1','2','3'].includes(state.phase);
+ $('budget-metric').options[1].disabled=!single;
+ if(!single)state.budgetMetric='count';
+ $('budget-metric').value=state.budgetMetric;
+ const missing=groups.filter(g=>g.kind==='missing').reduce((n,g)=>n+g.count,0);
+ const multiple=groups.filter(g=>g.kind==='multiple').reduce((n,g)=>n+g.count,0);
+ const known=base.length-missing-multiple;
+ $('budget-coverage').textContent=fmtCount(base.length)+' documentos antes do filtro de classificação · '+
+  fmtCount(known)+' classificados · '+fmtCount(missing)+' não recuperados/sem contexto · '+fmtCount(multiple)+' múltiplos'+
+  (state.loadingHistory?' · cobertura em carregamento':' · somente competências carregadas')+
+  (state.budgetDimension==='pi'?' · somente identidade SIAFI integral declarada no PNCP':'');
+ const host=$('budget-bars');host.replaceChildren();
+ const byValue=state.budgetMetric==='value'&&single;
+ const metric=g=>byValue?Math.abs(g.phase[Number(state.phase)].cents):g.count;
+ const ranked=[...groups].sort((a,b)=>metric(b)-metric(a)||b.count-a.count).slice(0,10);
+ const max=Math.max(1,...ranked.map(metric));
+ for(const g of ranked){
+  const button=element('button','budget-bar-button');button.type='button';
+  button.setAttribute('aria-pressed',String(state.budgetGroup===g.key));
+  const title=element('span','budget-bar-label',g.label);
+  const ref=referenceFor(siopCatalog,g,state.budgetDimension);
+  if(ref)title.append(element('span','small-muted','SIOP: '+ref));
+  const amount=element('span','budget-bar-value',fmtCount(g.count)+' doc.');
+  if(single){
+   const p=g.phase[Number(state.phase)];
+   amount.textContent=p.known?fmtMoney(p.cents)+' · '+fmtCount(p.known)+' com valor': 'Valor indisponível';
+   if(p.unknown)amount.textContent+=' · '+fmtCount(p.unknown)+' sem valor';
+   if(p.count!==g.count)amount.textContent+=' · '+fmtCount(g.count-p.count)+' de outra fase original';
+   if(!byValue)amount.textContent=fmtCount(g.count)+' doc. · '+amount.textContent;
+  }
+  const track=element('progress','budget-bar-progress');track.max=max;track.value=metric(g);
+  track.setAttribute('aria-label',g.label+' · '+amount.textContent);
+  button.append(title,amount,track);
+  button.addEventListener('click',()=>{state.budgetGroup=state.budgetGroup===g.key?'all':g.key;refreshFilters();});
+  host.append(button);
+ }
+ if(groups.length>10)host.append(element('p','small-muted','10 de '+fmtCount(groups.length)+' grupos; todos disponíveis no filtro.'));
+ if(!groups.length)host.append(element('p','small-muted','Nenhum documento no recorte consultado.'));
+}
+function renderSiopReference(){
+ const year=$('siop-year').value,kind=$('siop-kind').value,q=searchText($('siop-search').value);
+ const host=$('siop-rows');host.replaceChildren();
+ const d=siopCatalog?.dictionaries?.find(x=>String(x.year)===year);
+ if(!d){$('siop-status').textContent='Catálogo de referência ainda indisponível para este exercício.';return;}
+ const rows=d.rows.filter(r=>r.kind===kind&&(!q||searchText([r.action,r.code,r.label].filter(Boolean).join(' ')).includes(q)));
+ $('siop-status').textContent=year+' · '+fmtCount(rows.length)+' códigos correspondentes · '+fmtCount(d.conflicts)+' conflitos omitidos na fonte normalizada';
+ for(const r of rows.slice(0,100)){
+  const row=element('div','siop-reference-row');
+  row.append(element('strong','',r.action?r.action+' / '+r.code:r.code),element('span','',r.label));host.append(row);
+ }
+ if(rows.length>100)host.append(element('p','small-muted','100 primeiros resultados; refine a busca.'));
+}
+async function loadSiopReference(){
+ try{
+  const response=await fetch('./data/siop/dictionaries.json',{cache:'no-store'});
+  if(!response.ok)throw Error('SIOP não publicado');
+  const data=await response.json();
+  if(data.schema_version!==1||data.source!=='SIOP'||data.uo!=='26422'||!Array.isArray(data.dictionaries)||
+    data.dictionaries.some(d=>!Number.isInteger(d.year)||d.year<2024||!Array.isArray(d.rows)))throw Error('Catálogo SIOP inválido');
+  siopCatalog=data;
+  $('siop-year').replaceChildren(...data.dictionaries.slice().reverse().map(d=>new Option(String(d.year),String(d.year))));
+ }catch{siopCatalog=null;}
+ renderSiopReference();if(state.data)renderTable();
+}
 function renderTable() {
-  const all = filteredDocuments();
+  const base=filteredDocuments({ignoreBudget:true});
+  renderBudgetPanel(base);
+  const all=state.budgetGroup==='all'?base:base.filter(({doc})=>budgetGroupFor(doc).key===state.budgetGroup);
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
   state.page = Math.min(Math.max(0, state.page), totalPages - 1);
   const shown = all.slice(state.page * pageSize, (state.page + 1) * pageSize);
@@ -694,6 +774,11 @@ function showDocument(doc, monthData = state.data) {
         'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
+  const references=Object.keys(BUDGET_DIMENSIONS).flatMap(kind=>{
+    const bucket=budgetBucket(doc,kind),label=referenceFor(siopCatalog,bucket,kind);
+    return label?[BUDGET_DIMENSIONS[kind]+': '+label]:[];
+  });
+  if(references.length)appendDetailField(fields,'Referência SIOP · códigos coincidentes da UO',references.join('\n'),{long:true});
   if(doc.phase===1){
     const evidence=pncpCommitmentEvidence(doc);
     const unique=key=>[...new Set(evidence.map(({detail})=>detail[key]).filter(v=>v!==undefined))].join(' · ');
@@ -1060,6 +1145,15 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function initEvents() {
+  $('budget-dimension').replaceChildren(...Object.entries(BUDGET_DIMENSIONS).map(([key,label])=>new Option(label,key)));
+  $('budget-dimension').value=state.budgetDimension;
+  $('budget-dimension').addEventListener('change',e=>{state.budgetDimension=e.target.value;state.budgetGroup='all';if(state.data)refreshFilters();});
+  $('budget-group').addEventListener('change',e=>{state.budgetGroup=e.target.value;if(state.data)refreshFilters();});
+  $('budget-metric').addEventListener('change',e=>{state.budgetMetric=e.target.value;if(state.data)renderTable();});
+  $('siop-kind').replaceChildren(...Object.entries(SIOP_DIMENSIONS).filter(([key])=>!['pi','subtitle'].includes(key)).map(([key,label])=>new Option(label,key)));
+  $('siop-kind').value='action';
+  $('siop-kind').addEventListener('change',renderSiopReference);$('siop-year').addEventListener('change',renderSiopReference);
+  $('siop-search').addEventListener('input',renderSiopReference);
   const changePeriod = async month => {
     try { await loadMonth(month); }
     catch {
@@ -1104,7 +1198,7 @@ function initEvents() {
     state.day = event.target.value; refreshFilters();
   });
   $('clear-filters').addEventListener('click', () => {
-    state.search = ''; state.phase = 'all'; state.day = 'all';
+    state.search = ''; state.phase = 'all'; state.day = 'all'; state.budgetGroup='all';
     $('search-doc').value = ''; $('day-filter').value = 'all';
     refreshFilters();
   });
@@ -1809,6 +1903,7 @@ function initTenderItems(){
 initTenderItems();
 initEvents();
 init();
+loadSiopReference();
 initTrajectories();
-initProcurement().then(()=>{if(noticesData)renderNotices();});
+initProcurement().then(()=>{if(noticesData)renderNotices();if(state.data)renderTable();});
 initNotices();

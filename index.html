@@ -65,6 +65,28 @@
             <button type="button" data-document-phase="3" aria-pressed="false">Pagamentos</button>
           </div>
         </div>
+        <details class="advanced-filters budget-classification-panel">
+          <summary>Classificação orçamentária e análise documental</summary>
+          <div class="advanced-fields budget-filters">
+            <label class="filter"><span>Dimensão</span><select id="budget-dimension"></select></label>
+            <label class="filter"><span>Classificação</span><select id="budget-group"><option value="all">Todas</option></select></label>
+            <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental conhecido (uma fase)</option></select></label>
+          </div>
+          <p class="small-muted" id="budget-coverage" role="status"></p>
+          <div class="budget-bars" id="budget-bars"></div>
+          <p class="small-muted">Agrupamento dos documentos consultados, por exercício. Valores documentais de uma fase, não saldo orçamentário nem execução líquida do período. Documentos com múltiplas classificações ficam separados, sem rateio. PI candidato não integra filtros ou gráficos.</p>
+        </details>
+        <details class="catalog-note siop-reference-panel">
+          <summary>Dicionário orçamentário SIOP · IFC (UO 26422)</summary>
+          <div class="advanced-fields budget-filters">
+            <label class="filter"><span>Exercício</span><select id="siop-year"></select></label>
+            <label class="filter"><span>Dimensão</span><select id="siop-kind"></select></label>
+            <label class="filter"><span>Buscar código ou descrição</span><input id="siop-search" type="search" autocomplete="off"></label>
+          </div>
+          <p id="siop-status" class="small-muted" role="status">Carregando catálogo de referência…</p>
+          <div id="siop-rows" class="siop-reference-rows"></div>
+          <p class="small-muted">Referência anual da UO, não classificação individual nem crédito da UG 158459. Fonte, esfera, resultado primário e identificador de uso não são atribuídos a empenhos por coincidência de ação.</p>
+        </details>
         <div class="query-scope">
           <span id="scope-status" role="status" hidden></span>
           <button id="history-retry" class="button button-ghost" type="button" hidden>Consultar meses indisponíveis</button>

@@ -14,6 +14,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'index.html'), '<!doctype html><title>Teste</title>');
     await writeFile(join(root, '.nojekyll'), '');
     await writeFile(join(root, 'assets', 'app.js'), 'console.log("ok");');
+    await writeFile(join(root,'assets','budget-classification.js'),'');
     await writeFile(join(root, 'assets', 'procurement-links.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'procurement-financial-evidence.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'procurement-evidence-coverage.js'), 'export const v=1;');
@@ -39,7 +40,13 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, '.env'), 'CGU_API_KEY=SEGREDO');
     await writeFile(join(root, 'data', 'raw-response.txt'), '000.123.456-78');
     await writeFile(join(root, 'src-private-token.txt'), 'SEGREDO');
+    await mkdir(join(root,'data','siop'),{recursive:true});
+    const dict={schema_version:1,source:'SIOP',uo:'26422',dictionaries:[{source:'SIOP',uo:'26422',year:2024,rows:[{kind:'action',code:'20RL',label:'Funcionamento'}],conflicts:0}]};
+    await writeFile(join(root,'data','siop','dictionaries.json'),JSON.stringify(dict));
+    await writeFile(join(root,'data','siop','raw.json'),'private');
     const result = await buildSite(root);
+    assert.deepEqual(JSON.parse(await readFile(join(root,'dist','data','siop','dictionaries.json'),'utf8')),dict);
+    await assert.rejects(stat(join(root,'dist','data','siop','raw.json')));
     assert.deepEqual(result, { months: 0, documents: 0 });
     assert.match(await readFile(join(root, 'dist', 'index.html'), 'utf8'), /Teste/);
     await stat(join(root, 'dist', 'assets', 'quality.js'));
@@ -80,6 +87,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'index.html'),'<title>Observatório</title>');
     await writeFile(join(root,'.nojekyll'),'');
     await writeFile(join(root,'assets','app.js'),'');
+    await writeFile(join(root,'assets','budget-classification.js'),'');
     await writeFile(join(root,'assets','procurement-links.js'),'');
     await writeFile(join(root,'assets','procurement-financial-evidence.js'),'');
     await writeFile(join(root,'assets','procurement-evidence-coverage.js'),'');
@@ -122,7 +130,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','source-sans-3-latin.woff2','source-sans-3-OFL.txt','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
+   for(const filename of ['app.js','budget-classification.js','style.css','source-sans-3-latin.woff2','source-sans-3-OFL.txt','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');

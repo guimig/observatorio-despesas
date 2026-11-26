@@ -1,26 +1,37 @@
-name: Validar dicionario orcamentario SIOP - UO 26422
+name: Atualizar dicionario orcamentario SIOP - UO 26422
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 9 * * 1'
   push:
     branches: [main]
     paths:
       - 'src/siop-dictionary.mjs'
+      - 'src/siop-public-catalog.mjs'
       - '.github/workflows/sondar-siop-dicionario.yml'
 permissions:
   contents: read
+concurrency:
+  group: observatorio-siop-dicionario
+  cancel-in-progress: false
 jobs:
   dicionario:
     runs-on: ubuntu-22.04
-    timeout-minutes: 6
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          ref: main
+          persist-credentials: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Verificar implementacao
-        run: node --test test/siop-dictionary.test.mjs
+        run: npm test
       - name: Definir chave de cache semanal
         id: cache-key
         run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
@@ -29,11 +40,29 @@ jobs:
           path: .cache/siop-dictionary
           key: siop-26422-v1-${{ steps.cache-key.outputs.week }}
           restore-keys: siop-26422-v1-
-      - name: Consultar somente classificacoes da UO 26422
-        run: node src/siop-dictionary.mjs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dicionario-siop-26422
-          path: .cache/siop-dictionary/*.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Atualizar somente catalogo de classificacoes da UO 26422
+        run: node src/siop-public-catalog.mjs
+      - name: Validar catalogo e acervo
+        run: |
+          npm run check:data
+          npm run build:site
+      - name: Versionar apenas catalogo alterado
+        id: commit
+        run: |
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
+          if [ ! -f data/siop/dictionaries.json ]; then exit 0; fi
+          git add -- data/siop/dictionaries.json
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'data: atualizar dicionario publico SIOP da UO 26422'
+          bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: dicionario
+    if: needs.dicionario.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
