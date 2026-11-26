@@ -41,11 +41,22 @@ test('consulta e cache por exercicio evitam requisicoes repetidas; HTTP falha',a
  const root=await mkdtemp(join(tmpdir(),'siop-test-'));
  let calls=0;
  const fetchFn=async(url,options)=>{calls++;assert.match(url,/siop\.planejamento\.gov\.br/);
-  assert.equal(options.method,'GET');assert.ok(new URL(url).searchParams.get('query'));return new Response(JSON.stringify(payload));};
+  assert.equal(options.method,'POST');assert.ok(options.body.get('query'));return new Response(JSON.stringify(payload));};
  try{
   assert.equal((await cacheDictionary(2026,{root,now,fetchFn})).status,'fetched');
   assert.equal((await cacheDictionary(2026,{root,now,fetchFn})).status,'cache_hit');
   assert.equal(calls,1);
   await assert.rejects(fetchDictionary(2026,{now,fetchFn:async()=>new Response('unavailable',{status:503})}));
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('resposta tabular deduplica codigos por acao e ignora rotulo ausente',()=>{
+ const b=(v)=>({type:'literal',value:v});
+ const a={actionCode:b('20RL'),actionLabel:b('Funcionamento'),budgetPlanCode:b('0000'),
+ budgetPlanLabel:b('Plano'),fundingSourceCode:b('1000'),fundingSourceLabel:b('Recursos livres'),
+ useIdentifierCode:b('0')};
+ const r=normalizeDictionary({results:{bindings:[a,a,{...a,actionCode:b('2994'),actionLabel:b('Assistência'),budgetPlanLabel:b('Outro plano')}]}},2026,now);
+ assert.equal(r.rows.filter(x=>x.kind==='budgetPlan').length,2);
+ assert.equal(r.rows.filter(x=>x.kind==='fundingSource').length,1);
+ assert.equal(r.rows.some(x=>x.kind==='useIdentifier'),false);
 });

@@ -329,3 +329,10 @@ function sondarContratosGovUG() {
   } catch(e) { console.log(JSON.stringify({status:'network_unavailable'})); }
 }
 ```
+
+
+### Resultados das sondagens e seguimento (26/11/2026)
+
+PR #168 integrado com CI #45865377102 (519 testes aprovados), Pages #45865457338 confirmado. Coleta PNCP #45865457263: 20 instrumentos selecionados, 15 consultas integrais e 5 indisponiveis, 15 linhas, todas com PI, ND, datas, valor total e numero curto sem UG/gestao; nenhuma emenda ou subitem preenchidos e nenhum ID integral. Contagens versionadas em 8d16a29; sem PI atribuido. A sondagem Contratos.gov #45865457412 retornou network_unavailable nos exercicios 2024–2026, inclusive URL anual exata. SIOP #45865457079 retornou HTTP 400 nos tres exercicios. Esta revisao tenta SPARQL tabular conforme os predicados documentados oficialmente (sem VALUES/BIND/UNION), POST form-urlencoded, deduplicando codigos por exercicio e contexto de acao; sem gravar payload bruto, sem inferir dotacao de UG. Acrescenta diagnostico dos nomes de campos declarados nos schemas STA sem ler exemplos ou documentos.
+
+Para investigar os 15 numeros curtos PNCP, a sondagem independente limita-se a 10 instrumentos ja auditados, priorizando processos Araquari, e compara somente com as NEs CGU locais por numero curto, CNPJ de PJ, data documental, processo e valor total. Ausencia de correspondencia nao prova ausencia na CGU. Mesmo a coincidencia de todos os criterios nao comprova identidade SIAFI integral: nunca grava PI, CNPJ, ID, valor ou resposta, registra apenas contagens. A coleta incremental existente tambem registra as contagens sem novas chamadas. O caminho seguro continua sendo recuperar a UG e gestao por fonte independente; manter rotulos de evidencia e nao publicar candidatos como fatos.
