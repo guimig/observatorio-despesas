@@ -8,6 +8,8 @@ import {fetchNoticeDetail} from './pncp-notices-detail.mjs';
 import {contractDetailUrl} from './pncp-contract-link.mjs';
 import {requestPublicJSON,normalizePncp} from './procurement.mjs';
 import {mergePncpRecord} from './pncp-record-revisions.mjs';
+import {readOperationalState,saveOperationalState,effectiveDay,stateKey} from './operational-state.mjs';
+export const revisionKey=(kind,record)=>stateKey(['pncp-revision-v1',kind,record]);
 
 const DAY=86400000;
 export function safePncpFailure(error,stage){
@@ -25,7 +27,7 @@ function frequency(record,kind,now){
   const age=now.getTime()-new Date(baseline+'T00:00:00Z').getTime();
   return age<30*DAY?7:age<180*DAY?30:90;
 }
-export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
+export function planPncpRevisions(data,{kind,now=new Date(),batch=4,state={}}={}){
   if(!['notice','contract'].includes(kind)||!Number.isSafeInteger(batch)||
     batch<1||batch>16||!Number.isFinite(now.getTime()))
     throw Error('Plano de revisao PNCP invalido');
@@ -33,7 +35,7 @@ export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
   if(!Array.isArray(entries))throw Error('Catalogo de revisoes ausente');
   const eligible=entries.filter(item=>item.source==='pncp'&&item.pncpId)
     .filter(item=>{
-      const time=new Date((item.recheckedAt||'')+'T00:00:00Z').getTime();
+      const time=new Date((effectiveDay(item.recheckedAt,state[revisionKey(kind,item)],now)||'')+'T00:00:00Z').getTime();
       const interval=kind==='contract'&&item.adhesion===undefined?7:frequency(item,kind,now);
       return !Number.isFinite(time)||now.getTime()-time>=interval*DAY;
     }).sort((a,b)=>{
@@ -47,25 +49,29 @@ export function planPncpRevisions(data,{kind,now=new Date(),batch=4}={}){
     });
   return eligible.slice(0,batch).map(item=>({id:item.id,pncpId:item.pncpId}));
 }
-function updateCatalog(original,id,incoming,kind,now){
+function updateCatalog(original,id,incoming,kind,now,{operational=false}={}){
   const validate=kind==='notice'?validateNotices:validateProcurement;
   const before=validate(structuredClone(original));
   const next=structuredClone(before);
   const list=kind==='notice'?next.notices:next.contracts;
   const index=list.findIndex(item=>item.id===id);
   if(index<0)throw Error('ID PNCP ausente do acervo');
-  const result=mergePncpRecord(list[index],incoming,{kind,now,checked:true});
+  const old=list[index];
+  const result=mergePncpRecord(old,incoming,{kind,now,checked:true});
   if(result.stale)return {changed:false,materialChanged:false,stale:true,data:before};
+  // First confirmation and any official/material change are canonical. Ignore only the repeated local stamp.
+  if(operational&&old.recheckedAt&&result.changed&&stateKey({...old,recheckedAt:undefined})===stateKey({...result.record,recheckedAt:undefined}))
+   return {changed:false,materialChanged:false,stale:false,data:before};
   list[index]=result.record;
   validate(next);
   if(!result.changed)return {changed:false,materialChanged:false,stale:false,data:before};
   next.updated_at=now.toISOString();
   return {changed:true,materialChanged:result.materialChanged,stale:false,data:next};
 }
-export const applyNoticeRevision=(catalog,id,record,now)=>
-  updateCatalog(catalog,id,record,'notice',now);
-export const applyContractRevision=(catalog,id,record,now)=>
-  updateCatalog(catalog,id,record,'contract',now);
+export const applyNoticeRevision=(catalog,id,record,now,options)=>
+  updateCatalog(catalog,id,record,'notice',now,options);
+export const applyContractRevision=(catalog,id,record,now,options)=>
+  updateCatalog(catalog,id,record,'contract',now,options);
 
 async function atomic(path,data){
   const temp=path+'.tmp';
@@ -73,16 +79,17 @@ async function atomic(path,data){
   catch(error){await unlink(temp).catch(()=>{});throw error;}
 }
 export async function recheckPncpRevisions({
-  root=process.cwd(),now=new Date(),batch=4,dryRun=false,
+  root=process.cwd(),now=new Date(),batch=4,dryRun=false,statePath,
   fetchNotice=fetchNoticeDetail,
   fetchContract=async id=>requestPublicJSON(contractDetailUrl(id))
 }={}){
   const notices=await readNotices(root),contracts=await readProcurement(root);
-  const noticePlan=notices?planPncpRevisions(notices,{kind:'notice',now,batch}):[];
-  const contractPlan=contracts?planPncpRevisions(contracts,{kind:'contract',now,batch}):[];
+  const state=await readOperationalState(statePath,{now}),today=now.toISOString().slice(0,10);
+  const noticePlan=notices?planPncpRevisions(notices,{kind:'notice',now,batch,state}):[];
+  const contractPlan=contracts?planPncpRevisions(contracts,{kind:'contract',now,batch,state}):[];
   const report={noticePlanned:noticePlan.length,contractPlanned:contractPlan.length,
     noticeChecked:0,contractChecked:0,materialChanged:0,stale:0,failed:0,
-    failureKinds:{}};
+    failureKinds:{},canonicalChanges:0};
   if(dryRun)return report;
   let nextNotices=notices,nextContracts=contracts;
   for(const item of noticePlan){
@@ -90,10 +97,11 @@ export async function recheckPncpRevisions({
     try{
       const normalized=await fetchNotice(item.pncpId);
       stage='apply';
-      const result=applyNoticeRevision(nextNotices,item.id,normalized,now);
+      const result=applyNoticeRevision(nextNotices,item.id,normalized,now,{operational:Boolean(statePath)});
       nextNotices=result.data;
       if(result.stale)report.stale++;
-      else{report.noticeChecked++;if(result.materialChanged)report.materialChanged++;}
+      else{report.noticeChecked++;if(result.materialChanged)report.materialChanged++;if(result.changed)report.canonicalChanges++;
+       state[revisionKey('notice',nextNotices.notices.find(n=>n.id===item.id))]=today;}
     }catch(error){
       report.failed++;
       const category=safePncpFailure(error,stage);
@@ -110,10 +118,11 @@ export async function recheckPncpRevisions({
       const normalized=normalizePncp(raw);
       if(!normalized)throw Error('Contrato PNCP invalido');
       stage='apply';
-      const result=applyContractRevision(nextContracts,item.id,normalized,now);
+      const result=applyContractRevision(nextContracts,item.id,normalized,now,{operational:Boolean(statePath)});
       nextContracts=result.data;
       if(result.stale)report.stale++;
-      else{report.contractChecked++;if(result.materialChanged)report.materialChanged++;}
+      else{report.contractChecked++;if(result.materialChanged)report.materialChanged++;if(result.changed)report.canonicalChanges++;
+       state[revisionKey('contract',nextContracts.contracts.find(n=>n.id===item.id))]=today;}
     }catch(error){
       report.failed++;
       const category=safePncpFailure(error,stage);
@@ -128,11 +137,13 @@ export async function recheckPncpRevisions({
     validateProcurement(nextContracts);
     await atomic(join(root,'data/procurement/contracts.json'),nextContracts);
   }
+  await saveOperationalState(statePath,state,{now});
   return report;
 }
 async function main(){
   const result=await recheckPncpRevisions({
     batch:Number(process.env.PNCP_REVISIONS_BATCH||4),
+    statePath:process.env.PNCP_REVISION_STATE_PATH,
     dryRun:process.argv.includes('--dry-run')
   });
   console.log('Reconsulta PNCP por ID: '+JSON.stringify(result)+

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {participantsUrl,normalizeParticipants,scanParticipants,classifyCampusPart} from '../src/pncp-ata-participants.mjs';
-import {planParticipants,validateParticipants,validateParticipantReferences} from '../src/collect-pncp-ata-participants.mjs';
+import {planParticipants,validateParticipants,validateParticipantReferences,mergeParticipantCheck,participationKey} from '../src/collect-pncp-ata-participants.mjs';
 const ata={id:'10635424000186-1-000001/2026:ata:1',procurementId:'10635424000186-1-000001/2026',sequence:1};
 test('consulta lista de partes PNCP sem inferir contratacao',async()=>{
  assert.match(participantsUrl(ata),/\/atas\/1\/partesenvolvidas$/);
@@ -84,4 +84,16 @@ test('UG SIAFI nao e prova de unidade PNCP; exigir mapeamento documentado',()=>{
  assert.equal(classifyCampusPart('10635424000348','158459',2),'candidate');
  assert.equal(classifyCampusPart('10635424000348','PNCP-UNIDADE-VALIDADA',2,['PNCP-UNIDADE-VALIDADA']),'confirmed');
  assert.equal(classifyCampusPart('10635424000186','158125',1),'not_confirmed');
+});
+
+test('reconferencia de papeis identicos fica no cache sem apagar primeira evidencia',()=>{
+ const first=mergeParticipantCheck(null,ata.id,[],'2026-10-01',{operational:true});
+ const again=mergeParticipantCheck(first,ata.id,[],'2026-11-26',{operational:true});
+ assert.strictEqual(again,first);
+ const now=new Date('2026-11-26T12:00:00Z');
+ assert.equal(planParticipants([ata],[first],now,12).length,1);
+ assert.equal(planParticipants([ata],[first],now,12,{[participationKey(first)]:'2026-11-26'}).length,0);
+ const changed=mergeParticipantCheck(first,ata.id,[2],'2026-11-26',{operational:true});
+ assert.equal(changed.checkedAt,'2026-11-26');assert.deepEqual(changed.campusRoles,[2]);
+ assert.notEqual(participationKey(first),participationKey(changed));
 });

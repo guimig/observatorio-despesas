@@ -1,5 +1,7 @@
 /** Planejamento e atualizacao incremental de campos narrativos ja publicados. */
 import {publicNarrativeText} from './public-narrative.mjs';
+import {effectiveDay,stateKey} from './operational-state.mjs';
+export const narrativeKey=(kind,record)=>stateKey(['narrative-v1',kind,record.id,record.object??null,record.objectCheckedAt??null,record.sourceUpdatedAt??null]);
 import {validateNotices} from './pncp-notices-store.mjs';
 import {validateProcurement} from './procurement-store.mjs';
 
@@ -9,21 +11,21 @@ export function reviewDue(value,now=new Date(),interval=30){
   const stamp=new Date(value+'T00:00:00Z').getTime();
   return !Number.isFinite(stamp)||now.getTime()-stamp>=interval*DAYS;
 }
-export function planNarrativeReviews(catalog,{kind,now=new Date(),batch=5}={}){
+export function planNarrativeReviews(catalog,{kind,now=new Date(),batch=5,state={}}={}){
   if(!['notice','contract'].includes(kind)||
      !Number.isSafeInteger(batch)||batch<1||batch>20)throw Error('Plano narrativo invalido');
   const records=kind==='notice'?catalog?.notices:catalog?.contracts;
   if(!Array.isArray(records))throw Error('Catalogo narrativo indisponivel');
   return records.filter(record=>!record.object&&
     (kind==='notice'||record.source==='pncp')&&
-    reviewDue(record.objectCheckedAt,now)).sort((a,b)=>
+    reviewDue(effectiveDay(record.objectCheckedAt,state[narrativeKey(kind,record)],now),now)).sort((a,b)=>
       Number(Boolean(b.process?.startsWith('23349.')))-
       Number(Boolean(a.process?.startsWith('23349.')))||
       String(b.month||b.publishedMonth).localeCompare(String(a.month||a.publishedMonth))||
       a.id.localeCompare(b.id)).slice(0,batch).map(item=>({id:item.id,pncpId:item.pncpId}));
 }
 
-export function applyNarrativeReview(catalog,id,raw,{kind,now=new Date()}={}){
+export function applyNarrativeReview(catalog,id,raw,{kind,now=new Date(),operational=false}={}){
   if(!['notice','contract'].includes(kind)||!(now instanceof Date)||!Number.isFinite(now.getTime()))
     throw Error('Revisao narrativa invalida');
   const validate=kind==='notice'?validateNotices:validateProcurement;
@@ -33,6 +35,7 @@ export function applyNarrativeReview(catalog,id,raw,{kind,now=new Date()}={}){
   const target=records.find(item=>item.id===id&&(kind==='notice'||item.source==='pncp'));
   if(!target)throw Error('Registro oficial nao localizado');
   const text=publicNarrativeText(raw);
+  if(operational&&target.objectCheckedAt&&(!text||text===target.object))return {changed:false,data:original};
   if(text)target.object=text;
   target.objectCheckedAt=now.toISOString().slice(0,10);
   validate(next);

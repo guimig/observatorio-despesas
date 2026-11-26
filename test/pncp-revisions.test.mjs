@@ -9,7 +9,7 @@ import {blankNotices,mergeNotices,validateNotices} from '../src/pncp-notices-sto
 import {blankProcurement,mergeProcurement,validateProcurement} from '../src/procurement-store.mjs';
 import {mergePncpRecord} from '../src/pncp-record-revisions.mjs';
 import {planPncpRevisions,applyNoticeRevision,applyContractRevision,
-  recheckPncpRevisions,safePncpFailure} from '../src/pncp-revision-collector.mjs';
+  recheckPncpRevisions,safePncpFailure,revisionKey} from '../src/pncp-revision-collector.mjs';
 const today=new Date('2026-11-22T19:00:00Z');
 const pncpId='10635424000186-1-000123/2026';
 const contractId='10635424000186-2-000123/2026';
@@ -186,4 +186,19 @@ test('classificacao segura revela categoria e etapa sem vazar payload',async()=>
   assert.equal(result.failureKinds.http_429,1);
   assert.equal(JSON.stringify(result).includes('privado'),false);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('reconferencia PNCP identica usa checkpoint sem esconder mudanca de centavo ou revisao da fonte',()=>{
+ const from=notices();
+ const record=from.notices[0],id=record.id;
+ const first=applyNoticeRevision(from,id,record,new Date('2026-11-22'),{operational:true}).data;
+ const old=first.notices[0],now=new Date('2026-12-05T12:00:00Z');
+ assert.equal(applyNoticeRevision(first,id,old,now,{operational:true}).changed,false);
+ assert.equal(planPncpRevisions(first,{kind:'notice',now,batch:4}).length,1);
+ assert.equal(planPncpRevisions(first,{kind:'notice',now,batch:4,state:{[revisionKey('notice',old)]:'2026-12-05'}}).length,0);
+ const cents=(old.estimatedCents||0)+1;
+ const next=applyNoticeRevision(first,id,{...old,estimatedCents:cents},now,{operational:true});
+ assert.equal(next.changed,true);assert.equal(next.data.notices[0].estimatedCents,cents);
+ const source=applyNoticeRevision(first,id,{...old,sourceUpdatedAt:'2026-12-05'},now,{operational:true});
+ assert.equal(source.changed,true);
 });
