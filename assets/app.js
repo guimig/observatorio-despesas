@@ -31,7 +31,7 @@ const cache = new Map();
 let commitmentTrajectories=[];
 let trajectoryReady=false;
 const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0,
-  history: false, loadingHistory: false, loadingMonth: false };
+  historyYear: null, loadingHistory: false, loadingMonth: false };
 const pendingMonths = new Map();
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo'
@@ -225,8 +225,8 @@ function searchText(value) {
   return String(value ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 function filteredDocuments() {
-  const months = state.history
-    ? [...cache.values()].sort((a, b) => b.month.localeCompare(a.month))
+  const months = state.historyYear
+    ? availableMonths(state.historyYear).reverse().map(month => cache.get(month)).filter(Boolean)
     : [state.data];
   const query = searchText(state.search);
   const compactCode = value => searchText(value).replace(/[.\/\s-]/g, '');
@@ -270,11 +270,8 @@ function renderActiveFilters() {
   for (const button of document.querySelectorAll('[data-document-phase]')) {
     button.setAttribute('aria-pressed', String(button.dataset.documentPhase === state.phase));
   }
-  const advancedCount = Number(state.history);
-  $('document-option-count').textContent = '(' + advancedCount + ')';
-  $('document-option-count').hidden = advancedCount === 0;
   for (const card of document.querySelectorAll('.stat-card')) {
-    card.setAttribute('aria-pressed', String(!state.history && card.dataset.phase === state.phase));
+    card.setAttribute('aria-pressed', String(!state.historyYear && card.dataset.phase === state.phase));
   }
 }
 function renderTable() {
@@ -293,16 +290,15 @@ function renderTable() {
   body.replaceChildren();
   if (!shown.length) {
     const row = element('tr');
-    const message = state.loadingHistory ? 'Carregando competências do histórico…'
+    const message = state.loadingHistory ? 'Carregando os documentos do período…'
       : 'Nenhum documento corresponde aos filtros nas competências consultadas.';
     const td = element('td', '', message);
-    if (state.search && !state.history) {
+    if (state.search && state.historyYear !== 'all' && !state.loadingHistory) {
       const expand = element('button', 'button button-ghost', 'Buscar no histórico');
       expand.type = 'button';
       expand.addEventListener('click', () => {
-        $('document-options').open = true;
         $('search-doc').focus({preventScroll:true});
-        searchHistory();
+        searchHistory('all');
       });
       td.append(expand);
     }
@@ -313,8 +309,9 @@ function renderTable() {
   shown.forEach(({doc, data}) => {
     const row = element('tr');
     const id = element('td', 'doc-code', doc.id);
-    const date = element('td', '', localDate(doc.date));
-    const phase = element('td');
+    id.append(element('span', 'mobile-document-meta', localDate(doc.date) + ' · ' + (phaseNames[doc.phase] || 'Outro')));
+    const date = element('td', 'document-mobile-hidden', localDate(doc.date));
+    const phase = element('td', 'document-mobile-hidden');
     phase.append(element('span', 'phase-label', phaseNames[doc.phase] || 'Outro'));
     const others=(data.phaseObservations||[]).filter(item=>item.id===doc.id);
     if(others.length)phase.append(element('span','small-muted',
@@ -323,7 +320,8 @@ function renderTable() {
     const process = element('td', 'doc-code document-secondary', doc.process || '—');
     const amount = element('td', 'align-right', fmtMoney(doc.cents));
     const details = element('td');
-    const button = element('button', 'details-button', 'Ver detalhes');
+    const button = element('button', 'details-button');
+    button.append(element('span', 'document-mobile-hidden', 'Ver detalhes'), element('span', 'mobile-document-meta', 'Abrir'));
     button.type = 'button';
     button.setAttribute('aria-label', 'Ver detalhes do documento ' + doc.id);
     button.addEventListener('click', () => showDocument(doc, data));
@@ -714,20 +712,23 @@ function refreshFilters() {
 }
 const monthLabel = new Intl.DateTimeFormat('pt-BR', {month:'long', timeZone:'UTC'});
 function availableMonths(year) {
-  return state.manifest.months.filter(month => month.slice(0, 4) === year).sort();
+  return state.manifest.months.filter(month => year === 'all' || month.slice(0, 4) === year).sort();
 }
-function selectPeriod(month) {
-  const year = month.slice(0, 4);
+function selectPeriod() {
+  const year = state.historyYear ?? state.month.slice(0, 4);
   $('year-select').value = year;
   const selector = $('month-select');
-  selector.replaceChildren(...availableMonths(year).map(value =>
-    new Option(monthLabel.format(new Date(value + '-15T12:00:00Z')), value)));
-  selector.value = month;
+  selector.replaceChildren(new Option('Todos', 'all'));
+  if (year !== 'all') {
+    selector.append(...availableMonths(year).map(value =>
+      new Option(monthLabel.format(new Date(value + '-15T12:00:00Z')), value)));
+  }
+  selector.value = state.historyYear ? 'all' : state.month;
 }
 function setPeriodBusy(busy) {
   $('year-select').disabled = busy;
-  $('month-select').disabled = busy;
-  $('day-filter').disabled = busy || state.history;
+  $('month-select').disabled = busy || state.historyYear === 'all';
+  $('day-filter').disabled = busy || Boolean(state.historyYear);
 }
 function renderDays() {
   const days = [...new Set([...state.data.coverage, ...state.data.documents]
@@ -889,15 +890,14 @@ async function loadMonth(month) {
     !state.manifest.months.includes(month)) throw Error('Competência não disponível');
   state.loadingMonth = true;
   setPeriodBusy(true);
-  $('history-scope').disabled = true;
   $('export-button').disabled = true;
   status('Carregando documentos da competência…');
   try {
     state.data = await fetchMonth(month);
     state.month = month;
-    state.history = false;
+    state.historyYear = null;
     state.page = 0;
-    selectPeriod(month);
+    selectPeriod();
     updateScope();
     renderAll();
     if(procurementData)renderContracts();
@@ -905,43 +905,42 @@ async function loadMonth(month) {
   } finally {
     state.loadingMonth = false;
     setPeriodBusy(false);
-    $('history-scope').disabled = false;
     if (state.data) $('export-button').disabled = !filteredDocuments().length;
   }
 }
 function updateScope() {
-  const history = state.history;
-  $('scope-status').textContent = history
-    ? (state.loadingHistory ? 'Carregando histórico · ' : '') +
-      fmtCount(cache.size) + ' de ' + fmtCount(state.manifest.months.length) + ' competências publicadas carregadas'
+  const months = state.historyYear ? availableMonths(state.historyYear) : [];
+  const loaded = months.filter(month => cache.has(month)).length;
+  const scope = state.historyYear === 'all' ? 'Todos os anos' : state.historyYear;
+  $('scope-status').textContent = scope
+    ? scope + ' · ' + fmtCount(loaded) + ' de ' + fmtCount(months.length) + ' meses publicados carregados' +
+      (state.loadingHistory ? ' · Carregando…' : loaded < months.length ? ' · Alguns meses indisponíveis' : '')
     : '';
-  $('scope-status').hidden = !history;
-  $('history-scope').textContent = history ? 'Voltar ao mês selecionado' : 'Buscar no histórico';
-  $('day-filter').disabled = history;
-  $('coverage-chip').hidden = history;
-  $('updated').hidden = history;
-  $('history-retry').hidden = !history || state.loadingHistory || cache.size === state.manifest.months.length;
+  $('scope-status').hidden = !scope;
+  $('coverage-chip').hidden = Boolean(scope);
+  $('updated').hidden = Boolean(scope);
+  $('history-retry').hidden = !scope || state.loadingHistory || loaded === months.length;
 }
-async function searchHistory() {
+async function searchHistory(year) {
   if (state.loadingHistory || state.loadingMonth || !state.data) return;
-  state.history = true;
+  state.historyYear = year;
   state.loadingHistory = true;
-  $('history-scope').disabled = true;
   setPeriodBusy(true);
-  $('day-filter').value = state.day = 'all';
+  $('day-filter').replaceChildren(new Option('Todos', 'all'));
+  state.day = 'all';
+  selectPeriod();
+  status('');
   updateScope();
   refreshFilters();
-  const months = [...state.manifest.months].sort().reverse();
   try {
-    for (const month of months) {
+    for (const month of availableMonths(year).reverse()) {
       if (cache.has(month)) continue;
-      try { await fetchMonth(month); } catch { /* A próxima tentativa usa apenas os meses ausentes. */ }
+      try { await fetchMonth(month); } catch { /* A nova tentativa aproveita os meses carregados. */ }
       updateScope();
     }
   } finally {
     state.loadingHistory = false;
     setPeriodBusy(false);
-    $('history-scope').disabled = false;
     updateScope();
     refreshFilters();
     if(noticesData)renderNotices();
@@ -965,7 +964,7 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const link = element('a');
   link.href = url;
-  link.download = 'observatorio-ug-158459-' + (state.history ? 'historico' : state.month) + '.csv';
+  link.download = 'observatorio-ug-158459-' + (state.historyYear === 'all' ? 'historico' : state.historyYear ?? state.month) + '.csv';
   document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -973,23 +972,18 @@ function initEvents() {
   const changePeriod = async month => {
     try { await loadMonth(month); }
     catch {
-      selectPeriod(state.month);
+      selectPeriod();
       status('Não foi possível carregar o mês escolhido. A consulta anterior continua disponível.', 'warning');
     }
   };
   $('year-select').addEventListener('change', event => {
-    const months = availableMonths(event.target.value);
-    const sameMonth = event.target.value + state.month.slice(4);
-    changePeriod(months.includes(sameMonth) ? sameMonth : months.at(-1));
+    searchHistory(event.target.value);
   });
-  $('month-select').addEventListener('change', event => changePeriod(event.target.value));
-  $('history-scope').addEventListener('click', () => {
-    if (!state.history) { searchHistory(); return; }
-    state.history = false;
-    updateScope();
-    refreshFilters();
+  $('month-select').addEventListener('change', event => {
+    if (event.target.value === 'all') searchHistory($('year-select').value);
+    else changePeriod(event.target.value);
   });
-  $('history-retry').addEventListener('click', searchHistory);
+  $('history-retry').addEventListener('click', () => searchHistory(state.historyYear));
   for (const link of document.querySelectorAll('a[href^="#"]')) {
     const route = link.hash.slice(1);
     if (!Object.hasOwn(views, route)) continue;
@@ -1026,9 +1020,15 @@ function initEvents() {
   for (const card of document.querySelectorAll('.stat-card')) {
     card.addEventListener('click', () => {
       if (state.loadingHistory || state.loadingMonth) return;
-      const active = !state.history && state.phase === card.dataset.phase;
-      state.history = false;
+      const active = !state.historyYear && state.phase === card.dataset.phase;
+      const returnToMonth = Boolean(state.historyYear);
+      state.historyYear = null;
       state.phase = active ? 'all' : card.dataset.phase;
+      if (returnToMonth) {
+        selectPeriod();
+        renderDays();
+        setPeriodBusy(false);
+      }
       updateScope();
       refreshFilters();
       navigateTo('despesas');
@@ -1069,7 +1069,7 @@ async function init() {
     }
     const months = [...manifest.months].sort();
     const years = [...new Set(months.map(month => month.slice(0, 4)))].reverse();
-    $('year-select').replaceChildren(...years.map(year => new Option(year, year)));
+    $('year-select').replaceChildren(new Option('Todos', 'all'), ...years.map(year => new Option(year, year)));
     const latestMonth = months.at(-1);
     const params = new URLSearchParams(location.search);
     const linkedMonth = params.get('competencia');
