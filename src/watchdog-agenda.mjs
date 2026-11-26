@@ -3,7 +3,7 @@
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 export const WATCHED=Object.freeze([
- {file:'coleta-cgu.yml',hours:26,inputs:{}},
+ {file:'coleta-cgu.yml',hours:8,inputs:{}},
  {file:'backfill-cgu.yml',hours:6,inputs:{intensive:'true'}},
  {file:'enriquecer-cgu.yml',hours:6,inputs:{intensive:'true',liquidations:'30',payments:'36',items:'15'}},
  {file:'publicar-pages.yml',hours:4,inputs:{}},

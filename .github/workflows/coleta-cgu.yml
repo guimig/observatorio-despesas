@@ -6,8 +6,12 @@ on:
     branches: [main]
     paths:
       - 'src/cgu.mjs'
+      - 'src/collect-cgu.mjs'
+      - '.github/workflows/coleta-cgu.yml'
   schedule:
+    # 01:27, 07:27, 13:27 e 19:27 em Brasília.
     - cron: '27 10 * * *'
+    - cron: '27 4,16,22 * * *'
 
 permissions:
   contents: read
@@ -54,7 +58,9 @@ jobs:
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
-          CGU_LOOKBACK_DAYS: '7'
+          # Mantém a janela de reconciliação matinal e prioriza o dia em curso nas demais rodadas.
+          CGU_LOOKBACK_DAYS: ${{ (github.event_name != 'schedule' || github.event.schedule == '27 10 * * *') && '7' || '3' }}
+          CGU_INCLUDE_TODAY: 'true'
           CGU_MAX_PAGES: '30'
           CGU_MAX_IMPACT_PAGES: '8'
         run: npm run collect:cgu

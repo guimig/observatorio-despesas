@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auditMonth,closedDaysInMonth } from '../assets/quality.js';
+import { auditMonth,closedDaysInMonth,summarizeDocumentPhases } from '../assets/quality.js';
 
 const now=new Date('2026-11-19T20:00:00Z');
 const ne='158459000012026NE000001',oldNe='158459000012025NE000002';
@@ -86,4 +86,28 @@ test('auditoria avisa quando fase adicional nao tem cobertura correspondente',()
     id:ns,date:'2026-11-17',phase:3,amountKnown:true,amountRelation:'same'
   }];
   assert.ok(auditMonth(data,{now}).issues.includes('observacao_fase_invalida'));
+});
+
+test('subtotal inclui apenas dias encerrados verificáveis e exclui ambas as fases de um documento sobreposto',()=>{
+  const month=sample();
+  month.documents.push(
+    {id:'hoje',date:'2026-11-19',phase:3,cents:2000},
+    {id:'sem-valor',date:'2026-11-17',phase:2,cents:null},
+    {id:'liquidacao',date:'2026-11-16',phase:2,cents:-100}
+  );
+  month.coverage.push(
+    {date:'2026-11-19',phase:3,complete:true,count:1,invalid:0},
+    {date:'2026-11-17',phase:2,complete:true,count:1,invalid:1},
+    {date:'2026-11-16',phase:2,complete:true,count:1,invalid:0},
+    {date:'2026-11-16',phase:1,complete:true,count:0,invalid:0}
+  );
+  month.phaseObservations=[{id:ne,date:'2026-11-18',phase:2}];
+  const [commitments,liquidations,payments]=summarizeDocumentPhases(month,{now});
+  assert.deepEqual([commitments.cents,liquidations.cents,payments.cents],[0,-100,500]);
+  assert.deepEqual([commitments.overlap,liquidations.overlap,payments.overlap],[1,1,0]);
+  assert.equal(liquidations.unknown,1);
+  assert.equal(payments.missing,17);
+  assert.equal(payments.days,1);
+  const future=summarizeDocumentPhases(month,{now:new Date('2026-11-01T12:00:00Z')});
+  assert.ok(future.every(phase=>phase.cents===null && phase.days===0));
 });

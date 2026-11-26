@@ -220,3 +220,25 @@ test('falha final de rede e timeout são distintos, com retries limitados',async
   fetcher:async()=>{const e=Error('aborted');e.name='AbortError';throw e}}),
   error=>error.code==='CGU_TIMEOUT');
 });
+
+test('janela recente inclui o dia corrente de Brasília e retém outras fases se uma consulta falhar', async () => {
+  const failures = [];
+  const result = await collectWindow({
+    token:'fake', now:new Date('2026-11-20T01:00:00Z'), lookback:1, includeToday:true,
+    getDocuments:async (date,phase,page) => {
+      if(date==='19/11/2026' && phase===2) throw Object.assign(Error('falha'),{code:'CGU_TIMEOUT'});
+      return date==='19/11/2026' && phase===1 && page===1 ? [row(ne,'10,00')] : [];
+    },
+    onPhaseFailure:failure=>failures.push(failure)
+  });
+  assert.deepEqual(failures,[{date:'2026-11-19',phase:2,failure:'CGU_TIMEOUT'}]);
+  assert.equal(result.length,5);
+  assert.equal(result[0].coverage.date,'2026-11-19');
+  assert.equal(result[0].documents[0].cents,1000);
+  assert.equal(result.at(-1).coverage.date,'2026-11-18');
+  await assert.rejects(collectWindow({
+    token:'fake', dates:['19/11/2026'],
+    getDocuments:async()=>{throw Error('falha')},
+    onPhaseFailure:()=>{}
+  }),/toda a janela/);
+});

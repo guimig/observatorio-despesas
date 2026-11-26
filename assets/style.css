@@ -450,3 +450,9 @@ html[data-theme=dark] {
   }
   .document-table th { font-weight: 700; }
 }
+
+.document-explorer .pagination { flex-wrap: wrap; }
+#document-pagination { flex-wrap: wrap; gap: .35rem; }
+#document-pagination .button { min-width: 44px; min-height: 44px; padding-inline: .6rem; }
+#document-pagination [aria-current="page"] { background: var(--tab-active); border-color: var(--brand); color: var(--brandStrong); }
+.summary-view .stat-value { white-space: normal; overflow-wrap: anywhere; }
