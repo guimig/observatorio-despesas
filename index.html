@@ -13,7 +13,6 @@
   <header class="site-header">
     <div class="container header-inner">
       <div class="brand">
-        <div class="brand-icon" aria-hidden="true">▤</div>
         <div>
           <div class="brand-title">Observatório de Despesas</div>
           <div class="brand-subtitle">IFC Campus Araquari</div>
@@ -36,7 +35,6 @@
     <section class="workspace" data-workspace="expenses" aria-labelledby="expenses-heading">
       <div class="view-heading">
         <h1 id="expenses-heading" tabindex="-1">Despesas</h1>
-        <p>Consulte os documentos de empenho, liquidação e pagamento do Campus Araquari.</p>
       </div>
       <nav class="view-tabs" aria-label="Consultas de despesas">
         <a href="#despesas" data-tab="documents" aria-current="page">Documentos</a>
@@ -49,7 +47,9 @@
       <div class="panel explorer document-explorer" aria-labelledby="explorer-title">
         <h2 id="explorer-title" tabindex="-1">Encontrar um documento</h2>
         <div class="query-fields document-query">
-          <label class="filter"><span>Documento, favorecido ou processo</span><input id="search-doc" type="search" placeholder="Ex.: empenho ou fornecedor" autocomplete="off"></label>
+          <label class="filter"><span>Documento, favorecido ou processo</span>
+            <span class="search-field"><span class="ui-icon icon-search" aria-hidden="true"></span><input id="search-doc" type="search" placeholder="Ex.: empenho ou fornecedor" autocomplete="off"></span>
+          </label>
           <fieldset class="document-period">
             <legend>Período da consulta</legend>
             <label class="filter"><span>Ano</span><select id="year-select"></select></label>
@@ -64,12 +64,6 @@
             <button type="button" data-document-phase="2" aria-pressed="false">Liquidações</button>
             <button type="button" data-document-phase="3" aria-pressed="false">Pagamentos</button>
           </div>
-          <details class="advanced-filters" id="document-options">
-            <summary>Mais opções <span id="document-option-count" hidden></span></summary>
-            <div class="advanced-fields">
-              <button id="history-scope" class="button button-secondary" type="button">Buscar no histórico</button>
-            </div>
-          </details>
         </div>
         <div class="query-scope">
           <span id="scope-status" role="status" hidden></span>
@@ -81,7 +75,7 @@
         </div>
         <div class="results-toolbar">
           <span id="table-count" role="status" class="result-count"></span>
-          <button id="export-button" class="button button-secondary" type="button" disabled>Exportar CSV filtrado</button>
+          <button id="export-button" class="button button-secondary" type="button" disabled><span class="ui-icon icon-download" aria-hidden="true"></span>Exportar CSV</button>
         </div>
         <div class="results-context">
           <span id="coverage-chip"></span>
@@ -90,7 +84,7 @@
         </div>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Tabela de documentos">
           <table class="document-table">
-            <thead><tr><th scope="col">Documento</th><th scope="col">Data CGU</th><th scope="col">Fase</th><th scope="col" class="document-secondary">Favorecido</th><th scope="col" class="document-secondary">Processo</th><th scope="col" class="align-right">Valor documental</th><th scope="col">Detalhes</th></tr></thead>
+            <thead><tr><th scope="col">Documento</th><th scope="col" class="document-mobile-hidden">Data</th><th scope="col" class="document-mobile-hidden">Fase</th><th scope="col" class="document-secondary">Favorecido</th><th scope="col" class="document-secondary">Processo</th><th scope="col" class="align-right" title="Valor documental">Valor</th><th scope="col">Detalhes</th></tr></thead>
             <tbody id="doc-rows"></tbody>
           </table>
         </div>
