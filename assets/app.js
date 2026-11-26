@@ -650,10 +650,16 @@ function showDocument(doc, monthData = state.data) {
           ' (valor informado divergente)':o.amountRelation==='unknown'?
           ' (comparação de valores indisponível)':' (mesmo valor informado)'))
         .join('; ')||'Nenhum outro filtro identificado'],
+    ['Categoria econômica', doc.nature?.economicCategory || 'Não informada pela CGU'],
     ['Grupo de despesa', doc.nature?.group || 'Não informado'],
     ['Elemento', doc.nature?.element || 'Não informado'],
+    ['Função', doc.nature?.function || 'Não informada pela CGU'],
+    ['Subfunção', doc.nature?.subfunction || 'Não informada pela CGU'],
     ['Programa', doc.nature?.program || 'Não informado'],
     ['Ação orçamentária', doc.nature?.action || 'Não informada'],
+    ['Plano orçamentário (PO)', doc.nature?.budgetPlan || 'Não informado pela CGU'],
+    ['Localizador de gasto', doc.nature?.locator || 'Não informado pela CGU'],
+    ...(doc.nature?.amendmentAuthor?[['Autor de emenda (CGU)',doc.nature.amendmentAuthor]]:[]),
     ['Consulta de vínculos',doc.phase===3
       ?(doc.paymentLinksChecked?'Concluída nesta base':'Aguardando enriquecimento')
       :doc.phase===2?(doc.liquidationLinksChecked?'Concluída nesta base':

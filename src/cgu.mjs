@@ -175,6 +175,18 @@ export function normalizeBeneficiary(row) {
   return null;
 }
 
+// Lista fechada: campos diretamente informados pela CGU, sem inferencia por acao.
+export const CGU_NATURE_FIELDS=Object.freeze({
+ group:'grupo',element:'elemento',program:'programa',action:'acao',
+ function:'funcao',subfunction:'subfuncao',budgetPlan:'planoOrcamentario',
+ locator:'localizador',economicCategory:'categoriaEconomica',amendmentAuthor:'autorEmenda'
+});
+export function normalizeBudgetNature(row){
+ return Object.fromEntries(Object.entries(CGU_NATURE_FIELDS)
+  .map(([key,source])=>[key,shortPublicText(row?.[source],120)])
+  .filter(([,value])=>value));
+}
+
 export function normalizeDocument(row, date, phase) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) throw Error('Documento CGU inválido');
   const ug = String(row.codigoUg ?? row.codigoUG ?? row.unidadeGestora?.codigo ?? '');
@@ -186,10 +198,7 @@ export function normalizeDocument(row, date, phase) {
   const process = shortPublicText(row.numeroProcesso, 90);
   if (process && /^[A-Za-z0-9./\- ]+$/.test(process)) doc.process = process;
   // Códigos e descrições de classificações conhecidos do schema real da CGU.
-  const nature = Object.fromEntries([
-    ['group', row.grupo], ['element', row.elemento],
-    ['program', row.programa], ['action', row.acao]
-  ].map(([key, value]) => [key, shortPublicText(value, 120)]).filter(([, value]) => value));
+  const nature = normalizeBudgetNature(row);
   if (Object.keys(nature).length) doc.nature = nature;
   // Nota de empenho: narrativa descritiva da fonte, se segura para publicação.
   // Campo livre não seguro é omitido por inteiro; não se armazena resposta bruta.

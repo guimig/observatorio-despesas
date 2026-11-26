@@ -1,5 +1,5 @@
 /** Inventário estritamente estrutural: nunca imprime valores retornados pela API. */
-import { documentUrl, getCguArray, isoDate } from './cgu.mjs';
+import { documentUrl, getCguArray, isoDate, normalizeBudgetNature, CGU_NATURE_FIELDS } from './cgu.mjs';
 
 const SAFE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,60}$/;
 export function structuralFields(record, maxDepth = 2) {
@@ -37,6 +37,12 @@ async function main() {
     // Somente nomes/categorias de campos em logs; nenhum valor dos registros.
     console.log('Fase ' + phase + ': campos e tipos = ' +
       structuralFields(records[0]).join(', '));
+    // Contagens da primeira pagina, nao cobertura global. Nunca imprime valores.
+    const fields=Object.fromEntries(Object.entries(CGU_NATURE_FIELDS).map(([key,source])=>[
+      key,{present:records.filter(row=>Object.hasOwn(row,source)).length,
+      usable:records.filter(row=>Object.hasOwn(normalizeBudgetNature(row),key)).length}
+    ]));
+    console.log('Classificacao orcamentaria: '+JSON.stringify({phase,sample:records.length,fields}));
   }
   console.log('Inventário de esquema concluído sem publicar documentos ou informações pessoais.');
 }
