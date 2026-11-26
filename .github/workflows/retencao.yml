@@ -1,0 +1,75 @@
+name: Monitorar armazenamento e limpar branches integradas
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Excluir somente branches comprovadamente integradas (false = simulação)'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retencao.yml'
+      - 'src/retention-maintenance.mjs'
+  pull_request:
+    types: [closed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-retencao
+  cancel-in-progress: false
+jobs:
+  monitorar:
+    if: github.repository == 'guimig/observatorio-despesas' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Medir armazenamento sem versionar relatório
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          node src/retention-maintenance.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+  limpar:
+    if: >-
+      github.repository == 'guimig/observatorio-despesas' && github.ref == 'refs/heads/main' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validar critérios de limpeza
+        run: node --test test/retention-maintenance.test.mjs
+      - name: Remover referências já integradas, sem reescrever histórico
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RETENTION_APPLY: ${{ (github.event_name != 'workflow_dispatch' || inputs.apply) && 'true' || 'false' }}
+          RETENTION_BRANCH: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || '' }}
+        run: |
+          set -o pipefail
+          node src/retention-maintenance.mjs --cleanup | tee -a "$GITHUB_STEP_SUMMARY"

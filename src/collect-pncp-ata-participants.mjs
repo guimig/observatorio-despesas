@@ -5,6 +5,7 @@ import {scanParticipants} from './pncp-ata-participants.mjs';
 import {assertPublicSafe} from './privacy.mjs';
 import {validateArpDetails} from './arp-details.mjs';
 import {inScopePurchaseId} from './collection-scope.mjs';
+import {readOperationalState,saveOperationalState,effectiveDay,stateKey} from './operational-state.mjs';
 const path='data/procurement/ata-participants.json';
 const empty=()=>({schema_version:1,checks:[]});
 export function validateParticipants(value){
@@ -31,9 +32,15 @@ export function validateParticipantReferences(value,atas){
  if(value.details!==undefined)validateArpDetails(value.details,atas);
  return value;
 }
-export function planParticipants(atas,checks,now=new Date(),limit=12){
+export const participationKey=check=>stateKey(['arp-participation-v1',check.ataId,[...check.campusRoles].sort((a,b)=>a-b)]);
+export function mergeParticipantCheck(old,ataId,roles,today,{operational=false}={}){
+ const campusRoles=[...new Set(roles)].sort((a,b)=>a-b);
+ if(operational&&old&&JSON.stringify([...old.campusRoles].sort((a,b)=>a-b))===JSON.stringify(campusRoles))return old;
+ return {ataId,checkedAt:today,campusRoles};
+}
+export function planParticipants(atas,checks,now=new Date(),limit=12,state={}){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
- const last=new Map(checks.map(c=>[c.ataId,c.checkedAt]));
+ const last=new Map(checks.map(c=>[c.ataId,effectiveDay(c.checkedAt,state[participationKey(c)],now)]));
  const eligible=atas.filter(a=>inScopePurchaseId(a.procurementId)&&(!last.has(a.id)||
   now.getTime()-Date.parse(last.get(a.id)+'T00:00:00Z')>=30*86400000));
  // Cobrir compras distintas antes de selecionar a segunda ata da mesma compra.
@@ -64,7 +71,10 @@ async function main(){
  catch(e){if(e.code==='ENOENT')data=empty();else throw e}
  validateParticipantReferences(data,atas);
  const limit=Number(process.env.PNCP_PARTICIPANTS_LIMIT||12);
- const plan=planParticipants(atas,data.checks,new Date(),limit);
+ const statePath=process.env.PNCP_PARTICIPANT_STATE_PATH;
+ const state=await readOperationalState(statePath);
+ const plan=planParticipants(atas,data.checks,new Date(),limit,state);
+ const byId=new Map(data.checks.map(c=>[c.ataId,c]));let material=0;
  console.log('Compras distintas no lote: '+new Set(plan.map(a=>a.procurementId)).size);
  console.log('Participacao ARP: '+JSON.stringify({atas:atas.length,checked:data.checks.length,pending:plan.length}));
  if(process.argv.includes('--dry-run'))return;
@@ -74,22 +84,26 @@ async function main(){
  for(const ata of plan){
   try{
    const result=await scanParticipants(ata);
-   data.checks=data.checks.filter(c=>c.ataId!==ata.id);
-   data.checks.push({ataId:ata.id,checkedAt:now,campusRoles:result.campusRoles});
+   const old=byId.get(ata.id),next=mergeParticipantCheck(old,ata.id,result.campusRoles,now,{operational:Boolean(statePath)});
+   if(next!==old){
+    data.checks=data.checks.filter(c=>c.ataId!==ata.id);data.checks.push(next);byId.set(ata.id,next);material++;
+   }
+   state[participationKey(next)]=now;
    success++;if(result.campusRoles.length)confirmed++;
    if(result.candidateRoles.length)candidate++;
    for(const [key,value] of Object.entries(result.shape))shapeTotals[key]=(shapeTotals[key]||0)+value;
   }catch(e){failed++;console.warn('Consulta de participantes indisponivel para '+ata.id+' ('+
    (e.status?'HTTP '+e.status:'formato')+'); sem inferencia de participacao.')}
  }
- if(success){
+ if(material){
   data.checks.sort((a,b)=>a.ataId.localeCompare(b.ataId));
   validateParticipants(data);
   try{await writeFile(path+'.tmp',JSON.stringify(data)+'\n');await rename(path+'.tmp',path)}
   catch(e){await unlink(path+'.tmp').catch(()=>{});throw e}
  }
+ await saveOperationalState(statePath,state);
  console.log('Formato PNCP (contagens agregadas, sem registros): '+JSON.stringify(shapeTotals));
- console.log('Participacao ARP: '+JSON.stringify({success,failed,confirmed,candidate,checked:data.checks.length}));
+ console.log('Participacao ARP: '+JSON.stringify({success,failed,confirmed,candidate,canonicalChanges:material,checked:data.checks.length}));
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))
  main().catch(e=>{console.error(e.message);process.exitCode=1});

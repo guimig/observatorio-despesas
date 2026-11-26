@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,writeFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {planNarrativeReviews,applyNarrativeReview,reviewDue,
+import {planNarrativeReviews,applyNarrativeReview,reviewDue,narrativeKey,
   planCommitmentNarratives,planOtherDocumentNarratives} from '../src/narrative-review.mjs';
 import {refreshNarratives} from '../src/collect-public-narratives.mjs';
 import {normalizeNotice} from '../src/pncp-notices.mjs';
@@ -191,4 +191,13 @@ test('rotina de descricao atualiza documento de pagamento sem valor estimado',as
 
 test('escopo narrativo invalido e recusado antes de ler fontes',async()=>{
  await assert.rejects(refreshNarratives({root:'/nao-existe',scope:'outro'}),/Escopo narrativo invalido/);
+});
+
+test('revisao textual sem texto novo usa cache, preserva primeira evidencia e publica texto alterado',()=>{
+ const cat=noticeCatalog(),id=cat.notices[0].id;
+ const first=applyNarrativeReview(cat,id,null,{kind:'notice',now:new Date('2026-10-01'),operational:true}).data;
+ const old=first.notices[0],next=new Date('2026-11-26T12:00:00Z');
+ assert.equal(applyNarrativeReview(first,id,null,{kind:'notice',now:next,operational:true}).changed,false);
+ assert.equal(planNarrativeReviews(first,{kind:'notice',now:next,state:{[narrativeKey('notice',old)]:'2026-11-26'}}).length,0);
+ assert.equal(applyNarrativeReview(first,id,'Fornecimento de materiais de consumo',{kind:'notice',now:next,operational:true}).changed,true);
 });

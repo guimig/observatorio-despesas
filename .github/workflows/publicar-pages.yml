@@ -84,6 +84,7 @@ jobs:
           # Nome unico impede deploy ambiguo de dois artefatos "github-pages".
           name: pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: ./dist
+          retention-days: 1
       # O artefato pode demorar a aparecer na API do GitHub Actions,
       # mesmo após upload bem-sucedido. Retentativas são apenas de deploy:
       # não repetem coleta nem alteram os JSONs versionados.

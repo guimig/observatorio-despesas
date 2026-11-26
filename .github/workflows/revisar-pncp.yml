@@ -40,13 +40,27 @@ jobs:
         run: |
           npm test
           npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-revision.json
+          key: pncp-revision-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pncp-revision-v1-
+      - name: Registrar checkpoint operacional anterior
+        id: retention-before
+        run: |
+          file="$RUNNER_TEMP/observatorio-pncp-revision.json"
+          if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
       - name: Resumir fila de reconsultas sem dados individuais
+        env:
+          PNCP_REVISION_STATE_PATH: ${{ runner.temp }}/observatorio-pncp-revision.json
         run: |
           echo '### Revisões PNCP previstas' >> "$GITHUB_STEP_SUMMARY"
           npm run pncp-revisions:plan >> "$GITHUB_STEP_SUMMARY"
       - name: Reconsulta pontual a PNCP
         env:
           PNCP_REVISIONS_BATCH: ${{ inputs.batch || '12' }}
+          PNCP_REVISION_STATE_PATH: ${{ runner.temp }}/observatorio-pncp-revision.json
         run: npm run recheck:pncp
       - name: Verificar integridade e privacidade dos JSONs
         run: npm run check:data
@@ -63,6 +77,19 @@ jobs:
           git commit -m 'data: revisar publicacoes PNCP ja cadastradas'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Comparar checkpoint operacional
+        id: retention-after
+        env:
+          BEFORE: ${{ steps.retention-before.outputs.digest }}
+        run: |
+          file="$RUNNER_TEMP/observatorio-pncp-revision.json"
+          if [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$BEFORE" ]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; else echo 'changed=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/save@v4
+        if: steps.retention-after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-pncp-revision.json
+          key: pncp-revision-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: revisar
     if: github.event_name == 'workflow_dispatch' && needs.revisar.outputs.changed == 'true'

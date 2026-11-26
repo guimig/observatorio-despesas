@@ -52,7 +52,20 @@ jobs:
         run: |
           npm test
           npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-narrative.json
+          key: narrative-v1-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: narrative-v1-${{ matrix.source }}-
+      - name: Registrar checkpoint operacional anterior
+        id: retention-before
+        run: |
+          file="$RUNNER_TEMP/observatorio-narrative.json"
+          if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
       - name: Resumir pendencias de textos sem dados individuais
+        env:
+          NARRATIVE_STATE_PATH: ${{ runner.temp }}/observatorio-narrative.json
         run: |
           echo '### Recuperacao de descricoes historicas' >> "$GITHUB_STEP_SUMMARY"
           npm run narratives:plan >> "$GITHUB_STEP_SUMMARY"
@@ -60,6 +73,7 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           NARRATIVE_BATCH: ${{ inputs.batch || '15' }}
+          NARRATIVE_STATE_PATH: ${{ runner.temp }}/observatorio-narrative.json
           NARRATIVE_CGU_DAYS: ${{ inputs.cgu_days || '5' }}
           NARRATIVE_OTHER_PHASE_DAYS: '3'
           CGU_CLASSIFICATION_DAYS: '8'
@@ -84,6 +98,19 @@ jobs:
           git commit -m 'data: recuperar descricoes e classificacao publicas'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Comparar checkpoint operacional
+        id: retention-after
+        env:
+          BEFORE: ${{ steps.retention-before.outputs.digest }}
+        run: |
+          file="$RUNNER_TEMP/observatorio-narrative.json"
+          if [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$BEFORE" ]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; else echo 'changed=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/save@v4
+        if: steps.retention-after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-narrative.json
+          key: narrative-v1-${{ matrix.source }}-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: recuperar
     if: github.event_name == 'workflow_dispatch' && needs.recuperar.result == 'success'

@@ -32,9 +32,21 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-participation.json
+          key: arp-participation-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: arp-participation-v1-
+      - name: Registrar checkpoint operacional anterior
+        id: retention-before
+        run: |
+          file="$RUNNER_TEMP/observatorio-participation.json"
+          if [ -f "$file" ]; then echo "digest=$(sha256sum "$file" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"; else echo 'digest=missing' >> "$GITHUB_OUTPUT"; fi
       - name: Consultar partes de atas PNCP
         env:
           PNCP_PARTICIPANTS_LIMIT: '30'
+          PNCP_PARTICIPANT_STATE_PATH: ${{ runner.temp }}/observatorio-participation.json
         run: npm run collect:pncp-ata-participants
       - uses: actions/cache/restore@v4
         continue-on-error: true
@@ -79,6 +91,19 @@ jobs:
         with:
           path: ${{ runner.temp }}/observatorio-arp-details.json
           key: arp-detail-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Comparar checkpoint operacional
+        id: retention-after
+        env:
+          BEFORE: ${{ steps.retention-before.outputs.digest }}
+        run: |
+          file="$RUNNER_TEMP/observatorio-participation.json"
+          if [ -f "$file" ] && [ "$(sha256sum "$file" | cut -d ' ' -f1)" != "$BEFORE" ]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; else echo 'changed=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/cache/save@v4
+        if: steps.retention-after.outputs.changed == 'true'
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-participation.json
+          key: arp-participation-v1-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: coletar
     if: github.event_name == 'workflow_dispatch' && needs.coletar.outputs.changed == 'true'
