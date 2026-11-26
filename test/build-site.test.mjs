@@ -30,6 +30,9 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'siafi-movement-audit.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'siafi-movement-reconciliation.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'style.css'), 'body{}');
+    const fontBytes = Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 0xff]);
+    await writeFile(join(root, 'assets', 'source-sans-3-latin.woff2'), fontBytes);
+    await writeFile(join(root, 'assets', 'source-sans-3-OFL.txt'), 'OFL');
     await writeFile(join(root, 'data', 'manifest.json'), JSON.stringify({
       schema_version: 1, unit: '158459', status: 'aguardando_primeira_coleta', months: []
     }));
@@ -40,6 +43,8 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     assert.deepEqual(result, { months: 0, documents: 0 });
     assert.match(await readFile(join(root, 'dist', 'index.html'), 'utf8'), /Teste/);
     await stat(join(root, 'dist', 'assets', 'quality.js'));
+    assert.deepEqual(await readFile(join(root, 'dist', 'assets', 'source-sans-3-latin.woff2')), fontBytes);
+    assert.equal(await readFile(join(root, 'dist', 'assets', 'source-sans-3-OFL.txt'), 'utf8'), 'OFL');
     const index=JSON.parse(await readFile(join(root,'dist','data','coverage-index.json'),'utf8'));
     assert.equal(index.from,'2024-01-01');assert.equal(index.cgu.documents,0);
     assert.ok(index.cgu.missingDays>0);
@@ -91,6 +96,8 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','siafi-movement-audit.js'),'');
     await writeFile(join(root,'assets','siafi-movement-reconciliation.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
+    await writeFile(join(root,'assets','source-sans-3-latin.woff2'),'');
+    await writeFile(join(root,'assets','source-sans-3-OFL.txt'),'');
     await mkdir(join(root,'data','months'),{recursive:true});
     await writeFile(join(root,'data','manifest.json'),JSON.stringify({
       schema_version:1,unit:'158459',status:'aguardando_primeira_coleta',months:[]
@@ -115,7 +122,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','style.css','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
+   for(const filename of ['app.js','style.css','source-sans-3-latin.woff2','source-sans-3-OFL.txt','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
