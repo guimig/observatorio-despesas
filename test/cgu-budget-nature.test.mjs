@@ -21,11 +21,20 @@ test('CGU preserva classificacao explicitamente mapeada e nao infere celula orca
 });
 test('campo novo opcional compativel com schema 1 e preservado em reconsulta incompleta de atributos',()=>{
  const patch=doc=>({documents:[doc],links:[],coverage:{date:day,phase:1,complete:true,count:1,invalid:0}});
- const old=mergeMonth(emptyMonth(month),month,[patch(normalizeDocument(row,date,1))]);
+ const old=mergeMonth(emptyMonth(month),month,[patch(normalizeDocument(row,date,1))]).data;
  validateMonth(old);
  const changed=normalizeDocument({codigoUg:row.codigoUg,documento:row.documento,valor:row.valor,acao:'20RK'},date,1);
- const updated=mergeMonth(old,month,[patch(changed)]);
+ const updated=mergeMonth(old,month,[patch(changed)]).data;
  validateMonth(updated);
- assert.equal(updated.documents[0].nature.budgetPlan,'0000');
+ assert.equal(updated.documents[0].nature.budgetPlan,undefined);
  assert.equal(updated.documents[0].nature.action,'20RK');
+});
+
+test('PO e localizador permanecem quando a reconsulta omite campos sem alterar o contexto',()=>{
+ const patch=doc=>({documents:[doc],links:[],coverage:{date:day,phase:1,complete:true,count:1,invalid:0}});
+ const old=mergeMonth(emptyMonth(month),month,[patch(normalizeDocument(row,date,1))]).data;
+ const same=normalizeDocument({codigoUg:row.codigoUg,documento:row.documento,valor:row.valor,acao:'20RL'},date,1);
+ const updated=mergeMonth(old,month,[patch(same)]).data;
+ assert.equal(updated.documents[0].nature.budgetPlan,'0000');
+ assert.equal(updated.documents[0].nature.locator,'0042');
 });

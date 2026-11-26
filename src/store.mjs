@@ -294,7 +294,15 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       const old=previousById.get(doc.id);
       // Campos omitidos em nova listagem nao apagam classificacao oficial ja coletada.
       // Nao herdar de outro documento, fase ou identidade.
-      if(old?.nature)doc.nature={...old.nature,...doc.nature};
+      if(old?.nature){
+        const prior={...old.nature};
+        // PO e localizador dependem da acao; alteracao de contexto invalida os anteriores.
+        if(['action','program','function','subfunction'].some(key=>
+           doc.nature?.[key]!==undefined&&doc.nature[key]!==prior[key])){
+          delete prior.budgetPlan;delete prior.locator;
+        }
+        doc.nature={...prior,...doc.nature};
+      }
       if(old?.description&&!doc.description)doc.description=old.description;
       if(old?.descriptionCheckedAt&&!doc.descriptionCheckedAt)
         doc.descriptionCheckedAt=old.descriptionCheckedAt;
