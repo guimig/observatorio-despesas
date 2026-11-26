@@ -32,7 +32,7 @@ export function budgetBucket(doc,dimension,{confirmedPi=[]}={}){
   if(doc.phase!==1)return missing();
   const pi=[...new Set(confirmedPi.filter(v=>typeof v==='string'&&v.trim()))].sort();
   if(!pi.length)return missing();if(pi.length>1)return multiple();
-  return {key:JSON.stringify([year,'pi',pi[0]]),label:year+' · '+pi[0],kind:'observed',year,code:pi[0]};
+  return {key:JSON.stringify([year,'pi',null,pi[0]]),label:year+' · '+pi[0],kind:'observed',year,code:pi[0]};
  }
  const raw=doc.nature?.[dimension],status=sentinel(raw);
  if(status==='missing')return missing();if(status==='multiple')return multiple();
@@ -67,4 +67,11 @@ export function summarizeBudget(entries,dimension,{confirmedPi=()=>[]}={}){
   else phase.unknown++;
  }
  return [...groups.values()].sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'pt-BR'));
+}
+
+export function budgetFacetOptions(entries,dimension,filters,{confirmedPi=()=>[]}={}){
+ const groups=summarizeBudget(entries,dimension,{confirmedPi});
+ const contextGroups=summarizeBudget(entries.filter(({doc})=>matchesBudgetFilters(doc,filters,{confirmedPi:confirmedPi(doc),except:dimension})),dimension,{confirmedPi});
+ const counts=new Map(contextGroups.map(g=>[g.key,g.count]));
+ return groups.map(g=>({...g,compatible:counts.get(g.key)||0}));
 }
