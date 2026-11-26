@@ -5,7 +5,7 @@
  */
 import { requestPublicJSON } from './procurement.mjs';
 import { extractAraquariNeEvidence } from '../assets/procurement-links.js';
-import {extractCommitmentMetadata} from './pncp-commitment-fields.mjs';
+import {extractCommitmentMetadata,extractContextualCommitments} from './pncp-commitment-fields.mjs';
 import {auditShortCommitments} from './pncp-short-identity.mjs';
 
 const PNCP=/^(\d{14})-2-(\d{6})\/(20\d{2})$/;
@@ -34,7 +34,7 @@ export function extractCommitmentRefs(records){
   return [...found].sort();
 }
 export async function fetchLinkedCommitments(contract,{
-  fetcher=requestPublicJSON,maxPages=5,includeDetails=false,shortIndex=null
+  fetcher=requestPublicJSON,maxPages=5,includeDetails=false,shortIndex=null,includeContext=false,documents
 }={}){
   if(contract?.source!=='pncp')throw Error('Somente contratos PNCP');
   if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>30)
@@ -42,7 +42,8 @@ export async function fetchLinkedCommitments(contract,{
   const rows=[];let expected=null,expectedRecords=null;const seen=new Set();
   const done=()=>({refs:extractCommitmentRefs(rows),count:rows.length,
     ...(includeDetails?extractCommitmentMetadata(rows,contract):{}),
-    ...(shortIndex?{shortAudit:auditShortCommitments(rows,contract,shortIndex)}:{})});
+    ...(shortIndex?{shortAudit:auditShortCommitments(rows,contract,shortIndex)}:{}),
+    ...(includeDetails&&(includeContext||documents!==undefined)?{context:extractContextualCommitments(rows,contract,documents??shortIndex)}:{})});
   for(let page=1;page<=maxPages;page++){
     const response=await fetcher(linkedCommitmentsUrl(contract.pncpId,page));
     if(!response||typeof response!=='object'||Array.isArray(response)||

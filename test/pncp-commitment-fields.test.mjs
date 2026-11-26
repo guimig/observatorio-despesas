@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {extractCommitmentMetadata,validateCommitmentMetadata} from '../src/pncp-commitment-fields.mjs';
+import {extractCommitmentMetadata,validateCommitmentMetadata,extractContextualCommitments,validateContextualCommitments} from '../src/pncp-commitment-fields.mjs';
 import {fetchLinkedCommitments} from '../src/pncp-commitments.mjs';
 import {mergeProcurement,applyCommitmentResult,validateProcurement} from '../src/procurement-store.mjs';
 import {planCommitmentChecks} from '../src/collect-pncp-commitments.mjs';
@@ -54,4 +54,24 @@ test('schema retrocompativel, planejamento reconsulta legado, persistencia e inv
  assert.equal(same.contracts[0].commitmentDetails[0].pi,'IFC-0001');
  const changed=mergePncpRecord(next.contracts[0],{...c,number:'00999'},{kind:'contract',now}).record;
  assert.equal(changed.commitmentDetails,undefined);assert.equal(changed.commitmentAudit,undefined);
+});
+
+test('NE curta com cinco concordancias gera somente indicio contextual, nunca ref oficial',async()=>{
+ const supplier='12345678000190',instrument={...c,supplierCnpj:supplier};
+ const doc={id,phase:1,date:'2026-11-10',cents:12345,partyRef:supplier,process:c.process};
+ const short={...row,numeroEmpenho:'2026NE000123',tipoPessoa:'PJ',niCredorFornecedor:supplier};
+ const result=await fetchLinkedCommitments(instrument,{includeDetails:true,documents:[doc],fetcher:async()=>({data:[short],totalPaginas:1})});
+ assert.deepEqual(result.refs,[]);assert.deepEqual(result.details,[]);
+ assert.equal(result.context.length,1);assert.equal(result.context[0].pi,'IFC-0001');
+ assert.equal(validateContextualCommitments(result.context,instrument),true);
+ for(const bad of [{...doc,date:'2026-11-09'},{...doc,cents:1},{...doc,partyRef:'99999999000100'},{...doc,process:'23349.000000/2026-00'}])
+  assert.deepEqual(extractContextualCommitments([short],instrument,[bad]),[]);
+ assert.deepEqual(extractContextualCommitments([short],instrument,[doc,{...doc,id:'158459999992026NE000123'}]),[]);
+ assert.deepEqual(extractContextualCommitments([{...short,tipoPessoa:'PF'}],instrument,[doc]),[]);
+ const original=mergeProcurement(null,[{source:'pncp',month:'2026-11',records:[instrument],status:'complete',skipped:0}]).data;
+ const next=applyCommitmentResult(original,c.id,{status:'complete',refs:result.refs,audit:result.audit,details:result.details,context:result.context}).data;
+ assert.equal(next.contracts[0].commitmentContext[0].id,id);
+ assert.deepEqual(next.contracts[0].commitmentRefs,[]);
+ assert.equal(applyCommitmentResult(next,c.id,{status:'unavailable'}).changed,false);
+ assert.equal(mergePncpRecord(next.contracts[0],{...instrument,process:'23349.000000/2026-00'},{kind:'contract'}).record.commitmentContext,undefined);
 });

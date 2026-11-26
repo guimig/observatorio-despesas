@@ -7,6 +7,7 @@ import {inScopeNe} from './collection-scope.mjs';
 import {containsRawCpf} from './privacy.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {parseMoneyCents} from './cgu.mjs';
+import {indexLocalCommitments} from './pncp-short-identity.mjs';
 const FIELDS=['pi','nature','amendment','issueDate','status','statusDate','totalCents','subitemCents','updated','included'];
 const FORMATS=['fullCampus','campusShort','shortOnly','otherUg','outOfScope','unknown'];
 const MAX_ROWS=1500;
@@ -118,6 +119,58 @@ export function validateCommitmentMetadata(audit,details,refs){
     ['type','author'].some(k=>info[k]!==undefined&&
     (publicNarrativeText(info[k],120)!==info[k]||/[\r\n]/.test(info[k])))))
    throw Error('Metadados de emenda PNCP invalidos');
+ }
+ return true;
+}
+
+/** Indicio, nunca identidade SIAFI: NE curta + CNPJ PJ + processo + data + valor.
+ * O CNPJ da linha, do instrumento e da NE local devem coincidir. Nao publicar
+ * CPF, nome do credor, nem candidatos quando houver ambiguidade local.
+ * Nao alimenta commitmentRefs nem altera a atribuicao oficial. */
+export function extractContextualCommitments(rows,contract,documents){
+ if(!Array.isArray(rows)||rows.length>MAX_ROWS||(!Array.isArray(documents)&&!(documents instanceof Map)))
+  throw Error('Contexto PNCP invalido');
+ const supplier=contract?.supplierCnpj,process=contract?.process;
+ if(!/^\d{14}$/.test(supplier||'')||!/^\d{5}\.\d{6}\/20\d{2}-\d{2}$/.test(process||''))return [];
+ const byShort=documents instanceof Map?documents:indexLocalCommitments(documents);
+ const candidates=new Map();
+ for(const row of rows){
+  assertInstrument(row,contract);
+  const raw=typeof row.numeroEmpenho==='string'?row.numeroEmpenho.toUpperCase().replace(/\s/g,''):'';
+  const type=format(raw);
+  if(!['shortOnly','campusShort'].includes(type))continue;
+  const short=raw.slice(-12);
+  if(Number(short.slice(0,4))<2024)continue;
+  const matches=byShort.get(short)||[];
+  const creditor=typeof row.niCredorFornecedor==='string'?row.niCredorFornecedor.replace(/[./-]/g,''):'';
+  if(matches.length!==1||row.tipoPessoa!=='PJ'||creditor!==supplier)continue;
+  const d=matches[0], m=metadata(row);
+  if(!m.pi||!m.issueDate||m.totalCents===undefined||m.totalCents<=0||
+    d.partyRef!==supplier||d.process!==process||d.date!==m.issueDate||d.cents!==m.totalCents||
+    m.issueDate.slice(0,4)!==d.id.slice(11,15)||
+    !Number.isSafeInteger(row.sequencialEmpenho)||row.sequencialEmpenho<1)continue;
+  const result={id:d.id,seq:row.sequencialEmpenho,pi:m.pi,issueDate:m.issueDate,totalCents:m.totalCents,
+    ...(m.nature?{nature:m.nature}:{}),...(m.amendment?{amendment:m.amendment}:{})};
+  if(candidates.has(result.seq)&&JSON.stringify(candidates.get(result.seq))!==JSON.stringify(result))
+   throw Error('Indicio PNCP conflitante');
+  candidates.set(result.seq,result);
+ }
+ return [...candidates.values()].sort((a,b)=>a.seq-b.seq);
+}
+export function validateContextualCommitments(rows,contract){
+ if(!Array.isArray(rows)||rows.length>MAX_ROWS||new Set(rows.map(x=>x?.seq)).size!==rows.length||
+  (rows.length&&(!/^\d{14}$/.test(contract?.supplierCnpj||'')||
+   !/^\d{5}\.\d{6}\/20\d{2}-\d{2}$/.test(contract?.process||''))))
+  throw Error('Indicios PNCP invalidos');
+ for(const r of rows){
+  if(!exactKeys(r,['id','seq','pi','issueDate','totalCents','nature','amendment'])||
+   !inScopeNe(r.id)||!Number.isSafeInteger(r.seq)||r.seq<1||
+   typeof r.pi!=='string'||code(r.pi)!==r.pi||
+   !validDay(r.issueDate)||r.issueDate.slice(0,4)!==r.id.slice(11,15)||
+   !Number.isSafeInteger(r.totalCents)||r.totalCents<=0||
+   (r.nature!==undefined&&code(r.nature,ND)!==r.nature)||
+   (r.amendment!==undefined&&code(r.amendment)!==r.amendment))
+   throw Error('Indicio PNCP invalido');
  }
  return true;
 }

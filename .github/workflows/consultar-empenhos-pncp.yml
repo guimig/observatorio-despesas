@@ -55,8 +55,8 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/observatorio-pncp-ne-state.json
-          key: pncp-ne-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: pncp-ne-state-v2-
+          key: pncp-ne-state-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pncp-ne-state-v3-
       - name: Registrar estado anterior do cache
         id: state_before
         env:
@@ -105,7 +105,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/observatorio-pncp-ne-state.json
-          key: pncp-ne-state-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          key: pncp-ne-state-v3-${{ github.run_id }}-${{ github.run_attempt }}
   publicar:
     needs: enriquecer
     if: github.event_name == 'workflow_dispatch' && needs.enriquecer.outputs.changed == 'true'

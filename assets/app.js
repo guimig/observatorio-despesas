@@ -37,6 +37,15 @@ function pncpCommitmentEvidence(doc){
   }
   return pncpCommitmentIndex.get(doc.id)||[];
 }
+// Indicio separado: revalidar contra o documento CGU atual antes de exibir.
+function contextualPncpCommitmentEvidence(doc){
+  if(doc?.phase!==1||!procurementData)return [];
+  return (procurementData.contracts||[]).filter(c=>c.source==='pncp'&&c.commitmentStatus==='complete'&&
+    c.supplierCnpj&&c.supplierCnpj===doc.partyRef&&c.process&&c.process===doc.process)
+    .flatMap(instrument=>(instrument.commitmentContext||[])
+      .filter(d=>d.id===doc.id&&d.issueDate===doc.date&&d.totalCents===doc.cents)
+      .map(detail=>({instrument,detail})));
+}
 let noticesData=null;
 let atasData=null;
 let arpDetailsById=null;
@@ -690,6 +699,14 @@ function showDocument(doc, monthData = state.data) {
     const unique=key=>[...new Set(evidence.map(({detail})=>detail[key]).filter(v=>v!==undefined))].join(' · ');
     appendDetailField(fields,'Plano interno (PI) · PNCP',
       unique('pi')||'Não recuperado com identidade SIAFI integral');
+    const context=contextualPncpCommitmentEvidence(doc);
+    if(context.length){
+      appendDetailField(fields,'PI candidato · PNCP (vínculo não confirmado)',
+        context.slice(0,12).map(({instrument,detail:d})=>
+          'PI '+d.pi+' · '+instrument.pncpId+' / registro '+d.seq+
+          (d.nature?' · ND '+d.nature:'')+(d.amendment?' · Emenda '+d.amendment:'')).join('\n')+
+        '\nCoincidem número abreviado, processo, CNPJ, data e valor. O PNCP não informou a identidade SIAFI integral. Não utilizado em totais ou classificação oficial.',{long:true});
+    }
     if(evidence.length){
       if(unique('nature'))appendDetailField(fields,'ND informada no PNCP',unique('nature'));
       if(unique('amendment'))appendDetailField(fields,'Emenda informada no PNCP',unique('amendment'));

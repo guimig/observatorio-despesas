@@ -13,7 +13,7 @@ function integer(value,fallback,max){
   return n;
 }
 export function planCommitmentChecks(catalog,{
-  count=8,now=new Date(),recheck=false,state={},refreshDetails=false
+  count=8,now=new Date(),recheck=false,state={},refreshDetails=false,refreshContext=false
 }={}){
   const limit=integer(count,8,25);
   const due=(contract)=>{
@@ -23,11 +23,15 @@ export function planCommitmentChecks(catalog,{
       const retry=state[stateKey(contract)];
       return !retry||now.getTime()-Date.parse(retry+'T00:00:00Z')>=7*86400000;
     }
+    if(refreshContext&&contract.commitmentStatus==='complete'&&contract.commitmentContext===undefined){
+      const retry=state[stateKey(contract)];
+      return !retry||now.getTime()-Date.parse(retry+'T00:00:00Z')>=7*86400000;
+    }
     // Resultados positivos tambem precisam de revisao periodica.
     const last=effectiveDay(contract.commitmentAt,state[stateKey(contract)],now);
     if(!last)return true;
     const time=new Date(last+'T00:00:00Z').valueOf();
-    const interval=contract.commitmentStatus==='complete'?30:7;
+    const interval=contract.commitmentStatus==='complete'&&!(refreshContext&&contract.commitmentAudit?.formats?.shortOnly>0&&!contract.commitmentContext?.length)?30:7;
     return !Number.isFinite(time) || now.getTime()-time>=interval*86400000;
   };
   const eligible=(catalog?.contracts||[])
@@ -47,7 +51,7 @@ export function planCommitmentChecks(catalog,{
         a.id.localeCompare(b.id);
     })
     ;
-  const isPending=c=>c.commitmentStatus!=='complete'||(refreshDetails&&!c.commitmentAudit);
+  const isPending=c=>c.commitmentStatus!=='complete'||(refreshDetails&&!c.commitmentAudit)||(refreshContext&&c.commitmentContext===undefined);
   const pending=eligible.filter(isPending);
   const review=eligible.filter(c=>!isPending(c));
   const slot=Math.floor(now.getTime()/86400000);
@@ -67,7 +71,7 @@ async function main(){
   const statePath=process.env.PNCP_NE_STATE_PATH;
   const state=await readOperationalState(statePath);
   const batch=planCommitmentChecks(catalog,{
-    state,refreshDetails:true,
+    state,refreshDetails:true,refreshContext:true,
     count:process.env.PNCP_COMMITMENT_BATCH||8,
     recheck:process.env.PNCP_COMMITMENT_RECHECK==='true'
   });
@@ -75,13 +79,13 @@ async function main(){
   if(process.argv.includes('--dry-run'))return;
   const {months}=await validatePublishedData(process.cwd());
   const shortIndex=indexLocalCommitments(months.flatMap(m=>m.documents)),shortAudit=emptyShortAudit();
-  let completed=0,unavailable=0,matched=0,rows=0,full=0,short=0,pi=0,fullPi=0;
+  let completed=0,unavailable=0,matched=0,rows=0,full=0,short=0,pi=0,fullPi=0,context=0;
   for(const entry of batch){
     const record=catalog.contracts.find(c=>c.id===entry.id);
     try{
-      const result=await fetchLinkedCommitments(record,{includeDetails:true,shortIndex});
+      const result=await fetchLinkedCommitments(record,{includeDetails:true,shortIndex,includeContext:true});
       const outcome=await writeCommitmentResult(process.cwd(),entry.id,{
-        status:'complete',refs:result.refs,audit:result.audit,details:result.details
+        status:'complete',refs:result.refs,audit:result.audit,details:result.details,context:result.context
       });
       const current=outcome.data.contracts.find(c=>c.id===entry.id);
       delete state[stateKey(record)];
@@ -90,19 +94,19 @@ async function main(){
       matched+=result.refs.length;
       rows+=result.audit.rows;full+=result.audit.formats.fullCampus;
       short+=result.audit.formats.shortOnly+result.audit.formats.campusShort;
-      pi+=result.audit.fields.pi;fullPi+=result.audit.fullWithPi;
+      pi+=result.audit.fields.pi;fullPi+=result.audit.fullWithPi;context+=result.context.length;
       addShortAudit(shortAudit,result.shortAudit);
     }catch{
       unavailable++;
       // Resposta inacessível não é equivalente à ausência de empenhos.
       await writeCommitmentResult(process.cwd(),entry.id,{status:'unavailable'});
-      if(record.commitmentStatus==='complete'&&!record.commitmentAudit)
+      if(record.commitmentStatus==='complete'&&(!record.commitmentAudit||record.commitmentContext===undefined))
         state[stateKey(record)]=new Date().toISOString().slice(0,10);
     }
   }
   await saveOperationalState(statePath,state);
   console.log('NE abreviada PNCP: candidatos locais, nao vinculos comprovados: '+JSON.stringify(shortAudit));
-  console.log('Auditoria PNCP de empenhos: '+JSON.stringify({completed,unavailable,rows,full,short,pi,fullPi}));
+  console.log('Auditoria PNCP de empenhos: '+JSON.stringify({completed,unavailable,rows,full,short,pi,fullPi,context}));
   console.log('PNCP empenhos: '+completed+' instrumento(s) consultado(s) integralmente, '+
     unavailable+' indisponível(is), '+matched+' referência(s) explícitas à UG 158459. '+
     'Nenhum número de NE de outra unidade ou CPF foi registrado.');

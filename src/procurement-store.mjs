@@ -6,7 +6,7 @@ import {publicItemDescription} from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {CAMPUS_UG,CAMPUS_CNPJ,REITORIA_CNPJ,normalizeProcess} from './procurement.mjs';
 import {CONTRACT_FIELDS} from './pncp-record-revisions.mjs';
-import {validateCommitmentMetadata} from './pncp-commitment-fields.mjs';
+import {validateCommitmentMetadata,validateContextualCommitments} from './pncp-commitment-fields.mjs';
 
 const SOURCE=new Set(['pncp','compras']);
 const MONTH=/^20\d{2}-(0[1-9]|1[0-2])$/;
@@ -19,7 +19,7 @@ const FIELDS=['id','source','scope','orgCnpj','publishedMonth','number',
  'pncpId','procurementId','process','unitCode','signed','starts','ends',
  'amountCents','supplierCnpj','supplierCpfMasked','supplierName','object','objectCheckedAt','kind',
  'sourceUpdatedAt','recheckedAt','lastChangedAt','revisionCount',
- 'commitmentStatus','commitmentAt','commitmentRefs','commitmentAudit','commitmentDetails','procurementLinkStatus','procurementLinkAt',
+ 'commitmentStatus','commitmentAt','commitmentRefs','commitmentAudit','commitmentDetails','commitmentContext','procurementLinkStatus','procurementLinkAt',
  'adhesion','ataControl','remanejamento'];
 
 export const blankProcurement=()=>({
@@ -129,6 +129,12 @@ export function validateProcurement(data){
       if(contract.commitmentStatus!=='complete')throw Error('Metadados PNCP sem consulta completa');
       validateCommitmentMetadata(contract.commitmentAudit,contract.commitmentDetails,contract.commitmentRefs);
     }
+    if(contract.commitmentContext!==undefined){
+      if(contract.commitmentStatus!=='complete'||!contract.commitmentAudit)throw Error('Indicios PNCP sem cobertura');
+      validateContextualCommitments(contract.commitmentContext,contract);
+      if(contract.commitmentContext.length>contract.commitmentAudit.formats.shortOnly+contract.commitmentAudit.formats.campusShort)
+        throw Error('Indicios PNCP excedem registros abreviados');
+    }
     if(contract.procurementId!==undefined&&!PURCHASE_ID.test(contract.procurementId))
       throw Error('Referência de contratação PNCP inválida');
     if(contract.procurementLinkStatus!==undefined) {
@@ -236,13 +242,13 @@ export function mergeProcurement(current,scans,now=new Date()){
           // Preservar consulta de NE apenas se os campos-base do instrumento
           // não mudaram. Contratos retificados devem ser reconsultados.
           const sameInstrument=old && old.number===copy.number &&
-            old.unitCode===copy.unitCode && old.process===copy.process;
+            old.unitCode===copy.unitCode && old.process===copy.process && old.supplierCnpj===copy.supplierCnpj && old.supplierCpfMasked===copy.supplierCpfMasked;
           if(sameInstrument && old.commitmentStatus) {
             copy.commitmentStatus=old.commitmentStatus;
             copy.commitmentAt=old.commitmentAt;
             if(old.commitmentStatus==='complete'){
               copy.commitmentRefs=structuredClone(old.commitmentRefs);
-              for(const key of ['commitmentAudit','commitmentDetails'])
+              for(const key of ['commitmentAudit','commitmentDetails','commitmentContext'])
                 if(old[key]!==undefined)copy[key]=structuredClone(old[key]);
             }
           }
@@ -305,6 +311,13 @@ export function applyCommitmentResult(existing,id,result,now=new Date()){
       validateCommitmentMetadata(result.audit,result.details,updated.commitmentRefs);
       updated.commitmentAudit=structuredClone(result.audit);
       updated.commitmentDetails=structuredClone(result.details);
+      if(result.context!==undefined){
+        validateContextualCommitments(result.context,updated);
+        updated.commitmentContext=structuredClone(result.context);
+      }else if(updated.commitmentContext!==undefined){
+        // Sem nova comparacao, nao associar indicios a uma nova resposta.
+        delete updated.commitmentContext;
+      }
     }else if(updated.commitmentAudit!==undefined){
       // Legacy caller cannot replace audited references with a narrower payload.
       if(JSON.stringify(contract.commitmentRefs)!==JSON.stringify(updated.commitmentRefs))
@@ -314,6 +327,7 @@ export function applyCommitmentResult(existing,id,result,now=new Date()){
     delete updated.commitmentRefs;
     delete updated.commitmentAudit;
     delete updated.commitmentDetails;
+    delete updated.commitmentContext;
   }
   const before=structuredClone(original);
   const after=structuredClone(next);
