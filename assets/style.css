@@ -416,9 +416,10 @@ html[data-theme=dark] {
   .document-table .document-mobile-hidden { display: none; }
   .document-table .mobile-document-meta { display: block; }
   .document-table td .mobile-document-meta { overflow-wrap: normal; }
-  .document-table td:first-child {
+  .document-table td.doc-code:first-child {
     max-width: none;
     font-family: inherit;
+    font-size: .875rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     letter-spacing: normal;
