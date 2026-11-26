@@ -213,6 +213,9 @@ export function summarizeIntegratedCoverage(index){
  const confirmed=entries.filter(e=>neEvidenceLevel(index,e.id)==='confirmed');
  const indications=entries.filter(e=>neEvidenceLevel(index,e.id)==='indication');
  const confirmedIds=new Set(confirmed.map(e=>e.id)),liquidations=new Set(),payments=new Set();
+ const direct=entries.flatMap(e=>e.links.filter(l=>l.relatedCgu));
+ const relatedOnly=direct.filter(l=>l.cents===null);
+ const checked=[...index.docs.values()].filter(d=>Array.isArray(d.relatedIds));
  for(const e of confirmed){
   for(const l of e.liquidations)liquidations.add(l.id);
   for(const l of e.payments)payments.add(l.id);
@@ -220,6 +223,9 @@ export function summarizeIntegratedCoverage(index){
  const specific=instruments.filter(c=>index.ataEdges.has(instrumentKey(c)));
  return {loadedMonths:index.loadedMonths,totalMonths:index.totalMonths,
   commitments:entries.length,confirmedCommitments:confirmed.length,indicatedCommitments:indications.length,
+  relatedDocumentsChecked:checked.length,relatedNeChecked:checked.filter(d=>d.phase===1).length,
+  cguRelatedPairs:direct.length,cguRelatedOnlyPairs:relatedOnly.length,
+  cguRelatedOnlyDocuments:new Set(relatedOnly.map(l=>l.id)).size,
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
   instrumentsWithPurchase:instruments.filter(c=>PURCHASE.test(c.procurementId||'')).length,

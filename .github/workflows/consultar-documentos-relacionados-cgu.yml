@@ -1,0 +1,73 @@
+name: Enriquecer documentos relacionados CGU - Observatorio
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '19 8,20 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'src/cgu-related.mjs'
+      - '.github/workflows/consultar-documentos-relacionados-cgu.yml'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
+jobs:
+  consultar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar acervo e testes
+        run: |
+          npm test
+          npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-related.json
+          key: cgu-related-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cgu-related-v1-
+      - name: Consultar identidades documentais (sem atribuir valores)
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          CGU_RELATED_STATE_PATH: ${{ runner.temp }}/observatorio-cgu-related.json
+          CGU_RELATED_LIMIT: '24'
+        run: node src/cgu-related.mjs
+      - name: Validar dados e versionar apenas alteracoes
+        id: commit
+        run: |
+          npm run check:data
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
+          git add -- data/months/
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'data: incorporar identidades de documentos relacionados CGU'
+          bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        if: always()
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-related.json
+          key: cgu-related-v1-${{ github.run_id }}-${{ github.run_attempt }}
+  publicar:
+    needs: consultar
+    if: needs.consultar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml

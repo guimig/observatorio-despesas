@@ -1,5 +1,14 @@
 /** Índice de trajetória documental por nota de empenho (NE). */
 const NE_ID = /^158459\d{5}20\d{2}NE\d{6}$/;
+const RELATED_ID=/^158459\d{5}20\d{2}(NE|NS|OB|DF)\d{6}$/;
+export function inScopeRelatedDocument(id){
+ return typeof id==='string'&&RELATED_ID.test(id)&&Number(id.slice(11,15))>=2024;
+}
+export function validRelatedPair(a,b){
+ if(!inScopeRelatedDocument(a)||!inScopeRelatedDocument(b)||a===b)return false;
+ return NE_ID.test(a)!==NE_ID.test(b);
+}
+const relatedPhase=id=>id.slice(15,17)==='NS'?2:3;
 
 export function buildCommitmentTrajectories(months) {
   if (!Array.isArray(months)) throw new Error('Acervo mensal inválido');
@@ -58,6 +67,28 @@ export function buildCommitmentTrajectories(months) {
     }
   }
 
+  // A consulta de relacionados declara identidades, nao valores por NE.
+  // Uniao bidirecional com impactos: uma aresta por par, valor somente do
+  // endpoint de impactos. Nao ligar NS diretamente a OB/DF.
+  const linked=new Map();
+  for(const entry of commitments.values())for(const link of entry.links)
+    linked.set(link.id+'>'+entry.id,link);
+  for(const month of months)for(const doc of month.documents){
+    if(!Array.isArray(doc.relatedIds))continue;
+    for(const other of doc.relatedIds){
+      if(!validRelatedPair(doc.id,other))continue;
+      const ne=NE_ID.test(doc.id)?doc.id:other,from=NE_ID.test(doc.id)?other:doc.id;
+      const source=documents.get(from),phase=relatedPhase(from);
+      if(source&&source.phase!==phase){issues.push({type:'related_phase_conflict',id:from+'>'+ne});continue;}
+      const key=from+'>'+ne,existing=linked.get(key);
+      if(existing){existing.relatedCgu=true;continue;}
+      if(!commitments.has(ne))commitments.set(ne,{id:ne,document:null,links:[],items:null,itemsChecked:false});
+      const link={id:from,phase,date:source?.date||null,month:source?.month||null,cents:null,
+        checked:source?(phase===2?source.liquidationLinksChecked===true:source.paymentLinksChecked===true):null,
+        document:source||null,relatedCgu:true};
+      commitments.get(ne).links.push(link);linked.set(key,link);
+    }
+  }
   for (const month of months) {
     for (const [id, items] of Object.entries(month.itemsByDocument || {})) {
       if (!NE_ID.test(id)) continue;
@@ -73,7 +104,12 @@ export function buildCommitmentTrajectories(months) {
   return [...commitments.values()].map(entry => {
     const liquidations = entry.links.filter(link => link.phase === 2);
     const payments = entry.links.filter(link => link.phase === 3);
-    const sum = list => list.reduce((total, link) => total + link.cents, 0);
+    const sum=list=>{
+      const known=list.filter(l=>Number.isSafeInteger(l.cents));
+      if(list.length&&!known.length)return null;
+      const value=known.reduce((total,l)=>total+BigInt(l.cents),0n);
+      return value>BigInt(Number.MAX_SAFE_INTEGER)||value<BigInt(Number.MIN_SAFE_INTEGER)?null:Number(value);
+    };
     return {
       ...entry,
       hasCollectedCommitment: Boolean(entry.document),
@@ -86,13 +122,15 @@ export function buildCommitmentTrajectories(months) {
       payments,
       liquidationCents: sum(liquidations),
       paymentCents: sum(payments),
+      liquidationUnknown:liquidations.filter(l=>!Number.isSafeInteger(l.cents)).length,
+      paymentUnknown:payments.filter(l=>!Number.isSafeInteger(l.cents)).length,
       liquidationDocuments: new Set(liquidations.map(link => link.id)).size,
       paymentDocuments: new Set(payments.map(link => link.id)).size,
       multipleLiquidations: new Set(liquidations.map(link => link.id)).size > 1,
       multiplePayments: new Set(payments.map(link => link.id)).size > 1,
       sourceMonth: entry.document?.month || null,
-      pendingLiquidations: liquidations.some(link => link.checked === false),
-      pendingPayments: payments.some(link => link.checked === false)
+      pendingLiquidations: liquidations.some(link => link.checked === false||link.cents===null),
+      pendingPayments: payments.some(link => link.checked === false||link.cents===null)
     };
   }).sort((a, b) => (b.document?.date || '').localeCompare(a.document?.date || '') ||
     a.id.localeCompare(b.id));

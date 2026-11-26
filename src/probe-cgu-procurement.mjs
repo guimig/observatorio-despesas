@@ -32,7 +32,7 @@ export function procurementKey(row,modalities){
 export function identityCounts(rows,known,field){
  const full=new Set(),out={rows:rows.length,fullCampusNe:0,knownCampusNe:0,shortNe:0,otherOrUnknown:0,fullCampusLiquidation:0,fullCampusPayment:0};
  for(const r of rows){
-  const v=r?.[field];
+  const v=r?.[field]??(field==='empenho'?r?.documento:undefined);
   if(typeof v==='string'&&/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(v)&&Number(v.slice(11,15))>=2024){
    const s=v.slice(15,17);
    if(s==='NE'){full.add(v);continue;}
@@ -100,7 +100,7 @@ export async function probeCguProcurement({token,notices=[],contracts=[],months=
  report.contractKeys={rows:contractRows.length,usable:ids.size};
  for(const id of [...ids].slice(0,3)){
   const r=await call('contratos/documentos-relacionados',{id});
-  report.contractLookups.push({status:r.status,fields:fieldNames(r.rows[0]),...identityCounts(r.rows,known,'documento')});
+  report.contractLookups.push({status:r.status,fields:fieldNames(r.rows[0]),...identityCounts(r.rows,known,'empenho')});
  }
  report.telemetry=budget.snapshot();
  return report;
