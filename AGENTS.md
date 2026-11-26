@@ -26,3 +26,5 @@ Executar `npm run check:syntax`, `npm test`, `npm run check:data`, `npm run buil
 
 ## Backlog e homologação
 Marcos e limites: `docs/PLANO-DIRETOR.md`. Issues abertas mostram pendências de dados **mesmo se a estrutura de código existir**. Registrar nos PRs o que foi testado, o que não foi e instruções de rollback. O site é independente e não substitui fonte oficial.
+
+- Arquivos oficiais de atas, editais e contratos: usar links PNCP e metadados mínimos; nunca baixar ou versionar PDFs nem binários no repositório ou artefato Pages. Não utilizar título livre de arquivo como evidência de vínculo.

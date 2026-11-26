@@ -202,11 +202,36 @@ export function itemReferenceCandidates(index,entry){
     i.supplierCnpj&&i.supplierCnpj===entry.document.partyRef&&i.supplierCnpj===instrument.supplierCnpj&&!i.excluded);
   const units=(arp?.unitItems||[]).filter(i=>Number(i.number)===number);
   if(ti.length!==1&&ai.length!==1)continue;
-  result.push({seq:item.seq,number,purchaseId:purchase,item,
+  result.push({seq:item.seq,number,purchaseId:purchase,instrumentId:id,ne:entry.id,item,
     tender:ti.length===1?ti[0]:null,ata:ai.length===1?ata:null,
     ataItem:ai.length===1?ai[0]:null,unitRecords:ai.length===1&&units.length===1?units[0].units:[]});
  }
  return result;
+}
+/** Direct reverse traversal of already-qualified NE item candidates; no duplicate database. */
+export function scopeItemReferences(index,kind,id){
+ const ids=unique(instrumentAssociations(index,kind,id).flatMap(a=>(index.byInstrument.get(a.instrumentId)||[])
+  .filter(e=>e.level==='confirmed').map(e=>e.ne)));
+ return ids.flatMap(ne=>{
+  const entry=index.byNe.get(ne);return entry?itemReferenceCandidates(index,entry):[];
+ }).filter(r=>kind==='notice'?r.purchaseId===id:kind==='ata'?r.ata?.id===id:r.instrumentId===id);
+}
+/** Only ARP item rows confirmed by Compras.gov, joined to their exact procurement. */
+export function noticeAtaItemReferences(index,purchase){
+ const result=[];
+ for(const ata of index.byAtaPurchase.get(purchase)||[]){
+  for(const item of index.details.get(ata.id)?.compras?.items||[]){
+   const tender=index.tenderByPurchase.get(purchase)?.items?.filter(t=>t.number===item.number)||[];
+   result.push({ata,item,tender:tender.length===1?tender[0]:null});
+  }
+ }
+ return result.sort((a,b)=>a.item.number-b.item.number||a.ata.sequence-b.ata.sequence);
+}
+export function ataFilesUrl(ata,seq=null){
+ if(!ataControlFor(ata))return null;
+ if(seq!==null&&(!Number.isSafeInteger(seq)||seq<1||seq>999999))return null;
+ const m=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(ata.procurementId);
+ return 'https://pncp.gov.br/api/pncp/v1/orgaos/'+m[1]+'/compras/'+m[3]+'/'+Number(m[2])+'/atas/'+ata.sequence+'/arquivos'+(seq===null?'':'/'+seq);
 }
 export function summarizeIntegratedCoverage(index){
  const instruments=[...index.instruments.values()],entries=index.entries.filter(e=>e.document&&inScope(e.id));
@@ -221,6 +246,8 @@ export function summarizeIntegratedCoverage(index){
   for(const l of e.payments)payments.add(l.id);
  }
  const specific=instruments.filter(c=>index.ataEdges.has(instrumentKey(c)));
+ const itemRefs=confirmed.flatMap(e=>itemReferenceCandidates(index,e));
+ const arpRefs=[...index.byAtaPurchase.keys()].flatMap(p=>noticeAtaItemReferences(index,p));
  return {loadedMonths:index.loadedMonths,totalMonths:index.totalMonths,
   commitments:entries.length,confirmedCommitments:confirmed.length,indicatedCommitments:indications.length,
   relatedDocumentsChecked:checked.length,relatedNeChecked:checked.filter(d=>d.phase===1).length,
@@ -228,6 +255,9 @@ export function summarizeIntegratedCoverage(index){
   cguRelatedOnlyDocuments:new Set(relatedOnly.map(l=>l.id)).size,
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
+  neItemCandidates:itemRefs.length,neItemsWithAta:itemRefs.filter(r=>r.ataItem).length,
+  commitmentsWithItemCandidates:new Set(itemRefs.map(r=>r.ne)).size,
+  arpItemRowsWithTenderDescription:arpRefs.filter(r=>r.tender).length,
   instrumentsWithPurchase:instruments.filter(c=>PURCHASE.test(c.procurementId||'')).length,
   instrumentsWithLocalPurchase:instruments.filter(c=>index.noticeMap.has(c.procurementId)).length,
   instrumentsWithSpecificAta:specific.length,

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {officialAtaId,comprasAtaUrls,scanComprasArp,scanAtaInstruments,inspectArpBalances,applyArpDetail,validateArpDetails,planArpDetails,arpKey,allPages} from '../src/arp-details.mjs';
+import {officialAtaId,comprasAtaUrls,scanComprasArp,scanAtaInstruments,inspectArpBalances,applyArpDetail,validateArpDetails,planArpDetails,arpKey,allPages,scanAtaFiles,memoizedArpFetcher,arpFailureCategory,arpFailureKey} from '../src/arp-details.mjs';
 import {validateParticipantReferences} from '../src/collect-pncp-ata-participants.mjs';
 const purchase='10635424000186-1-000054/2026';
 const ata={id:purchase+':ata:1',procurementId:purchase,sequence:1,starts:'2026-05-21'};
@@ -55,4 +55,35 @@ test('cache evita consultas repetidas e perda nao apaga dados',()=>{
  const now=new Date('2026-11-24'),state={[arpKey(ata,'compras')]:'2026-11-24'};
  assert.equal(planArpDetails([ata],[],{kind:'compras',now,state}).length,0);
  assert.equal(planArpDetails([ata],[],{kind:'compras',now}).length,1);
+});
+
+test('lista de arquivos consulta somente metadados; nao baixa arquivo nem persiste URL ou titulo arbitrario',async()=>{
+ const seen=[];
+ const files=await scanAtaFiles(ata,{fetcher:async u=>{seen.push(u);return [{sequencialDocumento:2,tipoDocumentoId:14,dataPublicacaoPncp:'2026-05-21T10:00:00',url:'https://example.invalid/a.pdf',titulo:'nome e CPF 00012345678'}]}});
+ assert.equal(seen.length,1);assert.ok(seen[0].endsWith('/atas/1/arquivos'));
+ assert.deepEqual(files,[{seq:2,type:14,published:'2026-05-21'}]);
+ assert.deepEqual(await scanAtaFiles(ata,{fetcher:async()=>[]}),[]);
+ await assert.rejects(scanAtaFiles(ata,{fetcher:async()=>({data:[],totalRegistros:1,totalPaginas:1})}));
+ await assert.rejects(scanAtaFiles(ata,{fetcher:async()=>[{sequencialDocumento:1},{sequencialDocumento:1}]}));
+ await assert.rejects(scanAtaFiles(ata,{fetcher:async()=>{throw Error('timeout')}}));
+ const d=applyArpDetail(null,ata,'files',files);
+ assert.equal(applyArpDetail(d,ata,'files',files),d);
+ assert.throws(()=>applyArpDetail(d,ata,'files',[]));
+ assert.throws(()=>validateArpDetails([{ataId:ata.id,files:[{seq:1,url:'https://example.invalid/a.pdf'}]}],[ata]));
+});
+test('zero explicito pagina 0 e aceito; totais divergentes e falha nao viram lista vazia',async()=>{
+ assert.deepEqual(await allPages(()=>'',{fetcher:async()=>({data:[],totalRegistros:0,totalPaginas:0,numeroPagina:0,empty:true})}),[]);
+ await assert.rejects(allPages(()=>'',{fetcher:async()=>({data:[],totalRegistros:1,totalPaginas:1})}));
+ await assert.rejects(allPages(()=>'',{fetcher:async()=>({data:[row],totalRegistros:0,totalPaginas:0})}));
+ assert.equal(arpFailureCategory(Error('Paginacao divergente ou sem totais')),'pagination_conflict');
+ assert.equal(arpFailureCategory(Error('Instrumento sem identidade oficial')),'instrument_identity_conflict');
+});
+test('reuso efemero de consultas e prioridade de pendencias sem bloqueio por falha',async()=>{
+ let calls=0;const fetcher=memoizedArpFetcher(async u=>{calls++;if(u==='bad')throw Error('timeout');return {data:[]}});
+ await fetcher('one');await fetcher('one');assert.equal(calls,1);
+ await assert.rejects(fetcher('bad'));await assert.rejects(fetcher('bad'));assert.equal(calls,3);
+ const second={...ata,id:purchase+':ata:2',sequence:2},now=new Date('2026-11-26');
+ const known={ataId:ata.id,files:[]};
+ assert.deepEqual(planArpDetails([ata,second],[known],{kind:'files',now,limit:1}),[second]);
+ assert.deepEqual(planArpDetails([ata,second],[known],{kind:'files',now,limit:1,state:{[arpFailureKey(second,'files')]:'2026-11-26'}}),[ata]);
 });
