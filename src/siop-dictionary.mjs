@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {FIRST_YEAR,brazilMonth} from './collection-scope.mjs';
 import {containsRawCpf} from './privacy.mjs';
 
-export const SIOP_URL='https://www1.siop.planejamento.gov.br/sparql/';
+export const SIOP_URL='https://orcamento.dados.gov.br/sparql';
 const UO='26422', LIMIT=2500, MAX_BYTES=2*1024*1024;
 const GENERIC=Object.freeze({
  sphere:'temEsfera',function:'temFuncao',subfunction:'temSubfuncao',
@@ -25,19 +25,19 @@ function assertYear(year,now=new Date()){
 }
 export function dictionaryQuery(year,now=new Date()){
  assertYear(year,now);
- const pairs=o=>Object.entries(o).map(([k,v])=>'("'+k+'" loa:'+v+')').join(' ');
+ const predicates=o=>Object.values(o).map(v=>'?predicate = loa:'+v).join(' || ');
  return [
  'PREFIX loa: <http://vocab.e.gov.br/2013/09/loa#>',
  'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>',
- 'SELECT DISTINCT ?kind ?code ?label ?action WHERE {',
+ 'SELECT DISTINCT ?predicate ?code ?label ?action WHERE {',
  ' GRAPH <http://orcamento.dados.gov.br/'+year+'/> {',
- '  ?i a loa:ItemDespesa ; loa:temUnidadeOrcamentaria ?uo . ?uo loa:codigo "'+UO+'" .',
- '  { VALUES (?kind ?predicate) { '+pairs(GENERIC)+' } BIND("" AS ?action) }',
- '  UNION { VALUES (?kind ?predicate) { '+pairs(CONTEXTUAL)+' }',
- '   ?i loa:temAcao ?a . ?a loa:codigo ?action . }',
- '  ?i ?predicate ?v . ?v loa:codigo ?code ; rdfs:label ?label .',
+ '  ?i loa:temUnidadeOrcamentaria ?uo . ?uo loa:codigo "'+UO+'" .',
+ '  { ?i ?predicate ?v . FILTER ('+predicates(GENERIC)+') }',
+ '  UNION { ?i ?predicate ?v . FILTER ('+predicates(CONTEXTUAL)+')',
+ '    ?i loa:temAcao ?a . ?a loa:codigo ?action . }',
+ '  ?v loa:codigo ?code . ?v rdfs:label ?label .',
  ' }',
- '} ORDER BY ?kind ?action ?code ?label LIMIT '+(LIMIT+1)
+ '} ORDER BY ?predicate ?action ?code ?label LIMIT '+(LIMIT+1)
  ].join('\n');
 }
 function safeLabel(value){
@@ -58,8 +58,9 @@ export function normalizeDictionary(payload,year,now=new Date()){
  if(!Array.isArray(bindings)||!bindings.length||bindings.length>LIMIT)
   throw Error('Dicionario SIOP vazio, invalido ou truncado');
  const rows=new Map(),conflicts=new Set();
+ const predicateKinds=new Map(Object.entries({...GENERIC,...CONTEXTUAL}).map(([kind,p])=>['http://vocab.e.gov.br/2013/09/loa#'+p,kind]));
  for(const b of bindings){
-  const kind=b?.kind?.value, c=b?.code?.value, label=b?.label?.value, action=b?.action?.value;
+  const kind=b?.predicate?.value!==undefined?predicateKinds.get(b.predicate.value):b?.kind?.value, c=b?.code?.value, label=b?.label?.value, action=b?.action?.value;
   const row={kind,code:c,label,...(Object.hasOwn(CONTEXTUAL,kind)?{action}:{})};
   if(!validRow(row))throw Error('Classificacao SIOP invalida');
   const key=rowKey(row);

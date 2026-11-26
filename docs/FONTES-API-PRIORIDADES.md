@@ -329,3 +329,12 @@ function sondarContratosGovUG() {
   } catch(e) { console.log(JSON.stringify({status:'network_unavailable'})); }
 }
 ```
+
+
+## 26/11/2026 — Manutencao confirmada e conciliacao contextual de NE abreviada
+
+O [Comunicado MGI 56/2026 de 25/11](https://www.gov.br/compras/pt-br/acesso-a-informacao/comunicados/2026/no-56-26-atualizacao-sobre-a-manutencao-do-sistema-contratos-gov.br) confirma manutencao em andamento, emissao direta no SIAFI e vinculacao/publicacao retroativa apos retorno. A sondagem #45865457412 encontrou indisponibilidade de rede nos tres anos. A rotina passa a fazer no maximo uma rodada diaria, ano corrente primeiro, interrompendo diante de falha de rede, 401/403, 429 ou 5xx. Anos restantes ficam deferred_source_unavailable, nao zero. Sem credenciais, sem alterar coletas CGU, sem armazenar payloads. Apos recuperacao, volta automaticamente a consultar os anos de 2024 em diante. O plano alternativo Apps Script permanece manual; nao insistir durante a manutencao.
+
+A primeira coleta #45865457263 confirmou 15 instrumentos integralmente consultados com 15 registros, todos com PI e todos com NE curta sem UG; zero identidade integral. A coleta ja existente agora compara, para linhas de credor PJ, numero curto unico na base CGU, CNPJ identico no PNCP, no instrumento e no documento, mesmo processo administrativo, data de emissao e valor total positivo. A evidencia e apenas contextual, armazenada separadamente em commitmentContext, nunca em commitmentRefs; nao confirma UG ou gestao, nem participa dos indicadores financeiros, atribuicao de contrato ou filtros de PI oficial. Ficha apresenta candidato com advertencia e revalida CNPJ/processo/data/valor do documento atual. Divergencia ou duplicidade local bloqueia; CPF e nome do credor nunca sao armazenados. Reconsultas de instrumentos com metadados legados passam pelo cache v3, mesmo limite de lote; casos de NE curta sem candidato sao revistos apos sete dias. Alteracao de identidade do instrumento invalida indicios. Nenhuma nova requisicao PNCP por instrumento.
+
+SIOP #45865457079 devolveu HTTP 400 nos tres exercicios. Nova tentativa no endpoint oficial https://orcamento.dados.gov.br/sparql (sem barra final), usando predicado RDF, FILTER e UNION em vez de VALUES/BIND, mantendo limites, cache e proibicao de associar fonte a NE sem evidencia. Esta mudanca e hipotese tecnica a homologar; se persistir falha, considerar CSV oficial compactado por exercicio disponibilizado em 17/11/2026, filtrado em memoria/streaming e descartado, sem versionar a base nacional.

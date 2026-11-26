@@ -40,7 +40,7 @@ test('campo invalido e CPF integral bloqueiam cache',()=>{
 test('consulta e cache por exercicio evitam requisicoes repetidas; HTTP falha',async()=>{
  const root=await mkdtemp(join(tmpdir(),'siop-test-'));
  let calls=0;
- const fetchFn=async(url,options)=>{calls++;assert.match(url,/siop\.planejamento\.gov\.br/);
+ const fetchFn=async(url,options)=>{calls++;assert.match(url,/orcamento\.dados\.gov\.br\/sparql/);
   assert.equal(options.method,'GET');assert.ok(new URL(url).searchParams.get('query'));return new Response(JSON.stringify(payload));};
  try{
   assert.equal((await cacheDictionary(2026,{root,now,fetchFn})).status,'fetched');
@@ -48,4 +48,14 @@ test('consulta e cache por exercicio evitam requisicoes repetidas; HTTP falha',a
   assert.equal(calls,1);
   await assert.rejects(fetchDictionary(2026,{now,fetchFn:async()=>new Response('unavailable',{status:503})}));
  }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test('consulta compativel com endpoint Virtuoso, sem VALUES ou BIND; normaliza predicado RDF',()=>{
+ const q=dictionaryQuery(2026,now);
+ assert.doesNotMatch(q,/\b(?:VALUES|BIND)\b/);
+ assert.match(q,/loa:temPlanoOrcamentario/);
+ const b={predicate:{type:'uri',value:'http://vocab.e.gov.br/2013/09/loa#temPlanoOrcamentario'},
+ code:{value:'0000'},label:{value:'Plano'},action:{value:'20RL'}};
+ assert.equal(normalizeDictionary({results:{bindings:[b]}},2026,now).rows[0].kind,'budgetPlan');
+ assert.throws(()=>normalizeDictionary({results:{bindings:[{...b,predicate:{value:'http://bad.invalid/x'}}]}},2026,now));
 });

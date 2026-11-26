@@ -1,6 +1,8 @@
 name: Sondar empenhos Contratos.gov por UG e exercicio
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '23 10 * * *'
   push:
     branches: [main]
     paths:
@@ -8,6 +10,9 @@ on:
       - '.github/workflows/sondar-empenhos-contratos-gov.yml'
 permissions:
   contents: read
+concurrency:
+  group: observatorio-sondagem-contratos-gov
+  cancel-in-progress: false
 jobs:
   sondagem:
     runs-on: ubuntu-22.04

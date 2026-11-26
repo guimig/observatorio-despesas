@@ -74,6 +74,7 @@ export function mergePncpRecord(original,incoming,{kind,now=new Date(),checked=f
       delete record.commitmentRefs;
       delete record.commitmentAudit;
       delete record.commitmentDetails;
+      delete record.commitmentContext;
       delete record.commitmentAt;
     }
   }

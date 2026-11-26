@@ -84,12 +84,27 @@ export async function probeAnnual(year,{now=new Date(),fetchFn=fetch,documents=[
   return {year,...compareSample(JSON.parse(Buffer.concat(chunks).toString('utf8')),{year,documents,catalog})};
  }catch{return {year,status:'invalid_json_or_body'};}finally{reader.releaseLock();}
 }
+export function isAccessBlocked(status){
+ return status==='network_unavailable'||/^http_(?:401|403|429|5\d\d)$/.test(status);
+}
+/** No maximo uma tentativa por ano; parar quando o servico esta inacessivel.
+ * Priorizar o ano corrente para detectar retorno; exercicios antigos depois. */
+export async function probeAnnualSeries({now=new Date(),fetchFn=fetch,documents=[],catalog=null}={}){
+ const current=Number(brazilMonth(now).slice(0,4)),out=[];
+ for(let year=current;year>=FIRST_YEAR;year--){
+  const result=await probeAnnual(year,{now,fetchFn,documents,catalog});
+  out.push(result);
+  if(isAccessBlocked(result.status)){
+   for(let older=year-1;older>=FIRST_YEAR;older--)out.push({year:older,status:'deferred_source_unavailable'});
+   break;
+  }
+ }
+ return out;
+}
 async function main(){
  const {months}=await validatePublishedData(process.cwd());
  const documents=months.flatMap(m=>m.documents),catalog=await readProcurement(process.cwd());
- const now=new Date(),current=Number(brazilMonth(now).slice(0,4));
- for(let year=FIRST_YEAR;year<=current;year++){
-  const result=await probeAnnual(year,{now,documents,catalog});
+ for(const result of await probeAnnualSeries({documents,catalog})){
   console.log('Contratos.gov empenhos por UG: '+JSON.stringify(result));
  }
  console.log('Ausencia de vinculo PNCP conhecido nao comprova ausencia de contrato. Nenhum ID, PI, valor ou corpo foi salvo.');

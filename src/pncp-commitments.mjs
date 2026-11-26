@@ -5,7 +5,7 @@
  */
 import { requestPublicJSON } from './procurement.mjs';
 import { extractAraquariNeEvidence } from '../assets/procurement-links.js';
-import {extractCommitmentMetadata} from './pncp-commitment-fields.mjs';
+import {extractCommitmentMetadata,extractContextualCommitments} from './pncp-commitment-fields.mjs';
 
 const PNCP=/^(\d{14})-2-(\d{6})\/(20\d{2})$/;
 const BASE='https://pncp.gov.br/api/pncp/v1/orgaos';
@@ -33,14 +33,15 @@ export function extractCommitmentRefs(records){
   return [...found].sort();
 }
 export async function fetchLinkedCommitments(contract,{
-  fetcher=requestPublicJSON,maxPages=5,includeDetails=false
+  fetcher=requestPublicJSON,maxPages=5,includeDetails=false,documents
 }={}){
   if(contract?.source!=='pncp')throw Error('Somente contratos PNCP');
   if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>30)
     throw Error('Limite de páginas incorreto');
   const rows=[];let expected=null,expectedRecords=null;const seen=new Set();
   const done=()=>({refs:extractCommitmentRefs(rows),count:rows.length,
-    ...(includeDetails?extractCommitmentMetadata(rows,contract):{})});
+    ...(includeDetails?extractCommitmentMetadata(rows,contract):{}),
+    ...(includeDetails&&documents!==undefined?{context:extractContextualCommitments(rows,contract,documents)}:{})});
   for(let page=1;page<=maxPages;page++){
     const response=await fetcher(linkedCommitmentsUrl(contract.pncpId,page));
     if(!response||typeof response!=='object'||Array.isArray(response)||
