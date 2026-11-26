@@ -13,7 +13,12 @@ export const API_CATALOG=Object.freeze([
    '/api-de-dados/despesas/documentos/{codigo}',
    '/api-de-dados/despesas/documentos-relacionados',
    '/api-de-dados/despesas/empenhos-impactados',
-   '/api-de-dados/despesas/itens-de-empenho/historico']},
+   '/api-de-dados/despesas/itens-de-empenho/historico',
+   '/api-de-dados/licitacoes/empenhos',
+   '/api-de-dados/licitacoes/contratos-relacionados-licitacao',
+   '/api-de-dados/contratos/documentos-relacionados',
+   '/api-de-dados/licitacoes',
+   '/api-de-dados/contratos']},
  {name:'CONTRATOS_GOV',url:'https://contratos.comprasnet.gov.br/docs/api-docs.json',
   routes:[
    '/api/v1/empenho/rp',
@@ -76,6 +81,13 @@ export function summarizeOpenApi(spec,source){
  const result={status:'openapi_available',routes};
  // Apenas metadados dos schemas explicitamente nomeados na documentacao STA.
  // Nao incluir descricoes, exemplos, valores, tokens ou schemas de login.
+ if(source.name==='CGU'){
+   result.schemas={};
+   for(const name of ['DocumentoRelacionadoDTO','EmpenhoComprasDTO','LicitacaoDTO','ContratoDTO','CompraDTO']){
+    const props=spec.components?.schemas?.[name]?.properties;
+    if(props&&typeof props==='object'&&!Array.isArray(props))result.schemas[name]=Object.keys(props).filter(k=>SAFE_NAME.test(k)).sort().slice(0,100);
+   }
+ }
  if(source.name==='SIAFI_STA'){
    result.schemas={};
    for(const name of ['Empenho','EmpenhoUnico','Item','SaldoContabil','EmpenhoOrdembancaria']){

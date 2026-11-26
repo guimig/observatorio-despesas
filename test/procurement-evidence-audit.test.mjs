@@ -35,3 +35,10 @@ test('numero abreviado so e elegivel com UG 158459 expressa',()=>{
  assert.equal(campus.findings.length,1);
  assert.equal(campus.findings[0].status,'not_found_in_published_history');
 });
+
+test('coincidencia de unidade administrativa ou UG sem gestao nao confirma identidade integral',()=>{
+ const doc={id:ne,phase:1};
+ const a=auditProcurementReferences([{id:'a',number:'2026NE000001',unitCode:'158459'},
+  {id:'b',commitmentRefs:['1584592026NE000001']}],[doc],{loadedMonths:12,totalMonths:12});
+ assert.equal(a.counts.verified,0);assert.equal(a.counts.indication_only,2);
+});

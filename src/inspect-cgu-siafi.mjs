@@ -167,12 +167,39 @@ function statusOf(err){
   const matched=/^CGU HTTP (\d{3})$/.exec(msg);
   return matched?'HTTP '+matched[1]:'indisponivel/formato';
 }
+/** Conta somente identificadores estruturados, sem expor valores ou nomes.
+ * Mesmo se houver NS e OB no retorno, nao presumir uma aresta de quitacao. */
+export function summarizeRelatedRows(rows){
+ const counts={fullCampusNe:0,fullCampusNs:0,fullCampusPayment:0,shortOnly:0,otherOrUnknown:0};
+ const fields=new Set();
+ for(const row of rows){
+  for(const field of ['documento','codigoDocumento','documentoRelacionado','codigo']){
+   if(typeof row?.[field]==='string')fields.add(field);
+  }
+  const candidates=[row?.documento,row?.codigoDocumento,row?.documentoRelacionado,row?.codigo,
+   row?.documento?.codigo,row?.documento?.documento].filter(v=>typeof v==='string');
+  const full=[...new Set(candidates.filter(v=>/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(v)))];
+  if(full.length!==1){
+   if(candidates.some(v=>/^20\d{2}[A-Z]{2}\d{6}$/.test(v)))counts.shortOnly++;
+   else counts.otherOrUnknown++;
+   continue;
+  }
+  const id=full[0],species=id.slice(15,17);
+  if(Number(id.slice(11,15))<2024){counts.otherOrUnknown++;continue;}
+  if(species==='NE')counts.fullCampusNe++;
+  else if(species==='NS')counts.fullCampusNs++;
+  else if(['OB','DF','DR','GP'].includes(species))counts.fullCampusPayment++;
+  else counts.otherOrUnknown++;
+ }
+ return {count:rows.length,fields:structuralFields(rows[0]),pageOnly:false,
+  identifierFields:[...fields].sort(),identityCounts:counts};
+}
 async function listSummary(url,{token,request=getCguArray,mode='related'}={}){
   try{
     const rows=await request(url,{token});
     const result=mode==='history'?summarizeItems(rows):
       mode==='impacts'?summarizeImpacts(rows):
-      {count:rows.length,fields:structuralFields(rows[0]),pageOnly:false};
+      summarizeRelatedRows(rows);
     return {status:'ok',...result};
   }catch(error){return {status:statusOf(error)};}
 }

@@ -7,7 +7,8 @@
  *
  * "confirmed" é permitido apenas quando uma NE oficial é confrontada com
  * documento CGU da mesma UG, ou quando o PNCP fornece NE completa dessa UG
- * explicitamente vinculada ao contrato.
+ * explicitamente vinculada ao contrato. A unidade administrativa PNCP nao
+ * comprova UG emitente; numero sem gestao permanece indicio.
  */
 export const ARAQUARI_UG='158459';
 const NE_FULL=/^158459\d{5}(20\d{2}NE\d{6})$/;
@@ -48,8 +49,8 @@ function contractNeNumbers(contract) {
  * process (mesmo processo); null (não há elo documental).
  *
  * O número do contrato/NE publicado centralmente não implica UG 158459.
- * Apenas a combinação unidade 158459 + número curto da NE + documento CGU
- * permite confirmação quando não há a NE completa.
+ * Unidade administrativa + número curto, ou UG sem gestão explícita,
+ * são indícios mesmo quando coincidem com documento CGU.
  */
 export function matchDocumentContract(document, contract) {
   if(!document || !contract)return null;
@@ -63,13 +64,13 @@ export function matchDocumentContract(document, contract) {
     const short=id.slice(-12);
     const number=normalizeNumber(contract.number);
     if(String(contract.unitCode??'')===ARAQUARI_UG && number===short) {
-      return {level:'confirmed',reason:'Unidade 158459 e número de NE coincidem com documento CGU'};
+      return {level:'ne_indication',reason:'Unidade administrativa 158459 e NE abreviada coincidem; UG emitente e gestão não comprovadas'};
     }
     if(contractNeNumbers(contract).some(ref=>{
       const parsed=extractAraquariNeEvidence(ref);
       return parsed?.kind==='ug_short' && parsed.short===short;
     })) {
-      return {level:'confirmed',reason:'UG e número da NE vinculada coincidem com documento CGU'};
+      return {level:'ne_indication',reason:'UG e NE abreviada declaradas coincidem; gestão não informada'};
     }
   }
 

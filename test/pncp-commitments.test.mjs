@@ -42,11 +42,11 @@ test('NE curta sem UG não pode ser convertida em confirmação',()=>{
  assert.equal(extractAraquariNeEvidence('2026NE000266'),null);
  assert.equal(extractAraquariNeEvidence(other),null);
 });
-test('UG 158459 e sufixo NE exigem documento CGU para confirmar',()=>{
+test('UG administrativa 158459 e NE abreviada permanecem indicio mesmo com CGU',()=>{
  const contract={...base(),process:'23350.004018/2026-92',unitCode:'158459'};
  assert.equal(assessContractAttribution(contract,[]).level,'ne_indication');
- assert.equal(assessContractAttribution(contract,[doc()]).level,'confirmed');
- assert.equal(matchDocumentContract(doc(),contract).level,'confirmed');
+ assert.equal(assessContractAttribution(contract,[doc()]).level,'ne_indication');
+ assert.equal(matchDocumentContract(doc(),contract).level,'ne_indication');
  assert.equal(assessContractAttribution({...contract,number:'2026NE000267'},[doc()]).level,
    'ne_indication'); // A UG indicada é indício, mas não coincide com a NE da CGU.
 });
