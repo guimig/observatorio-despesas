@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {parseAtaControl,ataControlFor,buildIntegratedIndex,scopeFinancialEvidence,neEvidenceLevel,trajectoryMatches,itemReferenceCandidates,summarizeIntegratedCoverage} from '../assets/integrated-trajectory.js';
+import {parseAtaControl,ataControlFor,buildIntegratedIndex,scopeFinancialEvidence,neEvidenceLevel,trajectoryMatches,itemReferenceCandidates,summarizeIntegratedCoverage,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl} from '../assets/integrated-trajectory.js';
 const ne='158459000012026NE000001',ne2='158459000012026NE000002',ns='158459000012026NS000001',ob='158459000012026OB000001';
 const purchase='10635424000186-1-000001/2026',other='10635424000186-1-000002/2026';
 const ata={id:purchase+':ata:3',procurementId:purchase,sequence:3,number:'03/2026'};
@@ -65,4 +65,20 @@ test('referencia integral sem documento e declarada, nao confirmada; conflito na
  const conflict={...months[1],month:'2026-07',relations:[{from:ns,to:ne,cents:999}]};
  const j=build({months:[...months,conflict]});
  assert.deepEqual(scopeFinancialEvidence(j,'instrument',baseContract.id).excluded,[ne]);
+});
+
+test('vinculos por item em sentido reverso preservam compra, ata, fornecedor e instrumento',()=>{
+ const options={tender:{procedures:[{pncpId:purchase,items:[{number:2,description:'Material',quantity:100}]}]},
+ arpDetails:[{ataId:ata.id,compras:{items:[{number:2,supplierCnpj:cnpj,homologatedSupplier:'20'}]}}]};
+ const i=build(options);
+ assert.equal(scopeItemReferences(i,'notice',purchase).length,1);
+ assert.equal(scopeItemReferences(i,'ata',ata.id)[0].ne,ne);
+ assert.equal(scopeItemReferences(i,'instrument',baseContract.id).length,1);
+ assert.equal(scopeItemReferences(i,'ata',purchase+':ata:4').length,0);
+ assert.equal(noticeAtaItemReferences(i,purchase)[0].tender.description,'Material');
+ assert.equal(summarizeIntegratedCoverage(i).neItemsWithAta,1);
+ const j=build({...options,contracts:[{...baseContract,procurementId:other}]});
+ assert.equal(scopeItemReferences(j,'ata',ata.id).length,0);
+ assert.equal(ataFilesUrl(ata,2),'https://pncp.gov.br/api/pncp/v1/orgaos/10635424000186/compras/2026/1/atas/3/arquivos/2');
+ assert.equal(ataFilesUrl(ata,0),null);
 });

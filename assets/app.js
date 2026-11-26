@@ -1,4 +1,4 @@
-import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor} from './integrated-trajectory.js';
+import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl} from './integrated-trajectory.js';
 import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
@@ -752,7 +752,21 @@ function renderCatalogEvidence(record,kind){
     host.append(row);
    }
   }else if(record.srp===true)host.append(element('p','helper',(atasData?.checks||[]).some(c=>c.procurementId===record.pncpId)?'Nenhuma ata retornada na última consulta completa.':'Atas ainda não consultadas nesta base.'));
-  return;
+  const index=integratedIndex(),refs=noticeAtaItemReferences(index,record.pncpId);
+  const box=element('details','integrated-items');box.append(element('summary','relation-link','Itens registrados em atas · '+fmtCount(refs.length)+' registros item/fornecedor'));
+  if(!tenderItemsState.data)box.append(relationButton('Carregar descrições dos itens licitados',async()=>{
+   await loadTenderItems();if(box.isConnected)renderCatalogEvidence(record,kind);
+  }));
+  if(!refs.length)box.append(element('p','helper','Nenhum item de ata recuperado nesta base; não significa ausência de itens registrados.'));
+  for(const ref of refs.slice(0,100)){
+   const row=element('div','relation-item');
+   row.append(element('strong','','Item '+ref.item.number+(ref.tender?.description?' · '+ref.tender.description:'')),
+    element('span','small-muted',(ref.item.supplierCnpj?'CNPJ '+ref.item.supplierCnpj:'Fornecedor '+ref.item.supplierCpfMasked)+(ref.item.excluded?' · Excluído':'')),
+    relationButton('Ata '+(ref.ata.number||ref.ata.sequence),()=>showCatalogDetail(ref.ata,'ata')));
+   box.append(row);
+  }
+  if(refs.length>100)box.append(element('p','helper','Exibidos 100 registros; consulte as fichas individuais das atas para todos os itens.'));
+  host.append(box);return;
  }
  const detail=arpDetailsById?.get(record.id);
  const tender=tenderItemsState.data?.procedures?.find(p=>p.pncpId===record.procurementId);
@@ -779,8 +793,29 @@ function renderCatalogEvidence(record,kind){
   host.append(element('p','helper','Registros administrativos por unidade; não comprovam reserva interna por campus.'));
   for(const entry of detail.unitItems)for(const u of entry.units)host.append(element('div','relation-item','Item '+entry.number+' · '+(u.unitCode==='158459'?'UASG Araquari':'UASG Reitoria')+' · Quantidade registrada: '+u.registered+(u.sourceUpdatedAt?' · Atualização '+localDate(u.sourceUpdatedAt):'')));
  }
- const url=publicAtaUrl(record);
- if(url){const files=element('a','inline-link','Consultar lista de documentos oficiais da ata (API PNCP)');files.href=url.replace('/app/atas/','/api/pncp/v1/orgaos/').replace(/(orgaos\/\d{14})\/(20\d{2})\/(\d+)\/(\d+)$/,'$1/compras/$2/$3/atas/$4/arquivos');files.target='_blank';files.rel='noopener noreferrer';host.append(files);}
+ const filesBox=element('div','relation-item');
+ filesBox.append(element('strong','','Documentos oficiais da ata · PNCP'));
+ const url=ataFilesUrl(record);
+ if(url){
+  const files=element('a','inline-link','Consultar lista oficial no PNCP');files.href=url;files.target='_blank';files.rel='noopener noreferrer';filesBox.append(files);
+  if(!detail||!Object.hasOwn(detail,'files'))filesBox.append(element('p','helper','Links individuais ainda não catalogados.'));
+  else if(!detail.files.length)filesBox.append(element('p','helper','Nenhum arquivo retornado na última consulta completa.'));
+  else for(const f of detail.files){
+   const link=element('a','inline-link','Abrir documento '+f.seq+(f.published?' · '+localDate(f.published):''));
+   link.href=ataFilesUrl(record,f.seq);link.target='_blank';link.rel='noopener noreferrer';filesBox.append(link);
+  }
+  filesBox.append(element('p','helper','Os arquivos permanecem no PNCP. O Observatório registra somente identificadores e metadados mínimos, sem cópia de PDF.'));
+ }
+ host.append(filesBox);
+ if(detail&&Object.hasOwn(detail,'instruments')){
+  const block=element('div','relation-item');block.append(element('strong','','Instrumentos IFC consultados diretamente na ata'));
+  if(!detail.instruments.length)block.append(element('p','helper','Nenhum instrumento do IFC retornado na consulta completa.'));
+  for(const i of detail.instruments){
+   const link=element('a','inline-link',i.pncpId+(i.unitCode?' · unidade '+i.unitCode:'')+(i.adhesion===true?' · adesão do IFC':''));
+   link.href=publicPncpUrl({pncpId:i.pncpId});if(link.href){link.target='_blank';link.rel='noopener noreferrer';block.append(link);}
+  }
+  host.append(block);
+ }
 }
 function renderCatalogTrajectory(record,kind){
  const host=$('record-trajectory');host.replaceChildren();
@@ -831,6 +866,25 @@ function renderCatalogTrajectory(record,kind){
   }
   host.append(details);
  }
+ const cross=scopeItemReferences(index,scope,id);
+ const crossBox=element('details','integrated-items');
+ crossBox.append(element('summary','relation-link','Vínculos candidatos por item de empenho · '+fmtCount(cross.length)),
+  element('p','helper','NE integral, instrumento único e número de item da compra. Ata exige mesmo controle de compra, item e CNPJ; não rateia liquidação, pagamento ou saldo.'));
+ if(!tenderItemsState.data)crossBox.append(relationButton('Carregar catálogo de itens licitados',async()=>{
+  await loadTenderItems();if(crossBox.isConnected)refresh();
+ }));
+ for(const r of cross.slice(0,100)){
+  const row=element('div','relation-item');
+  row.append(element('strong','','Item da compra '+r.number+(r.tender?.description?' · '+r.tender.description:'')),
+   neButton(r.ne),element('span','small-muted','Item NE '+r.seq));
+  if(r.ata)row.append(relationButton('Ata '+(r.ata.number||r.ata.sequence),()=>showCatalogDetail(r.ata,'ata')));
+  const c=index.instruments.get(r.instrumentId);
+  if(c&&scope!=='instrument')row.append(relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
+  crossBox.append(row);
+ }
+ if(!cross.length)crossBox.append(element('p','helper','Nenhuma correspondência de item validável no acervo carregado.'));
+ if(cross.length>100)crossBox.append(element('p','helper','Exibidas 100 correspondências; consulte as NEs para todos os itens.'));
+ host.append(crossBox);
  historyControl(host,index,refresh);
 }
 function uniqueReasons(edges){return [...new Set(edges.map(e=>(evidenceLabels[e.level]||e.level)+' · '+e.reason))].join(' | ');}

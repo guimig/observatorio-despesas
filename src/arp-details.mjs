@@ -44,15 +44,18 @@ export async function allPages(url,{fetcher=requestPublicJSON,maxPages=8}={}){
   const rows=b?.resultado??b?.data??b?.dados;
   const n=b?.totalRegistros, p=b?.totalPaginas;
   // requestPublicJSON maps HTTP 204 to this exact empty envelope.
-  if(page===1&&Array.isArray(rows)&&!rows.length&&p===0&&n===undefined)return [];
+  if(page===1&&Array.isArray(rows)&&!rows.length&&p===0&&n===undefined&&Array.isArray(b?.dados)&&Object.keys(b).every(k=>['dados','totalPaginas'].includes(k)))return [];
+  // Explicitly empty result may use page zero or one; never accept nonempty data with zero totals.
+  if(page===1&&Array.isArray(rows)&&!rows.length&&n===0&&[0,1].includes(p)&&
+   (b.numeroPagina===undefined||[0,1].includes(Number(b.numeroPagina)))&&
+   (b.paginasRestantes===undefined||Number(b.paginasRestantes)===0)&&b.empty!==false)return [];
   if(!Array.isArray(rows)||!Number.isSafeInteger(n)||n<0||!Number.isSafeInteger(p)||p<0||
    (total!==null&&n!==total)||(pages!==null&&p!==pages)||
    (b.numeroPagina!==undefined&&Number(b.numeroPagina)!==page)||
    (b.paginasRestantes!==undefined&&Number(b.paginasRestantes)!==Math.max(0,p-page)))
    throw Error('Paginacao divergente ou sem totais');
   total=n;pages=p;
-  if(p===0&&n===0&&rows.length===0&&page===1)return [];
-  if(p<page||!rows.length)throw Error('Pagina vazia ou excedente');
+   if(p<page||!rows.length)throw Error('Pagina vazia ou excedente');
   out.push(...rows);
   if(out.length>n)throw Error('Contagem excedente');
   if(page===p){if(out.length!==n)throw Error('Lista incompleta');return out}
@@ -197,13 +200,58 @@ export async function scanAtaInstruments(ata,{fetcher=requestPublicJSON,maxPages
  }
  return assertPublicSafe(out.sort((a,b)=>a.pncpId.localeCompare(b.pncpId)));
 }
+/** PNCP manual 2.6 §§12.9–12.10: list metadata only. Never request the binary endpoint. */
+export async function scanAtaFiles(ata,{fetcher=requestPublicJSON}={}){
+ officialAtaId(ata);
+ const body=await fetcher(ataUrl(ata.procurementId)+'/'+ata.sequence+'/arquivos');
+ const rows=Array.isArray(body)?body:body?.data??body?.dados;
+ if(!Array.isArray(rows)||rows.length>1000)throw Error('Lista de arquivos ARP invalida');
+ if(!Array.isArray(body)){
+  const n=body.totalRegistros,p=body.totalPaginas;
+  const synthetic=rows.length===0&&p===0&&n===undefined&&Array.isArray(body.dados)&&Object.keys(body).every(k=>['dados','totalPaginas'].includes(k));
+  if(!synthetic&&!(Number.isSafeInteger(n)&&n===rows.length&&((p===0&&n===0)||p===1)))throw Error('Lista de arquivos ARP incompleta');
+ }
+ const seen=new Set(),files=[];
+ for(const row of rows){
+  const seq=Number(row?.sequencialDocumento);
+  if(!pos(seq)||seq>999999||seen.has(seq))throw Error('Sequencial de arquivo ARP invalido ou duplicado');
+  seen.add(seq);const f={seq};
+  const type=Number(row.tipoDocumentoId);if(pos(type)&&type<=9999)f.type=type;
+  const published=day(row.dataPublicacaoPncp);if(published&&inScopeDate(published))f.published=published;
+  files.push(f);
+ }
+ return files.sort((a,b)=>a.seq-b.seq);
+}
+/** Per-run memoization only. Failed requests are not retained. Bounded by URL count. */
+export function memoizedArpFetcher(fetcher=requestPublicJSON,limit=40){
+ const cache=new Map();
+ return async url=>{
+  if(cache.has(url))return cache.get(url);
+  const response=await fetcher(url);
+  if(cache.size>=limit)cache.delete(cache.keys().next().value);
+  cache.set(url,response);return response;
+ };
+}
+export function arpFailureCategory(e){
+ if(e?.status)return 'http_'+e.status;
+ const msg=e?.message||'';
+ const checks=[
+  [/Paginacao divergente/,'pagination_conflict'],[/Pagina vazia|Contagem excedente|Lista incompleta|incompleta/,'incomplete_response'],
+  [/Limite de paginas/,'page_limit'],[/identidade oficial/,'instrument_identity_conflict'],
+  [/Instrumento duplicado/,'duplicate_instrument'],[/Item sem identidade/,'item_supplier_missing'],
+  [/Item sem dados/,'item_data_missing'],[/Itens duplicados/,'duplicate_item'],
+  [/Faltam parametros/,'missing_query_parameters'],[/ausente/,'previous_evidence_conflict'],
+  [/arquivo ARP|arquivos ARP/,'file_metadata_conflict'],[/timeout|aborted/i,'timeout']
+ ];
+ return checks.find(([p])=>p.test(msg))?.[1]||'validation_or_conflict';
+}
 export function validateArpDetails(details,atas){
  if(!Array.isArray(details))throw Error('Detalhes ARP invalidos');
  const byId=new Map(atas.map(a=>[a.id,a])),seen=new Set();
  for(const d of details){
   const ata=byId.get(d.ataId);
-  if(!ata||seen.has(d.ataId)||Object.keys(d).some(k=>!['ataId','compras','instruments','unitItems'].includes(k))||
-    (!d.compras&&!Object.hasOwn(d,'instruments')))throw Error('Evidencia de ata invalida');
+  if(!ata||seen.has(d.ataId)||Object.keys(d).some(k=>!['ataId','compras','instruments','unitItems','files'].includes(k))||
+    (!d.compras&&!Object.hasOwn(d,'instruments')&&!Object.hasOwn(d,'files')))throw Error('Evidencia de ata invalida');
   seen.add(d.ataId);officialAtaId(ata);
   if(d.compras){
    const c=d.compras;
@@ -238,6 +286,16 @@ export function validateArpDetails(details,atas){
     }
    }
   }
+  if(Object.hasOwn(d,'files')){
+   if(!Array.isArray(d.files)||d.files.length>1000)throw Error('Arquivos ARP invalidos');
+   const seqs=new Set();
+   for(const f of d.files){
+    if(!pos(f.seq)||f.seq>999999||seqs.has(f.seq)||Object.keys(f).some(k=>!['seq','type','published'].includes(k))||
+     (f.type!==undefined&&(!pos(f.type)||f.type>9999))||
+     (f.published!==undefined&&(!validDay(f.published)||!inScopeDate(f.published))))throw Error('Metadado de arquivo ARP invalido');
+    seqs.add(f.seq);
+   }
+  }
   if(Object.hasOwn(d,'instruments')){
    if(!Array.isArray(d.instruments))throw Error('Instrumentos ARP invalidos');
    const keys=new Set();
@@ -255,7 +313,9 @@ export function validateArpDetails(details,atas){
 }
 export function applyArpDetail(previous,ata,kind,value){
  const old=previous||{ataId:ata.id};
- if(!['compras','instruments'].includes(kind))throw Error('Tipo de evidencia invalido');
+ if(!['compras','instruments','files'].includes(kind))throw Error('Tipo de evidencia invalido');
+ // An incomplete or transiently empty list must not erase previously observed file links.
+ if(kind==='files'&&old.files?.some(f=>!value.some(v=>v.seq===f.seq)))throw Error('Arquivo confirmado ausente; revalidar na fonte');
  if(kind==='instruments'&&old.instruments?.some(i=>!value.some(v=>v.pncpId===i.pncpId)))
   throw Error('Instrumento confirmado ausente; nao presumir cancelamento');
  if(kind==='compras'&&old.compras?.items.some(i=>!value.items.some(v=>itemKey(v)===itemKey(i))))
@@ -267,18 +327,25 @@ export function applyArpDetail(previous,ata,kind,value){
  return JSON.stringify(next)===JSON.stringify(old)?old:next;
 }
 export const arpKey=(ata,kind)=>stateKey(['arp-details',kind,ata]);
-export function planArpDetails(atas,details,{kind,state={},now=new Date(),limit=5,slot=Math.floor(now.getTime()/86400000)}={}){
- if(!['compras','instruments'].includes(kind)||!pos(limit)||limit>10)throw Error('Plano invalido');
+export const arpFailureKey=(ata,kind)=>stateKey(['arp-failure',kind,ata.id]);
+export function planArpDetails(atas,details,{kind,state={},now=new Date(),limit=5,slot=Math.floor(now.getTime()/14400000)}={}){
+ if(!['compras','instruments','files'].includes(kind)||!pos(limit)||limit>(kind==='files'?50:10))throw Error('Plano invalido');
  const by=new Map(details.map(d=>[d.ataId,d])),today=now.toISOString().slice(0,10),groups=new Map();
  for(const a of atas){
   if(!inScopePurchaseId(a.procurementId))continue;
   const stamp=state[arpKey(a,kind)],known=Object.hasOwn(by.get(a.id)||{},kind);
+  if(state[arpFailureKey(a,kind)]===today)continue;
   if(validDay(stamp)&&stamp<=today&&now.getTime()-Date.parse(stamp+'T00:00:00Z')<(known?30:7)*86400000)continue;
   if(!groups.has(a.procurementId))groups.set(a.procurementId,[]);
   groups.get(a.procurementId).push(a);
  }
- const lists=[...groups.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([,g])=>g.sort((a,b)=>Number(Object.hasOwn(by.get(a.id)||{},kind))-Number(Object.hasOwn(by.get(b.id)||{},kind))||a.sequence-b.sequence));
- const offset=slot%Math.max(1,lists.length),ordered=lists.slice(offset).concat(lists.slice(0,offset)),out=[];
- while(out.length<limit&&ordered.some(g=>g.length))for(const g of ordered){if(g.length)out.push(g.shift());if(out.length===limit)break}
+ const out=[];
+ // Exhaust unqueried records across purchases before routine revalidation. Rotate each four-hour slot.
+ for(const known of [false,true]){
+  const lists=[...groups.entries()].sort(([a],[b])=>a.localeCompare(b))
+   .map(([,g])=>g.filter(a=>Object.hasOwn(by.get(a.id)||{},kind)===known).sort((a,b)=>a.sequence-b.sequence)).filter(g=>g.length);
+  const offset=(slot*limit)%Math.max(1,lists.length),ordered=lists.slice(offset).concat(lists.slice(0,offset));
+  while(out.length<limit&&ordered.some(g=>g.length))for(const g of ordered){if(g.length)out.push(g.shift());if(out.length===limit)break}
+ }
  return out;
 }

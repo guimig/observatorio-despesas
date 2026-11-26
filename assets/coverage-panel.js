@@ -26,6 +26,10 @@ function render(root,x){
  root.append(elem('p','helper','Referências a NEs anteriores ao corte: '+fmt(c.originsBeforeCutoff)+'. Não entram na fila de origem. Sobreposições entre fases: '+fmt(c.phaseObservations)+'. Nenhum destes indicadores constitui saldo ou conclusão de irregularidade.'));
  root.append(elem('h3','','Contratações e instrumentos'));
  metricGrid(root,[['Meses encerrados conferidos PNCP',fraction(p.pncpMonths,p.closedMonths)],['Meses encerrados conferidos Compras.gov',fraction(p.comprasMonths,p.closedMonths)],['Modalidades / meses encerrados PNCP',fraction(p.modalitiesComplete,p.modalitiesTotal)],['Contratos e instrumentos com consulta de NE pendente',fmt(p.commitmentLinksPending)],['Instrumentos sem contratação vinculada',fmt(p.purchaseLinksPending)],['Publicações SRP com atas consultadas',fraction(p.srpAtasChecked,p.srp)],['Publicações SRP com itens consultados',fraction(p.srpItemsChecked,p.srp)],['Atas com participação consultada',fraction(p.ataParticipationChecked,p.atas)],['Itens com resultados consultados',fraction(p.itemResultsChecked||0,p.tenderItems||0)],['Resultados PNCP recuperados',fmt(p.itemResults||0)],['Atas com itens Compras.gov identificados',fraction(p.arpItemsMatched||0,p.atas)],['Atas com instrumentos consultados',fraction(p.arpInstrumentChecks||0,p.atas)],['Vínculos ata–instrumento identificados',fmt(p.arpInstrumentLinks||0)],['Instrumentos decorrentes de adesões do IFC',fmt(p.ifcAdhesionInstruments||0)],['Instrumentos PNCP sem informação de adesão',fmt(p.adhesionUnknown||0)],['Itens com registros de unidade identificados',fmt(p.arpUnitItems||0)],['Itens com registro da UASG Araquari',fmt(p.arpCampusUnitItems||0)]]);
+ root.append(elem('h3','','Atas de registro de preços · cobertura específica'));
+ metricGrid(root,[['Atas catalogadas',fmt(p.atas)],['Itens de atas recuperados',fraction(p.arpItemsMatched||0,p.atas)],['Consultas de instrumentos',fraction(p.arpInstrumentChecks||0,p.atas)],['Listas de arquivos consultadas',fraction(p.arpFilesChecked||0,p.atas)],['Atas com arquivos oficiais',fmt(p.arpFilesAvailable||0)],['Links individuais PNCP',fmt(p.arpFileLinks||0)],['Registros item/fornecedor',fmt(p.arpItemRows||0)],['Atas sem detalhamento de itens',fmt(p.atas-(p.arpItemsMatched||0))]]);
+ if(p.arpByYear?.length)table(root,['Exercício da compra','Atas','Participação','Itens','Instrumentos','Arquivos'],p.arpByYear.map(y=>[y.year,fmt(y.atas),fraction(y.participants,y.atas),fraction(y.items,y.atas),fraction(y.instruments,y.atas),fraction(y.files,y.atas)]));
+ root.append(elem('p','helper','Última consulta de lista de atas gravada: '+dt(p.lastAtaCheck)+' · participação: '+dt(p.lastParticipationCheck)+'. Consultas completas vazias contam como consultadas, não como arquivos ou instrumentos disponíveis. PDFs permanecem exclusivamente no PNCP.'));
  if(x.integrated){
   const g=x.integrated;
   root.append(elem('h3','','Rastreabilidade integrada · acervo publicado'));
@@ -38,7 +42,9 @@ function render(root,x){
    ['Liquidações com origem NE confirmada',fmt(g.liquidationsWithConfirmedOrigin)],['Pagamentos com origem NE confirmada',fmt(g.paymentsWithConfirmedOrigin)],
    ['Instrumentos com contratação presente',fmt(g.instrumentsWithLocalPurchase)],
    ['Instrumentos com ata específica presente',fmt(g.instrumentsWithLocalAta)],
-   ['Instrumentos com múltiplas atas declaradas',fmt(g.instrumentsWithMultipleAtas)]]);
+   ['Instrumentos com múltiplas atas declaradas',fmt(g.instrumentsWithMultipleAtas)],
+   ['Itens NE com referência candidata de catálogo',fmt(g.neItemCandidates||0)],['Itens NE com ata e fornecedor coincidentes',fmt(g.neItemsWithAta||0)],
+   ['Registros de item/fornecedor ARP com item licitado localizado',fmt(g.arpItemRowsWithTenderDescription||0)]]);
   root.append(elem('p','helper','Contagens únicas no acervo de '+fmt(g.loadedMonths)+' competências publicadas. Ausência de relação não prova inexistência de execução; não são saldos de contratos ou atas.'));
  }
  root.append(elem('h3','','Atualidade e procedência'));

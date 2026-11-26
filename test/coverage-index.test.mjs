@@ -19,3 +19,11 @@ test('cobertura encerrada exige prova de fechamento e não inclui mes aberto no 
  assert.equal(index.procurement.closedMonths,1);assert.equal(index.procurement.pncpMonths,1);
  assert.equal(index.months[1].pncp,'open');assert.equal(index.cgu.missingDays,33);
 });
+
+test('cobertura de ARP separa consultas vazias, itens e links sem criar base duplicada',()=>{
+ const p='10635424000186-1-000001/2024',a={id:p+':ata:1',procurementId:p,sequence:1},b={...a,id:p+':ata:2',sequence:2};
+ const index=buildCoverageIndex({months:[],now,atas:{atas:[a,b],checks:[]},participants:{checks:[],details:[{ataId:a.id,files:[]},{ataId:b.id,files:[{seq:1}]}]}});
+ assert.equal(index.procurement.arpFilesChecked,2);assert.equal(index.procurement.arpFilesAvailable,1);
+ assert.equal(index.procurement.arpFileLinks,1);assert.equal(index.procurement.arpByYear[0].files,2);
+ assert.equal(index.procurement.arpItemsMatched,0);
+});

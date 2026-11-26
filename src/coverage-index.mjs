@@ -26,6 +26,15 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
  const ataIds=new Set((atas?.checks||[]).map(c=>c.procurementId));
  const tenderIds=new Set((tender?.procedures||[]).map(c=>c.pncpId));
  const participationIds=new Set((participants?.checks||[]).map(c=>c.ataId));
+ const arpDetails=new Map((participants?.details||[]).map(d=>[d.ataId,d]));
+ const allAtas=atas?.atas||[];
+ const arpByYear=[...new Set(allAtas.map(a=>a.procurementId.slice(-4)))].sort().map(year=>{
+  const rows=allAtas.filter(a=>a.procurementId.endsWith('/'+year));
+  const ds=rows.map(a=>arpDetails.get(a.id)).filter(Boolean);
+  return {year,atas:rows.length,participants:rows.filter(a=>participationIds.has(a.id)).length,
+   items:ds.filter(d=>d.compras).length,instruments:ds.filter(d=>Object.hasOwn(d,'instruments')).length,
+   files:ds.filter(d=>Object.hasOwn(d,'files')).length,fileLinks:ds.reduce((n,d)=>n+(d.files?.length||0),0)};
+ });
  const contractCoverage=new Map((procurement?.coverage||[]).map(c=>[c.month+'/'+c.source,c]));
  const noticeCoverage=new Map((notices?.coverage||[]).map(c=>[c.month+'/'+c.modality,c]));
  const rows=calendar.map(month=>{
@@ -82,6 +91,11 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    arpItemRows:(participants?.details||[]).reduce((n,d)=>n+(d.compras?.items.length||0),0),
    arpInstrumentChecks:(participants?.details||[]).filter(d=>Object.hasOwn(d,'instruments')).length,
    arpInstrumentLinks:(participants?.details||[]).reduce((n,d)=>n+(d.instruments?.length||0),0),
+   arpFilesChecked:(participants?.details||[]).filter(d=>Object.hasOwn(d,'files')).length,
+   arpFilesAvailable:(participants?.details||[]).filter(d=>d.files?.length).length,
+   arpFileLinks:(participants?.details||[]).reduce((n,d)=>n+(d.files?.length||0),0),
+   arpByYear,
+   lastAtaCheck:latest((atas?.checks||[]).map(c=>c.checkedAt)),lastParticipationCheck:latest((participants?.checks||[]).map(c=>c.checkedAt)),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
   integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,totalMonths:manifest?.months?.length??months.length})),
   years:byYear,months:rows};
