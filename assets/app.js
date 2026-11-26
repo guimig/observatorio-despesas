@@ -695,7 +695,9 @@ function showContractAssociations(doc,{entry=null}={}){
   if(!origins.length)slot.append(element('p','small-muted','Sem NE impactada localizada. Não atribuir a contratação diretamente por processo/fornecedor do pagamento ou liquidação.'));
   for(const {entry:origin,link} of origins){
    const block=element('div','relation-item');
-   block.append(element('span','small-muted','NE impactada pela CGU · '+fmtMoney(link.cents)),neButton(origin.id));
+   block.append(element('span','small-muted',link.cents===null?
+     'NE relacionada pela CGU · valor do impacto não recuperado':
+     'NE impactada pela CGU · '+fmtMoney(link.cents)+(link.relatedCgu?' · também declarada em documentos relacionados':'')),neButton(origin.id));
    renderNeAdministrative(block,index,origin.id);slot.append(block);
   }
  }
@@ -986,6 +988,14 @@ function showDocument(doc, monthData = state.data) {
   }
   const list=$('dialog-relations');
   list.replaceChildren();
+  // As identidades oficiais adicionais nao entram em relations nem recebem
+  // o valor integral de um documento que pode impactar varias NEs.
+  const index=integratedIndex();
+  const additional=doc.phase===1?(index.byNe.get(doc.id)?.links||[])
+    .filter(l=>l.cents===null).map(l=>({from:l.id,to:doc.id,cents:null})):
+    (index.originsByDoc.get(doc.id)||[]).filter(x=>x.link.cents===null)
+    .map(x=>({from:doc.id,to:x.entry.id,cents:null}));
+  for(const r of additional)if(!relationsMap.has(r.from+'/'+r.to))relationsMap.set(r.from+'/'+r.to,r);
   if(!relationsMap.size) {
     list.append(element('p','small-muted',doc.phase===3 && !doc.paymentLinksChecked
       ?'Vínculos deste pagamento ainda não consultados pelo coletor incremental.'
@@ -998,7 +1008,7 @@ function showDocument(doc, monthData = state.data) {
       const isPayment=/20\d{2}(?:OB|DF|DR|GP)\d{6}$/.test(relation.from);
       const label=from?'Empenho impactado':
         (isPayment?'Pagamento relacionado':'Liquidação relacionada');
-      item.append(element('span','small-muted',label));
+      item.append(element('span','small-muted',relation.cents===null?'Documento relacionado pela CGU · sem valor de impacto':label));
       const button=element('button','relation-link doc-code',associated);
       button.type='button';
       button.title='Consultar ficha do documento relacionado';
@@ -1015,7 +1025,7 @@ function showDocument(doc, monthData = state.data) {
           button.disabled=false;
         }
       });
-      item.append(button,element('strong','', 'Valor vinculado: '+fmtMoney(relation.cents)));
+      item.append(button,element('strong','',relation.cents===null?'Valor por NE não recuperado':'Valor vinculado: '+fmtMoney(relation.cents)));
       list.append(item);
     }
   }
@@ -1106,7 +1116,7 @@ async function loadAllTrajectoryMonths(){
 function renderCommitmentTrajectories(){
   const query=$('trajectory-search').value;
   const index=integratedIndex(),level=$('trajectory-evidence').value;
-  const all=commitmentTrajectories.filter(entry=>trajectoryMatches(index,entry,query)&&
+  const all=index.entries.filter(entry=>trajectoryMatches(index,entry,query)&&
     (level==='all'||neEvidenceLevel(index,entry.id)===level));
   const pages=Math.max(1,Math.ceil(all.length/25));trajectoryPage=Math.max(0,Math.min(pages-1,trajectoryPage));
   $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
@@ -1127,6 +1137,10 @@ function renderCommitmentTrajectories(){
     object.append(element('span','small-muted integrated-table-note',e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
     const pg=element('td','align-right',fmtMoney(entry.paymentCents));
+    if(!entry.liquidations.length)lq.textContent='Não identificado';
+    if(!entry.payments.length)pg.textContent='Não identificado';
+    if(entry.liquidationUnknown)lq.append(element('span','small-muted integrated-table-note',fmtCount(entry.liquidationUnknown)+' sem valor por NE'));
+    if(entry.paymentUnknown)pg.append(element('span','small-muted integrated-table-note',fmtCount(entry.paymentUnknown)+' sem valor por NE'));
     const action=element('td','');
     const button=element('button','details-button','Abrir trajetória');
     button.type='button';button.addEventListener('click',()=>showCommitmentTrajectory(entry));
@@ -1140,13 +1154,24 @@ function renderTrajectoryLinks(target,links,emptyText){
     const item=element('div','relation-item');
     const caption=(link.document?.id||link.id)+' · '+(link.date?localDate(link.date):'Data indisponível');
     item.append(element('strong','',caption));
-    item.append(element('span','small-muted','Valor vinculado: '+fmtMoney(link.cents)));
+    item.append(element('span','small-muted',link.cents===null?
+      'CGU · documento relacionado; valor do impacto por NE não recuperado':
+      'Valor vinculado: '+fmtMoney(link.cents)+(link.relatedCgu?' · também declarado em documentos relacionados':'')));
     item.append(element('span','small-muted',link.checked===true?'Consulta de vínculos concluída':
       link.checked===false?'Consulta de vínculos pendente':'Documento relacionado não localizado no acervo carregado'));
     if(link.document){
       const open=element('button','relation-link doc-code','Abrir documento');
       open.type='button';open.addEventListener('click',()=>showDocument(link.document,cache.get(link.month)||state.data));
       item.append(open);
+    }else{
+      const open=relationButton('Localizar documento '+link.id,async()=>{
+        open.disabled=true;
+        try{const found=await locateLinkedDocument(link.id);
+          if(found&&open.isConnected)showDocument(found.doc,found.data);
+          else open.textContent='Documento ainda não localizado';
+        }catch{open.textContent='Consulta do acervo indisponível';}
+        finally{open.disabled=false;}
+      });item.append(open);
     }
     target.append(item);
   }
@@ -1171,7 +1196,8 @@ function showCommitmentTrajectory(entry){
     ['UG','158459 · IFC Araquari'],
     ['Natureza da despesa',doc?.nature?.element||'Não informada'],
     ['Exercício da NE',entry.id.slice(11,15)],
-    ['Itens do empenho',entry.itemsChecked?'Consulta concluída':'Aguardando consulta']
+    ['Itens do empenho',entry.itemsChecked?'Consulta concluída':'Aguardando consulta'],
+    ['Documentos relacionados · CGU',Array.isArray(doc?.relatedIds)?'Consulta realizada · '+fmtCount(doc.relatedIds.length)+' identidade(s) compatíveis':'Consulta direta ainda pendente']
   ];
   for(const [label,value] of entries)appendDetailField(fields,label,value);
   appendDetailField(fields,'Descrição / observação da nota de empenho',
@@ -1194,8 +1220,10 @@ function showCommitmentTrajectory(entry){
   $('dialog-trajectory-note').textContent=
     'A ausência de vínculo no acervo não significa ausência de execução. Liquidações e pagamentos são apresentados em grupos independentes. A CGU vincula ambos às NEs; isso não comprova relação direta entre uma NS e uma OB/DF, nem quitação integral do empenho. Valores negativos são preservados como retornados pela fonte. Os totais abaixo são somas dos vínculos documentais disponíveis, não saldo contábil.';
   $('dialog-trajectory-summary').textContent=
-    'Vínculos de liquidação: '+fmtCount(entry.liquidations.length)+' documento(s), '+fmtMoney(entry.liquidationCents)+
-    '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+fmtMoney(entry.paymentCents)+
+    'Vínculos de liquidação: '+fmtCount(entry.liquidations.length)+' documento(s), '+(entry.liquidations.length?fmtMoney(entry.liquidationCents):'não identificado')+
+    (entry.liquidationUnknown?' · '+fmtCount(entry.liquidationUnknown)+' sem valor por NE':'')+
+    '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+(entry.payments.length?fmtMoney(entry.paymentCents):'não identificado')+
+    (entry.paymentUnknown?' · '+fmtCount(entry.paymentUnknown)+' sem valor por NE':'')+
     '. Pendências de consulta: '+(entry.pendingLiquidations||entry.pendingPayments?'sim':'não identificado nos documentos vinculados carregados')+'.';
   showContractAssociations(doc,{entry});
   showDialogFromTop($('document-dialog'));

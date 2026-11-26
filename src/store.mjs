@@ -6,6 +6,7 @@ import { UG, CGU_NATURE_FIELDS } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {officialDecimal,movementClass} from './item-movements.mjs';
+import {inScopeRelatedDocument,validRelatedPair} from '../assets/trajectory.js';
 
 export const VERSION = 1;
 const DOCUMENT_RE = /^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
@@ -52,7 +53,14 @@ export function validateMonth(data) {
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
       'partyRef', 'cpfMasked', 'process', 'nature', 'natureCheckedAt', 'paymentLinksChecked',
-      'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion', 'valueSource']);
+      'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion', 'valueSource','relatedIds']);
+    if(doc.relatedIds!==undefined){
+      const phase={NE:1,NS:2,OB:3,DF:3}[doc.id?.slice(15,17)];
+      if(!inScopeRelatedDocument(doc.id)||phase!==doc.phase||!Array.isArray(doc.relatedIds)||
+         doc.relatedIds.length>3000||new Set(doc.relatedIds).size!==doc.relatedIds.length||
+         doc.relatedIds.some(other=>!validRelatedPair(doc.id,other)))
+        throw Error('Identidades de documentos relacionados invalidas');
+    }
     if(doc.itemsDetailVersion!==undefined&&doc.itemsDetailVersion!==2)
       throw Error('Versao de enriquecimento de itens invalida');
     if(doc.itemsDetailVersion===2&&!Object.hasOwn(data.itemsByDocument||{},doc.id))
@@ -306,6 +314,8 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
         }
         doc.nature={...prior,...doc.nature};
       }
+      if(old?.relatedIds!==undefined&&old.phase===doc.phase&&old.date===doc.date&&doc.relatedIds===undefined)
+        doc.relatedIds=structuredClone(old.relatedIds);
       if(old?.natureCheckedAt&&!doc.natureCheckedAt&&
         JSON.stringify(old.nature||{})===JSON.stringify(doc.nature||{}))doc.natureCheckedAt=old.natureCheckedAt;
       if(old?.description&&!doc.description)doc.description=old.description;
@@ -445,7 +455,13 @@ export function applyDocumentEnrichment(existing,id,result,now=new Date()){
   if(!doc)throw Error('Documento não encontrado no JSON mensal');
   const next=structuredClone(original);
   const target=next.documents.find(item=>item.id===id);
-  if(result.kind==='liquidationValue'){
+  if(result.kind==='relatedDocuments'){
+    if(!Array.isArray(result.ids)||result.ids.some(other=>!validRelatedPair(id,other)))
+      throw Error('Identidades relacionadas invalidas');
+    if((target.relatedIds||[]).some(other=>!result.ids.includes(other)))
+      throw Error('Consulta de relacionados omitiu vinculo previamente identificado');
+    target.relatedIds=[...new Set(result.ids)].sort();
+  }else if(result.kind==='liquidationValue'){
     if(target.phase!==2||!Array.isArray(result.links)||!result.links.length||
        result.links.some(link=>link.from!==id||!Number.isSafeInteger(link.cents))||
        !Number.isSafeInteger(result.cents)||result.links.reduce((n,l)=>n+BigInt(l.cents),0n)!==BigInt(result.cents))

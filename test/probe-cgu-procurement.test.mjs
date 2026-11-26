@@ -21,7 +21,7 @@ test('sondagem restrita usa chaves observadas, preserva erro, nao registra dados
   if(u.pathname.endsWith('/por-processo'))return [row];
   if(u.pathname.endsWith('/empenhos')){assert.equal(u.searchParams.get('codigoUG'),'158125');return [{empenho:ne,observacao:'dado pessoal'}];}
   if(u.pathname.endsWith('/contratos-relacionados-licitacao'))return [{id:42,dataAssinatura:'2026-05-01',unidadeGestora:{codigo:'158125'}}];
-  if(u.pathname.endsWith('/documentos-relacionados'))return [{documento:ne}];
+  if(u.pathname.endsWith('/documentos-relacionados'))return [{empenho:ne}];
   return [];
  }});
  assert.equal(r.purchaseLookups[0].knownCampusNe,1);

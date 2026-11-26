@@ -30,6 +30,10 @@ function render(root,x){
   const g=x.integrated;
   root.append(elem('h3','','Rastreabilidade integrada · acervo publicado'));
   metricGrid(root,[['NEs com referência integral conferida',fraction(g.confirmedCommitments,g.commitments)],
+   ['Consultas CGU de documentos relacionados',fmt(g.relatedDocumentsChecked||0)],
+   ['NEs com consulta de relacionados',fmt(g.relatedNeChecked||0)],
+   ['Pares declarados pela CGU (relacionados)',fmt(g.cguRelatedPairs||0)],
+   ['Vínculos documentais adicionais sem valor por NE',fmt(g.cguRelatedOnlyPairs||0)],
    ['NEs somente com indícios',fmt(g.indicatedCommitments)],['NEs com instrumentos concorrentes (sem alocação)',fmt(g.ambiguousCommitments)],
    ['Liquidações com origem NE confirmada',fmt(g.liquidationsWithConfirmedOrigin)],['Pagamentos com origem NE confirmada',fmt(g.paymentsWithConfirmedOrigin)],
    ['Instrumentos com contratação presente',fmt(g.instrumentsWithLocalPurchase)],

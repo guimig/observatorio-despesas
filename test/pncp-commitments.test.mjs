@@ -207,3 +207,13 @@ test('vinculos positivos reconsultados nao voltam prematuramente a fila',()=>{
  assert.equal(planCommitmentChecks({...catalog,contracts:[{...contract,number:'different'}]},{now,state}).length,1);
  assert.equal(applyCommitmentResult(catalog,contract.id,{status:'complete',refs:[ne]},now).changed,false);
 });
+
+test('prioriza confronto com NE real sem converter criterio em vinculo e sem selecionar duplicatas',()=>{
+ const c=base(),d=doc(),candidate={...c,id:'candidate',pncpId:'10635424000186-2-001687/2026',supplierCnpj:d.partyRef};
+ const other={...c,id:'other',pncpId:'10635424000186-2-001688/2026',process:'23350.000001/2026-01'};
+ const cat={contracts:[other,c,candidate]};
+ assert.equal(planCommitmentChecks(cat,{documents:[d],count:1,now:new Date('2026-11-26')})[0].id,'candidate');
+ const plan=planCommitmentChecks(cat,{documents:[d],count:3,now:new Date('2026-11-26')});
+ assert.equal(new Set(plan.map(x=>x.id)).size,3);
+ assert.notEqual(assessContractAttribution(candidate,[d]).level,'confirmed');
+});
