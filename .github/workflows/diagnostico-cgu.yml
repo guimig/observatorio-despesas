@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/diagnostico-cgu.yml'
       - 'src/inspect-cgu.mjs'
+      - 'src/cgu.mjs'
 
 permissions:
   contents: read

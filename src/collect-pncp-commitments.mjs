@@ -1,10 +1,11 @@
 /** Recuperação incremental das NEs oficiais vinculadas a contratos PNCP. */
 import {stateKey,effectiveDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import {fileURLToPath} from 'node:url';
-import {validatePublishedData} from './store.mjs';
 import {readProcurement,writeCommitmentResult} from './procurement-store.mjs';
 import {fetchLinkedCommitments} from './pncp-commitments.mjs';
 import {assessContractAttribution} from '../assets/procurement-links.js';
+import {validatePublishedData} from './store.mjs';
+import {indexLocalCommitments,emptyShortAudit,addShortAudit} from './pncp-short-identity.mjs';
 
 function integer(value,fallback,max){
   const n=Number(value??fallback);
@@ -77,12 +78,12 @@ async function main(){
   console.log('Plano de recuperação: '+batch.length+' contrato(s) PNCP elegíveis.');
   if(process.argv.includes('--dry-run'))return;
   const {months}=await validatePublishedData(process.cwd());
-  const documents=months.flatMap(m=>m.documents);
+  const shortIndex=indexLocalCommitments(months.flatMap(m=>m.documents)),shortAudit=emptyShortAudit();
   let completed=0,unavailable=0,matched=0,rows=0,full=0,short=0,pi=0,fullPi=0,context=0;
   for(const entry of batch){
     const record=catalog.contracts.find(c=>c.id===entry.id);
     try{
-      const result=await fetchLinkedCommitments(record,{includeDetails:true,documents});
+      const result=await fetchLinkedCommitments(record,{includeDetails:true,shortIndex,includeContext:true});
       const outcome=await writeCommitmentResult(process.cwd(),entry.id,{
         status:'complete',refs:result.refs,audit:result.audit,details:result.details,context:result.context
       });
@@ -94,6 +95,7 @@ async function main(){
       rows+=result.audit.rows;full+=result.audit.formats.fullCampus;
       short+=result.audit.formats.shortOnly+result.audit.formats.campusShort;
       pi+=result.audit.fields.pi;fullPi+=result.audit.fullWithPi;context+=result.context.length;
+      addShortAudit(shortAudit,result.shortAudit);
     }catch{
       unavailable++;
       // Resposta inacessível não é equivalente à ausência de empenhos.
@@ -103,6 +105,7 @@ async function main(){
     }
   }
   await saveOperationalState(statePath,state);
+  console.log('NE abreviada PNCP: candidatos locais, nao vinculos comprovados: '+JSON.stringify(shortAudit));
   console.log('Auditoria PNCP de empenhos: '+JSON.stringify({completed,unavailable,rows,full,short,pi,fullPi,context}));
   console.log('PNCP empenhos: '+completed+' instrumento(s) consultado(s) integralmente, '+
     unavailable+' indisponível(is), '+matched+' referência(s) explícitas à UG 158459. '+

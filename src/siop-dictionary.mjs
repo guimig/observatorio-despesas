@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {FIRST_YEAR,brazilMonth} from './collection-scope.mjs';
 import {containsRawCpf} from './privacy.mjs';
 
-export const SIOP_URL='https://orcamento.dados.gov.br/sparql';
+export const SIOP_URL='https://www1.siop.planejamento.gov.br/sparql/';
 const UO='26422', LIMIT=2500, MAX_BYTES=2*1024*1024;
 const GENERIC=Object.freeze({
  sphere:'temEsfera',function:'temFuncao',subfunction:'temSubfuncao',
@@ -25,19 +25,21 @@ function assertYear(year,now=new Date()){
 }
 export function dictionaryQuery(year,now=new Date()){
  assertYear(year,now);
- const predicates=o=>Object.values(o).map(v=>'?predicate = loa:'+v).join(' || ');
+ // Consulta tabular conforme o exemplo oficial SIOP, sem VALUES, BIND ou predicado variavel.
+ const dimensions=Object.entries({...GENERIC,...CONTEXTUAL});
  return [
  'PREFIX loa: <http://vocab.e.gov.br/2013/09/loa#>',
  'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>',
- 'SELECT DISTINCT ?predicate ?code ?label ?action WHERE {',
+ 'SELECT DISTINCT '+dimensions.map(([kind])=>'?'+kind+'Code ?'+kind+'Label').join(' ')+' WHERE {',
  ' GRAPH <http://orcamento.dados.gov.br/'+year+'/> {',
- '  ?i loa:temUnidadeOrcamentaria ?uo . ?uo loa:codigo "'+UO+'" .',
- '  { ?i ?predicate ?v . FILTER ('+predicates(GENERIC)+') }',
- '  UNION { ?i ?predicate ?v . FILTER ('+predicates(CONTEXTUAL)+')',
- '    ?i loa:temAcao ?a . ?a loa:codigo ?action . }',
- '  ?v loa:codigo ?code . ?v rdfs:label ?label .',
+ '  ?i a loa:ItemDespesa ; loa:temUnidadeOrcamentaria ?uo . ?uo loa:codigo "'+UO+'" .',
+ ...dimensions.flatMap(([kind,predicate])=>[
+   '  ?i loa:'+predicate+' ?'+kind+'Node .',
+   '  ?'+kind+'Node loa:codigo ?'+kind+'Code .',
+   '  OPTIONAL { ?'+kind+'Node rdfs:label ?'+kind+'Label . }'
+ ]),
  ' }',
- '} ORDER BY ?predicate ?action ?code ?label LIMIT '+(LIMIT+1)
+ '} LIMIT '+(LIMIT+1)
  ].join('\n');
 }
 function safeLabel(value){
@@ -54,13 +56,28 @@ function validRow(row){
 function rowKey(row){return JSON.stringify([row.kind,row.action||'',row.code]);}
 export function normalizeDictionary(payload,year,now=new Date()){
  assertYear(year,now);
- const bindings=payload?.results?.bindings;
+ let bindings=payload?.results?.bindings;
  if(!Array.isArray(bindings)||!bindings.length||bindings.length>LIMIT)
   throw Error('Dicionario SIOP vazio, invalido ou truncado');
+ // A consulta tabular devolve combinacoes de classificacao. Extrair somente
+ // pares codigo/rotulo distintos, PO/localizador por acao, sem guardar linhas.
+ if(bindings[0]?.kind===undefined){
+  const unique=new Map();
+  for(const b of bindings){
+   for(const kind of Object.keys({...GENERIC,...CONTEXTUAL})){
+    const c=b?.[kind+'Code']?.value,label=b?.[kind+'Label']?.value;
+    if(c===undefined||label===undefined)continue; // rotulo nao fornecido: nao inventar
+    const action=Object.hasOwn(CONTEXTUAL,kind)?b?.actionCode?.value:'';
+    const item={kind:{value:kind},code:{value:c},label:{value:label},action:{value:action}};
+    unique.set(JSON.stringify([kind,c,label,action]),item);
+    if(unique.size>LIMIT)throw Error('Dicionario SIOP vazio, invalido ou truncado');
+   }
+  }
+  bindings=[...unique.values()];
+ }
  const rows=new Map(),conflicts=new Set();
- const predicateKinds=new Map(Object.entries({...GENERIC,...CONTEXTUAL}).map(([kind,p])=>['http://vocab.e.gov.br/2013/09/loa#'+p,kind]));
  for(const b of bindings){
-  const kind=b?.predicate?.value!==undefined?predicateKinds.get(b.predicate.value):b?.kind?.value, c=b?.code?.value, label=b?.label?.value, action=b?.action?.value;
+  const kind=b?.kind?.value, c=b?.code?.value, label=b?.label?.value, action=b?.action?.value;
   const row={kind,code:c,label,...(Object.hasOwn(CONTEXTUAL,kind)?{action}:{})};
   if(!validRow(row))throw Error('Classificacao SIOP invalida');
   const key=rowKey(row);
@@ -83,11 +100,11 @@ export function validateDictionary(data,year,now=new Date()){
  return data;
 }
 export async function fetchDictionary(year,{fetchFn=fetch,now=new Date()}={}){
- const url=new URL(SIOP_URL);
- url.search=new URLSearchParams({query:dictionaryQuery(year,now),format:'application/sparql-results+json'}).toString();
- const response=await fetchFn(url.toString(),{method:'GET',
-  headers:{Accept:'application/sparql-results+json'},redirect:'follow',
-  signal:AbortSignal.timeout(30000)});
+ const query=dictionaryQuery(year,now);
+ const response=await fetchFn(SIOP_URL,{method:'POST',
+  body:new URLSearchParams({query}),
+  headers:{Accept:'application/sparql-results+json','Content-Type':'application/x-www-form-urlencoded'},
+  redirect:'error',signal:AbortSignal.timeout(30000)});
  if(!response.ok)throw Error('SIOP HTTP '+response.status);
  if(response.url&&new URL(response.url).hostname!==new URL(SIOP_URL).hostname)
   throw Error('SIOP redirected outside host');

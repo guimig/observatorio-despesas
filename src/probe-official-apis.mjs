@@ -73,7 +73,18 @@ export function summarizeOpenApi(spec,source){
      parameterReferences:params.some(p=>typeof p?.$ref==='string'),
      authentication:security?.length?'declared':'not_declared'};
  });
- return {status:'openapi_available',routes};
+ const result={status:'openapi_available',routes};
+ // Apenas metadados dos schemas explicitamente nomeados na documentacao STA.
+ // Nao incluir descricoes, exemplos, valores, tokens ou schemas de login.
+ if(source.name==='SIAFI_STA'){
+   result.schemas={};
+   for(const name of ['Empenho','EmpenhoUnico','Item','SaldoContabil','EmpenhoOrdembancaria']){
+     const props=spec.components?.schemas?.[name]?.properties;
+     if(!props||typeof props!=='object'||Array.isArray(props))continue;
+     result.schemas[name]=Object.keys(props).filter(k=>SAFE_NAME.test(k)).sort().slice(0,100);
+   }
+ }
+ return result;
 }
 async function boundedJson(response){
  if(!response?.ok)return {status:response?.status===401||response?.status===403?

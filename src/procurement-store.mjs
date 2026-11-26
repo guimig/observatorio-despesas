@@ -132,6 +132,8 @@ export function validateProcurement(data){
     if(contract.commitmentContext!==undefined){
       if(contract.commitmentStatus!=='complete'||!contract.commitmentAudit)throw Error('Indicios PNCP sem cobertura');
       validateContextualCommitments(contract.commitmentContext,contract);
+      if(contract.commitmentContext.length>contract.commitmentAudit.formats.shortOnly+contract.commitmentAudit.formats.campusShort)
+        throw Error('Indicios PNCP excedem registros abreviados');
     }
     if(contract.procurementId!==undefined&&!PURCHASE_ID.test(contract.procurementId))
       throw Error('Referência de contratação PNCP inválida');
