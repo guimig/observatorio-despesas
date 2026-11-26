@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/diagnosticar-cgu-siafi.yml'
       - 'src/inspect-cgu-siafi.mjs'
+      - 'src/probe-cgu-procurement.mjs'
 permissions:
   contents: read
 jobs:
@@ -30,3 +31,8 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
         run: node src/inspect-cgu-siafi.mjs
+
+      - name: Sondar vinculos diretos de licitacoes e contratos CGU
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/probe-cgu-procurement.mjs
