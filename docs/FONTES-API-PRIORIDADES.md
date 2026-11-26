@@ -298,3 +298,34 @@ Os dois últimos lotes históricos reais (#45281579423 e #45283664694) completar
 - O [SIOP](https://orcamento.dados.gov.br/siopdoc/doku.php/acesso_publico:scripts_sparql) disponibiliza consulta SPARQL por grafo de exercicio. A sondagem `src/siop-dictionary.mjs` consulta somente a UO 26422, exercicios desde 2024, codigos e rotulos sem valores; PO e localizador dependem da acao. Limite de 2500 classificacoes e 2 MiB por resposta, sem download nacional. Cache por exercicio (7 dias corrente, 30 dias encerrados), artefato de homologacao de 7 dias, fora dos arquivos publicados. Nao atribuir classificacao do SIOP a documento SIAFI por mera coincidencia de acao; nenhuma dotacao ou saldo de UG decorre da UO.
 - O [catalogo Dados SIAFI - STA](https://sta.api.gov.br/api/documentation) documenta JWT e consultas anual/incremental, detalhe, RP, saldo e OB. A sondagem OpenAPI existente inclui apenas o catalogo oficial `https://sta.api.gov.br/docs?api-docs.json`; nao faz login, nao consulta registros financeiros e nao afirma disponibilidade de PTRES, PI, fonte ou UGR. Acesso institucional, condicoes de uso e permissao de publicacao devem ser confirmados com o mantenedor SEGES/DELOG/CGCON/COCTR. Nao criar credenciais nem usar segredo CGU na nova fonte.
 - Proxima etapa apos homologacao: revisar nomes e tipos efetivamente observados na CGU, confrontar o dicionario SIOP com os codigos documentais antes de qualquer associacao, e complementar os documentos historicos pelas reconsultas existentes. Nao iniciar Tesouro Gerencial, coleta em massa nem saldos inferidos. Aprovacao de testes unitarios nao comprova acesso remoto.
+
+
+## 26/11/2026 — PI do PNCP, consulta anual Contratos.gov e correcao do schema CGU
+
+A sondagem real da CGU #45864970506 confirmou funcao, subfuncao, planoOrcamentario, localizadorGasto, categoria, autor, modalidade e subTitulo. Corrigidos os tres nomes candidatos do mapeamento anterior; modalidade e subtitulo passam a ser preservados, autor permanece rotulado como informado pela CGU (nao inferir a emenda). O PO apareceu utilizavel em 3/15 NEs da primeira pagina de 13/11/2026, 5/9 liquidacoes e 2/2 pagamentos; amostra nao representa cobertura global. O SIOP #45864970265 falhou nos tres exercicios; a nova tentativa usa GET com query e formato JSON e categorias de erro fixas. Nenhuma classificacao SIOP e atribuida a NE.
+
+O [manual PNCP 2.6, 14.5](https://pncp.gov.br/manual/pt-br/latest/empenho/consultar_empenhos.html) documenta numeroPlanoInterno, codigoNaturezaDespesa, codigoEmenda, sequencialEmpenho, situacaoEmpenhoId e datas/valores. A coleta ja existente por instrumento agora guarda auditoria de formatos e preenchimento e apenas metadados da identidade financeira integral da UG 158459, a partir de 2024. Numero curto sem UG ou sem gestao nao autoriza associar PI, mesmo quando a publicacao vem da Reitoria ou processo 23349. O sequencial do PNCP distingue registros/subitens; valores de total e subitem sao evidencias declaradas, nunca somados nem usados para substituir valores CGU. Emenda: codigo, ano, tipo, autor quando objeto estruturado possui codigo coincidente; nao aproveitar valores agregados de emenda. Nenhum CPF, nome de credor ou corpo bruto e persistido. Reconsulta completa pode atualizar evidencias, falha preserva dados anteriores, alteracao de identidade do instrumento invalida evidencias. Mesma rotina e lote; cache operacional v2 faz migracao gradual de consultas legadas sem expandir a frequencia. A ficha de NE mostra os PIs encontrados com identidade integral e permite localizar PI/ND/emenda pelo campo de pesquisa.
+
+O [catalogo Contratos.gov](https://contratos.comprasnet.gov.br/api/docs) documenta a rota anual. A sondagem `src/probe-contratos-commitments.mjs` faz uma consulta por exercicio desde 2024 (somente UG 158459, sem token, timeout 20 s, teto 4 MiB), sem persistencia. Conta candidatos de nomes de atributos, identidades integrais e intersecao com NE local, separando NE com/sem vinculo PNCP conhecido; isso nao classifica a existencia de contrato. Resposta array nao prova completude; sem ID integral, nao ha match. Acesso por Apps Script pode ser testado subsidiariamente, sem qualquer credencial ou gravacao. Nao usar o Secret CGU, nao integrar dados de Contratos.gov ate demonstrar schema e cobertura. A especificacao OpenAPI passa a sondar tambem rotas de minutas e empenho substitutivo.
+
+Teste subsidiario manual (Apps Script, se GitHub Actions nao alcancar o host): executar `sondarContratosGovUG` abaixo. O UrlFetchApp nao permite limitar a transferencia antes de obter a resposta; por isso fazer somente uma consulta anual, sem trigger e sem gravar corpo. Resultado apenas status, tamanho e estrutura externa. Nao logar texto da resposta.
+
+```javascript
+function sondarContratosGovUG() {
+  const url = 'https://contratos.comprasnet.gov.br/api/v1/empenho/ano/2026/ug/158459';
+  try {
+    const r = UrlFetchApp.fetch(url, {muteHttpExceptions:true,followRedirects:false,
+      headers:{Accept:'application/json'}});
+    const status = r.getResponseCode(), bytes = r.getContent().length;
+    const result = {status,bytes};
+    if(status===200 && bytes<=4*1024*1024) {
+      try {
+        const body=JSON.parse(r.getContentText());
+        result.shape=Array.isArray(body)?'array':Array.isArray(body.data)?'data':Array.isArray(body.dados)?'dados':'other';
+        result.rows=result.shape==='array'?body.length:result.shape==='data'?body.data.length:result.shape==='dados'?body.dados.length:null;
+      } catch(e) { result.shape='invalid_json'; }
+    }
+    console.log(JSON.stringify(result));
+  } catch(e) { console.log(JSON.stringify({status:'network_unavailable'})); }
+}
+```

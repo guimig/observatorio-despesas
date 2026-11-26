@@ -5,6 +5,7 @@
  */
 import { requestPublicJSON } from './procurement.mjs';
 import { extractAraquariNeEvidence } from '../assets/procurement-links.js';
+import {extractCommitmentMetadata} from './pncp-commitment-fields.mjs';
 
 const PNCP=/^(\d{14})-2-(\d{6})\/(20\d{2})$/;
 const BASE='https://pncp.gov.br/api/pncp/v1/orgaos';
@@ -32,12 +33,14 @@ export function extractCommitmentRefs(records){
   return [...found].sort();
 }
 export async function fetchLinkedCommitments(contract,{
-  fetcher=requestPublicJSON,maxPages=5
+  fetcher=requestPublicJSON,maxPages=5,includeDetails=false
 }={}){
   if(contract?.source!=='pncp')throw Error('Somente contratos PNCP');
   if(!Number.isSafeInteger(maxPages)||maxPages<1||maxPages>30)
     throw Error('Limite de páginas incorreto');
-  const rows=[];let expected=null;const seen=new Set();
+  const rows=[];let expected=null,expectedRecords=null;const seen=new Set();
+  const done=()=>({refs:extractCommitmentRefs(rows),count:rows.length,
+    ...(includeDetails?extractCommitmentMetadata(rows,contract):{})});
   for(let page=1;page<=maxPages;page++){
     const response=await fetcher(linkedCommitmentsUrl(contract.pncpId,page));
     if(!response||typeof response!=='object'||Array.isArray(response)||
@@ -50,14 +53,26 @@ export async function fetchLinkedCommitments(contract,{
     }
     if(expected===null)expected=total;
     if(total!==expected)throw Error('Contagem PNCP alterada durante consulta');
-    if(total===0)return {refs:[],count:0};
+    if(response.totalRegistros!==undefined){
+      const n=Number(response.totalRegistros);
+      if(!Number.isSafeInteger(n)||n<0||n>50000||(expectedRecords!==null&&n!==expectedRecords))
+        throw Error('Total de registros de empenhos PNCP inconsistente');
+      expectedRecords=n;
+    }
+    if(total===0){
+      if(response.data.length||expectedRecords>0)throw Error('Resposta vazia contraditoria');
+      return done();
+    }
     if(!response.data.length)throw Error('Página de empenhos vazia antes do fim');
     const ids=response.data.map(row=>String(row?.sequencialEmpenho??'')+':'+String(row?.numeroEmpenho??''));
     const fp=JSON.stringify(ids);
     if(seen.has(fp))throw Error('Página de empenhos duplicada');
     seen.add(fp);
     rows.push(...response.data);
-    if(page===total)return {refs:extractCommitmentRefs(rows),count:rows.length};
+    if(page===total){
+      if(expectedRecords!==null&&expectedRecords!==rows.length)throw Error('Total PNCP de empenhos divergente');
+      return done();
+    }
   }
   throw Error('Paginação de empenhos incompleta');
 }

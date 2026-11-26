@@ -72,6 +72,8 @@ export function mergePncpRecord(original,incoming,{kind,now=new Date(),checked=f
       .some(key=>!same(before[key],record[key]))){
       delete record.commitmentStatus;
       delete record.commitmentRefs;
+      delete record.commitmentAudit;
+      delete record.commitmentDetails;
       delete record.commitmentAt;
     }
   }

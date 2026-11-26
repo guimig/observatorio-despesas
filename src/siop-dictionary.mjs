@@ -82,11 +82,14 @@ export function validateDictionary(data,year,now=new Date()){
  return data;
 }
 export async function fetchDictionary(year,{fetchFn=fetch,now=new Date()}={}){
- const body=new URLSearchParams({query:dictionaryQuery(year,now)});
- const response=await fetchFn(SIOP_URL,{method:'POST',body,
-  headers:{Accept:'application/sparql-results+json'},redirect:'error',
+ const url=new URL(SIOP_URL);
+ url.search=new URLSearchParams({query:dictionaryQuery(year,now),format:'application/sparql-results+json'}).toString();
+ const response=await fetchFn(url.toString(),{method:'GET',
+  headers:{Accept:'application/sparql-results+json'},redirect:'follow',
   signal:AbortSignal.timeout(30000)});
  if(!response.ok)throw Error('SIOP HTTP '+response.status);
+ if(response.url&&new URL(response.url).hostname!==new URL(SIOP_URL).hostname)
+  throw Error('SIOP redirected outside host');
  const reader=response.body?.getReader();
  if(!reader)throw Error('SIOP sem corpo');
  const chunks=[];let size=0;
@@ -125,7 +128,15 @@ async function main(){
    const fields={};
    for(const r of dictionary.rows)fields[r.kind]=(fields[r.kind]||0)+1;
    console.log('SIOP '+JSON.stringify({year,status,rows:dictionary.rows.length,conflicts:dictionary.conflicts,fields}));
-  }catch{failures++;console.log('SIOP '+JSON.stringify({year,status:'unavailable_or_invalid'}));}
+  }catch(error){failures++;
+   const msg=String(error?.message||'');
+   const status=/^SIOP HTTP \d{3}$/.test(msg)?msg:
+    msg==='SIOP redirected outside host'?'redirected_outside_host':
+    msg==='Dicionario SIOP vazio, invalido ou truncado'?'empty_invalid_or_truncated':
+    msg==='Classificacao SIOP invalida'?'invalid_classification':
+    msg==='SIOP resposta excede limite'?'oversized_body':
+    error instanceof SyntaxError?'invalid_json':'network_or_unavailable';
+   console.log('SIOP '+JSON.stringify({year,status}));}
  }
  if(failures)process.exitCode=1;
 }

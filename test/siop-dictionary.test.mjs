@@ -41,7 +41,7 @@ test('consulta e cache por exercicio evitam requisicoes repetidas; HTTP falha',a
  const root=await mkdtemp(join(tmpdir(),'siop-test-'));
  let calls=0;
  const fetchFn=async(url,options)=>{calls++;assert.match(url,/siop\.planejamento\.gov\.br/);
-  assert.equal(options.method,'POST');return new Response(JSON.stringify(payload));};
+  assert.equal(options.method,'GET');assert.ok(new URL(url).searchParams.get('query'));return new Response(JSON.stringify(payload));};
  try{
   assert.equal((await cacheDictionary(2026,{root,now,fetchFn})).status,'fetched');
   assert.equal((await cacheDictionary(2026,{root,now,fetchFn})).status,'cache_hit');
