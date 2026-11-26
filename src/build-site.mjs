@@ -2,6 +2,7 @@
 import { copyFile, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { validatePublishedData } from './store.mjs';
+import {readPublicDictionaries,SIOP_PUBLIC_PATH} from './siop-public-catalog.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
@@ -22,7 +23,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   await mkdir(join(output, 'assets'), { recursive: true });
   await mkdir(join(output, 'data', 'months'), { recursive: true });
 
-  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/procurement-links.js', 'assets/procurement-financial-evidence.js', 'assets/procurement-evidence-coverage.js', 'assets/procurement-evidence-audit.js', 'assets/procurement-audit-report.js', 'assets/procurement-structured-filters.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/coverage-panel.js', 'assets/trajectory.js', 'assets/dialog-scroll.js', 'assets/siafi-movement-audit.js', 'assets/siafi-movement-reconciliation.js', 'assets/style.css',
+  for (const file of ['index.html', '.nojekyll', 'assets/app.js', 'assets/budget-classification.js', 'assets/procurement-links.js', 'assets/procurement-financial-evidence.js', 'assets/procurement-evidence-coverage.js', 'assets/procurement-evidence-audit.js', 'assets/procurement-audit-report.js', 'assets/procurement-structured-filters.js', 'assets/pncp-modalities.js', 'assets/instrument-types.js', 'assets/document-species.js', 'assets/quality.js', 'assets/coverage-panel.js', 'assets/trajectory.js', 'assets/dialog-scroll.js', 'assets/siafi-movement-audit.js', 'assets/siafi-movement-reconciliation.js', 'assets/style.css',
     'assets/source-sans-3-latin.woff2', 'assets/source-sans-3-OFL.txt', 'data/manifest.json']) {
     await copyFile(join(base, file), join(output, file));
   }
@@ -53,6 +54,11 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   if(participants){
     await mkdir(join(output,'data','procurement'),{recursive:true});
     await copyFile(join(base,'data','procurement','ata-participants.json'),join(output,'data','procurement','ata-participants.json'));
+  }
+  const dictionaries=await readPublicDictionaries(base);
+  if(dictionaries){
+    await mkdir(join(output,'data','siop'),{recursive:true});
+    await copyFile(join(base,SIOP_PUBLIC_PATH),join(output,SIOP_PUBLIC_PATH));
   }
   const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');

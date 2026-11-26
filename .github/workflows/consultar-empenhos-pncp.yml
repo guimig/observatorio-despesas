@@ -19,8 +19,9 @@ on:
     paths:
       - '.github/workflows/consultar-empenhos-pncp.yml'
       - 'src/pncp-commitment-fields.mjs'
+      - 'src/collect-pncp-commitments.mjs'
   schedule:
-    - cron: '47 12 * * *'
+    - cron: '47 12,20 * * *'
 
 permissions:
   contents: read

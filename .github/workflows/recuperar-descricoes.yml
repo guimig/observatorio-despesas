@@ -19,6 +19,7 @@ on:
     paths:
       - '.github/workflows/recuperar-descricoes.yml'
       - 'src/collect-public-narratives.mjs'
+      - 'src/cgu-classification-review.mjs'
   schedule:
     - cron: '41 3,15 * * *'
 
@@ -61,6 +62,7 @@ jobs:
           NARRATIVE_BATCH: ${{ inputs.batch || '15' }}
           NARRATIVE_CGU_DAYS: ${{ inputs.cgu_days || '5' }}
           NARRATIVE_OTHER_PHASE_DAYS: '3'
+          CGU_CLASSIFICATION_DAYS: '8'
         run: npm run collect:narratives
       - name: Conferir integridade e privacidade das fichas
         run: npm run check:data
@@ -76,10 +78,10 @@ jobs:
           fi
           if git diff --cached --quiet; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
-            echo 'Nenhum texto seguro adicional disponivel.'
+            echo 'Nenhum texto ou classificacao adicional disponivel.'
             exit 0
           fi
-          git commit -m 'data: recuperar descricoes e objetos publicos'
+          git commit -m 'data: recuperar descricoes e classificacao publicas'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:

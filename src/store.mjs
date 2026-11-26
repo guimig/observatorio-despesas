@@ -51,12 +51,15 @@ export function validateMonth(data) {
   const ids = new Set();
   for (const doc of data.documents) {
     assertAllowedKeys(doc, ['id', 'date', 'phase', 'cents',
-      'partyRef', 'cpfMasked', 'process', 'nature', 'paymentLinksChecked',
+      'partyRef', 'cpfMasked', 'process', 'nature', 'natureCheckedAt', 'paymentLinksChecked',
       'liquidationLinksChecked', 'description', 'descriptionCheckedAt', 'itemsDetailVersion', 'valueSource']);
     if(doc.itemsDetailVersion!==undefined&&doc.itemsDetailVersion!==2)
       throw Error('Versao de enriquecimento de itens invalida');
     if(doc.itemsDetailVersion===2&&!Object.hasOwn(data.itemsByDocument||{},doc.id))
       throw Error('Versao de itens sem catalogo');
+    if(doc.natureCheckedAt!==undefined &&
+      (typeof doc.natureCheckedAt!=='string'||!DATE_RE.test(doc.natureCheckedAt)))
+      throw Error('Revisao de classificacao invalida');
     if(doc.descriptionCheckedAt!==undefined &&
       (typeof doc.descriptionCheckedAt!=='string'||!DATE_RE.test(doc.descriptionCheckedAt)))
       throw Error('Revisão narrativa documental inválida');
@@ -299,10 +302,12 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
         // PO e localizador dependem da acao; alteracao de contexto invalida os anteriores.
         if(['action','program','function','subfunction'].some(key=>
            doc.nature?.[key]!==undefined&&doc.nature[key]!==prior[key])){
-          delete prior.budgetPlan;delete prior.locator;
+          delete prior.budgetPlan;delete prior.locator;delete prior.subtitle;
         }
         doc.nature={...prior,...doc.nature};
       }
+      if(old?.natureCheckedAt&&!doc.natureCheckedAt&&
+        JSON.stringify(old.nature||{})===JSON.stringify(doc.nature||{}))doc.natureCheckedAt=old.natureCheckedAt;
       if(old?.description&&!doc.description)doc.description=old.description;
       if(old?.descriptionCheckedAt&&!doc.descriptionCheckedAt)
         doc.descriptionCheckedAt=old.descriptionCheckedAt;

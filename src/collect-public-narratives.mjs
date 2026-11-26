@@ -9,6 +9,7 @@ import {contractDetailUrl} from './pncp-contract-link.mjs';
 import {requestPublicJSON} from './procurement.mjs';
 import {createCguBudget} from './cgu-budget.mjs';
 import {collectDayPhase} from './cgu.mjs';
+import {planClassificationReview,applyClassificationPatch} from './cgu-classification-review.mjs';
 import {persistWindow,validateMonth,validatePublishedData} from './store.mjs';
 import {planNarrativeReviews,applyNarrativeReview,planCommitmentNarratives,planOtherDocumentNarratives} from './narrative-review.mjs';
 
@@ -31,7 +32,7 @@ export async function refreshNarratives({
   root=process.cwd(),now=new Date(),token=process.env.CGU_API_KEY||'',
   noticeDetail=fetchNoticeDetail,contractDetail=async id=>
     requestPublicJSON(contractDetailUrl(id)),
-  collect=collectDayPhase,batch=5,commitmentDays=2,otherPhaseDays=1,dryRun=false,scope='all',budget
+  collect=collectDayPhase,batch=5,commitmentDays=2,otherPhaseDays=1,classificationDays=0,dryRun=false,scope='all',budget
 }={}){
   if(!['all','cgu','pncp'].includes(scope))throw Error('Escopo narrativo invalido');
   const notices=scope==='cgu'?null:await readNotices(root),contracts=scope==='cgu'?null:await readProcurement(root);
@@ -40,10 +41,13 @@ export async function refreshNarratives({
   const contractPlan=contracts?planNarrativeReviews(contracts,{kind:'contract',now,batch}):[];
   const commitmentPlan=token&&scope!=='pncp'?planCommitmentNarratives(months,{now,batch:commitmentDays}):[];
   const otherPlan=token&&scope!=='pncp'?planOtherDocumentNarratives(months,{now,batch:otherPhaseDays}):[];
+  const classificationPlan=token&&scope!=='pncp'?planClassificationReview(months,{now,batch:classificationDays,
+    exclude:[...commitmentPlan.map(d=>d+'/1'),...otherPlan.map(x=>x.date+'/'+x.phase)]}):[];
   const report={notices:noticePlan.length,contracts:contractPlan.length,
     commitmentDates:commitmentPlan.length,otherDocumentDates:otherPlan.length,
     reviewedNotices:0,reviewedContracts:0,
     reviewedCommitmentDates:0,reviewedOtherDocumentDates:0,failures:0};
+  if(classificationDays)Object.assign(report,{classificationDates:classificationPlan.length,reviewedClassificationDates:0,classifiedDocuments:0,classificationSkipped:0});
   if(dryRun)return report;
   let nextNotices=notices,nextContracts=contracts;
   for(const item of noticePlan){
@@ -96,6 +100,18 @@ export async function refreshNarratives({
       report.reviewedOtherDocumentDates++;
     }catch{report.failures++;}
   }
+  for(const item of classificationPlan){
+    if(budget?.stopped())break;
+    try{
+      const patch=await collect(brDate(item.date),item.phase,{token,maxPages:30,deferLiquidationValues:true,...(budget?{budget}:{})});
+      const path=join(root,'data','months',item.date.slice(0,7)+'.json');
+      const month=validateMonth(JSON.parse(await readFile(path,'utf8')));
+      const outcome=applyClassificationPatch(month,patch,{now});
+      if(outcome.changed)await atomicJson(path,outcome.data);
+      report.reviewedClassificationDates++;report.classifiedDocuments+=outcome.updated;
+      report.classificationSkipped+=outcome.skipped;
+    }catch{report.failures++;}
+  }
   await validatePublishedData(root);
   if(budget)report.telemetry=budget.snapshot();
   return report;
@@ -105,12 +121,13 @@ async function main(){
   const report=await refreshNarratives({scope,budget:scope==='pncp'?undefined:createCguBudget(),dryRun:process.argv.includes('--dry-run'),
     batch:Number(process.env.NARRATIVE_BATCH||5),
     commitmentDays:Number(process.env.NARRATIVE_CGU_DAYS||2),
-    otherPhaseDays:Number(process.env.NARRATIVE_OTHER_PHASE_DAYS||1)});
+    otherPhaseDays:Number(process.env.NARRATIVE_OTHER_PHASE_DAYS||1),
+    classificationDays:Number(process.env.CGU_CLASSIFICATION_DAYS||0)});
   console.log('Revisao textual oficial: '+JSON.stringify(report)+
     '. Nenhum texto bruto, CPF, documento SIAFI, nome pessoal ou token nos logs.');
   if(!process.argv.includes('--dry-run') && report.failures &&
      !report.reviewedNotices&&!report.reviewedContracts&&
-     !report.reviewedCommitmentDates&&!report.reviewedOtherDocumentDates)
+     !report.reviewedCommitmentDates&&!report.reviewedOtherDocumentDates&&!report.reviewedClassificationDates)
     throw Error('Fontes de narrativa indisponiveis; dados anteriores preservados');
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
