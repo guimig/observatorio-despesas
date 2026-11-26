@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,filterDates,validityStatus,dateRangeMatch,filterStructuredAta,filterStructuredTenderItem,matchesCatalogSearch} from '../assets/procurement-structured-filters.js';
+import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,filterDates,validityStatus,dateRangeMatch,filterStructuredAta,filterStructuredTenderItem,matchesCatalogSearch,compareCatalogDates} from '../assets/procurement-structured-filters.js';
 test('SRP distingue sim, nao e nao informado',()=>{
  assert.equal(filterStructuredNotice({srp:true},{srp:'yes'}),true);
  assert.equal(filterStructuredNotice({},{srp:'no'}),false);
@@ -52,4 +52,11 @@ test('itens distinguem resultado ausente, vazio, data de homologacao e publicaca
  assert.equal(filterStructuredTenderItem({},n,{result:'pending'}),true);
  assert.equal(filterStructuredTenderItem({results:[]},n,{result:'empty'}),true);
  assert.equal(matchesCatalogSearch('educacao 12345678000190',['Educação','12.345.678/0001-90']),true);
+});
+
+test('ordenacao por vencimento e por data selecionada; ausencias ficam ao final',()=>{
+ const list=[{id:'1',signed:'2026-01-01',ends:'2026-12-31'},{id:'2',signed:'2026-02-01',ends:'2026-11-30'},{id:'3'}];
+ assert.deepEqual([...list].sort((a,b)=>compareCatalogDates(a,b,{sort:'expiry'})).map(r=>r.id),['2','1','3']);
+ assert.deepEqual([...list].sort((a,b)=>compareCatalogDates(a,b,{sort:'oldest'})).map(r=>r.id),['1','2','3']);
+ assert.equal(parseReaisFilter('1.234,56'),123456);
 });

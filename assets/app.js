@@ -1,6 +1,6 @@
 import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl} from './integrated-trajectory.js';
 import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters,budgetFacetOptions} from './budget-classification.js';
-import {filterStructuredNotice,filterStructuredContract,filterStructuredAta,filterStructuredTenderItem,validRange,validityStatus,matchesCatalogSearch,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
+import {filterStructuredNotice,filterStructuredContract,filterStructuredAta,filterStructuredTenderItem,validRange,validityStatus,matchesCatalogSearch,compareCatalogDates,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
@@ -55,7 +55,7 @@ const noticesState={query:'',modality:'all',attribution:'likely',srp:'all',minCe
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',minCents:null,maxCents:null,activeOn:'',page:0};
 const contractsPerPage=20;
 const todayBrazil=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-const dateDefaults=kind=>({dateKind:kind,dateFrom:'',dateTo:'',dueFrom:'',dueTo:'',activeOn:'',validity:'all'});
+const dateDefaults=kind=>({dateKind:kind,dateFrom:'',dateTo:'',dueFrom:'',dueTo:'',activeOn:'',validity:'all',sort:'recent'});
 const ataState={query:'',scope:'all',items:'all',files:'all',adhesion:'all',page:0,...dateDefaults('signed')};
 const adhesionState={query:'',kind:'all',page:0,...dateDefaults('signed')};
 Object.assign(noticesState,dateDefaults('published'));
@@ -65,6 +65,11 @@ function dateStatus(prefix,s){
  const errors=[];
  if(!validRange(s.dateFrom,s.dateTo))errors.push('Período inválido: a data inicial deve preceder a final.');
  if(!validRange(s.dueFrom,s.dueTo))errors.push('Intervalo de vencimento inválido.');
+ if(['contract','notices'].includes(prefix)){
+  const lo=$(prefix+'-min-value'),hi=$(prefix+'-max-value');
+  if(lo?.value.trim()&&parseReaisFilter(lo.value)===null||hi?.value.trim()&&parseReaisFilter(hi.value)===null)errors.push('Informe valores em reais válidos.');
+  if(s.minCents!==null&&s.maxCents!==null&&s.minCents>s.maxCents)errors.push('Valor mínimo não pode superar o máximo.');
+ }
  const hint=$(prefix+'-date-hint');
  if(hint){hint.textContent=errors.join(' ')||(s.dateKind==='publishedMonth'?'A fonte informa somente o mês de publicação: o filtro considera os meses que intersectam o intervalo.':s.dateKind==='resultDate'?'O item aparece se algum resultado tiver data no intervalo.':'Limites inclusivos. Campos ausentes não correspondem a filtros de data ativos.');hint.classList.toggle('filter-error',errors.length>0);}
  for(const [x,y] of [['date-from','date-to'],['due-from','due-to']]){
@@ -73,13 +78,13 @@ function dateStatus(prefix,s){
  return !errors.length;
 }
 function bindDateFilters(prefix,s,render){
- const fields=[['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity']];
+ const fields=[['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity'],['sort','sort']];
  for(const [id,key] of fields){const el=$(prefix+'-'+id);if(!el)continue;el.addEventListener('change',()=>{s[key]=el.value;s.page=0;render();});}
  dateStatus(prefix,s);
 }
 function resetDates(prefix,s,kind){
  Object.assign(s,dateDefaults(kind));
- for(const [id,key] of [['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity']]){const el=$(prefix+'-'+id);if(el)el.value=s[key];}
+ for(const [id,key] of [['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity'],['sort','sort']]){const el=$(prefix+'-'+id);if(el)el.value=s[key];}
  dateStatus(prefix,s);
 }
 function countFilterStatus(prefix,s,results,total,extra=[]){
@@ -437,7 +442,7 @@ function renderBudgetPanel(base){
   const btn=element('button','filter-chip',BUDGET_DIMENSIONS[key]+' · '+keys.length);
   btn.type='button';btn.setAttribute('aria-pressed',String(key===dimension));btn.addEventListener('click',()=>{state.budgetDimension=key;state.budgetOptionSearch='';$('budget-dimension').value=key;$('budget-option-search').value='';renderTable();});dimensions.append(btn);
  }
- const hostOptions=$('budget-options'),focusKey=document.activeElement?.dataset?.budgetKey;
+ const hostOptions=$('budget-options'),focusKey=document.activeElement?.dataset?.budgetKey,previousScroll=hostOptions.scrollTop;
  hostOptions.replaceChildren();
  const q=searchText(state.budgetOptionSearch);
  const visible=facet.filter(g=>!q||searchText(g.label+' '+(referenceFor(siopCatalog,g,dimension)||'')).includes(q)).sort((x,y)=>Number(selected.includes(y.key))-Number(selected.includes(x.key))||y.compatible-x.compatible||x.label.localeCompare(y.label,'pt-BR'));
@@ -450,6 +455,7 @@ function renderBudgetPanel(base){
   if(focusKey===g.key)check.focus({preventScroll:true});
  }
  if(!visible.length)hostOptions.append(element('p','helper','Nenhuma classificação para a busca neste período.'));
+ hostOptions.scrollTop=previousScroll;
  $('budget-clear').disabled=!selectionCount;
  $('budget-all-history').disabled=state.loadingHistory||state.loadingMonth||state.historyYear==='all';
  const single=['1','2','3'].includes(state.phase);
@@ -654,11 +660,19 @@ async function loadHistoricalNeEvidence(){
   if(procurementData)renderContracts();
  }finally{historicalNeLoading=false;button.disabled=false;}
 }
-function loadedCguDocuments() {
-  return [...cache.values()].flatMap(month=>month.documents);
+let evidenceMemo=null;
+function evidenceContext(){
+ const months=[...cache.values()];
+ if(!evidenceMemo||evidenceMemo.procurement!==procurementData||months.length!==evidenceMemo.months.length||months.some((m,i)=>m!==evidenceMemo.months[i])){
+  evidenceMemo={months,procurement:procurementData,docs:months.flatMap(m=>m.documents),contracts:new WeakMap(),notices:new WeakMap()};
+ }
+ return evidenceMemo;
 }
-function campusEvidence(contract) {
-  return assessContractAttribution(contract,loadedCguDocuments());
+function loadedCguDocuments(){return evidenceContext().docs;}
+function campusEvidence(contract){
+ const ctx=evidenceContext();
+ if(!ctx.contracts.has(contract))ctx.contracts.set(contract,assessContractAttribution(contract,ctx.docs));
+ return ctx.contracts.get(contract);
 }
 function campusEvidenceLabel(evidence) {
   switch(evidence.level) {
@@ -1527,6 +1541,7 @@ async function searchHistory(year) {
     refreshFilters();
     if(noticesData)renderNotices();
     if(procurementData)renderContracts();
+    if(atasData)renderAtas();
   }
 }
 function csvCell(value) {
@@ -1714,7 +1729,7 @@ function filteredContracts(){
       contract.amountCents,contract.commitmentStatus,contract.procurementLinkStatus,
       ...(contract.commitmentRefs||[])];
     return matchesCatalogSearch(contractsState.query,fields);
-  }).sort((a,b)=>(b.signed||b.starts||b.publishedMonth||'').localeCompare(a.signed||a.starts||a.publishedMonth||'')||String(b.id).localeCompare(String(a.id)));
+  }).sort((a,b)=>compareCatalogDates(a,b,{sort:contractsState.sort,field:contractsState.dateKind}));
 }
 function renderContracts(){
   if(!procurementData)return;
@@ -1813,7 +1828,7 @@ function renderIfcAdhesions(){
  const root=$('ifc-adhesions-content');if(!procurementData)return;
  const all=(procurementData.contracts||[]).filter(isAraquariAdhesion);
  const rows=dateStatus('adhesion',adhesionState)?all.filter(c=>filterStructuredContract(c,{...adhesionState,today:todayBrazil()})&&
-  (adhesionState.kind==='all'||(adhesionState.kind==='formal')===isFormalContract(c))&&matchesCatalogSearch(adhesionState.query,[c.number,c.pncpId,c.ataControl,c.process,c.object,c.supplierName,c.supplierCnpj,c.supplierCpfMasked])).sort((a,b)=>(b.signed||'').localeCompare(a.signed||'')): [];
+  (adhesionState.kind==='all'||(adhesionState.kind==='formal')===isFormalContract(c))&&matchesCatalogSearch(adhesionState.query,[c.number,c.pncpId,c.ataControl,c.process,c.object,c.supplierName,c.supplierCnpj,c.supplierCpfMasked])).sort((a,b)=>compareCatalogDates(a,b,{sort:adhesionState.sort,field:adhesionState.dateKind})): [];
  root.replaceChildren();
  countFilterStatus('adhesion',adhesionState,rows.length,all.length,[adhesionState.kind!=='all'?'Espécie':'']);
  const pages=compactPagination($('adhesion-pages'),adhesionState,rows.length,20,renderIfcAdhesions);
@@ -1839,7 +1854,7 @@ function renderAtas(){
   if(!filterStructuredAta(ata,detail,{...ataState,today:todayBrazil()}))return false;
   if(ataState.scope!=='all'){const ev=n?noticeEvidence(n):{level:'unverified'};if(ataState.scope==='confirmed'?ev.level!=='confirmed':ev.level==='unverified')return false;}
   return matchesCatalogSearch(ataState.query,[ata.number,ata.id,ataControlFor(ata),n?.number,n?.process,n?.object,...(detail?.compras?.items||[]).map(i=>i.supplierCnpj||i.supplierCpfMasked)]);
- }).sort((a,b)=>(b.signed||b.published||'').localeCompare(a.signed||a.published||'')||b.id.localeCompare(a.id)): [];
+ }).sort((a,b)=>compareCatalogDates(a,b,{sort:ataState.sort,field:ataState.dateKind})): [];
  const pages=compactPagination($('ata-pages'),ataState,rows.length,20,renderAtas);
  $('ata-count').textContent=fmtCount(rows.length)+' de '+fmtCount(atasData.atas.length)+' atas IFC';
  $('ata-page-info').textContent='Página '+(ataState.page+1)+' de '+pages;
@@ -1890,14 +1905,14 @@ async function initProcurement(){
   bindDateFilters('contract',contractsState,renderContracts);
   $('clear-contract-filters').addEventListener('click',()=>{
     contractsState.query='';contractsState.source='all';contractsState.scope='all';
-    contractsState.attribution='likely';contractsState.minCents=null;
+    contractsState.attribution='all';contractsState.minCents=null;
     contractsState.maxCents=null;contractsState.activeOn='';
     contractsState.page=0;
     resetDates('contract',contractsState,'signed');
     for(const id of ['contract-min-value','contract-max-value']){$(id).value='';$(id).setCustomValidity('');}
     $('contract-search').value='';
     $('contract-source').value='all';$('contract-scope').value='all';
-    $('contract-attribution').value='likely';
+    $('contract-attribution').value='all';
     renderContracts();
   });
   $('contract-prev').addEventListener('click',()=>{
@@ -1937,8 +1952,10 @@ function publicNoticeUrl(notice) {
   const id=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(notice?.pncpId||'');
   return id?'https://pncp.gov.br/app/editais/'+id[1]+'/'+id[3]+'/'+Number(id[2]):null;
 }
-function noticeEvidence(notice) {
-  return assessNoticeAttribution(notice,procurementData?.contracts||[],loadedCguDocuments());
+function noticeEvidence(notice){
+ const ctx=evidenceContext();
+ if(!ctx.notices.has(notice))ctx.notices.set(notice,assessNoticeAttribution(notice,procurementData?.contracts||[],ctx.docs));
+ return ctx.notices.get(notice);
 }
 function filteredNotices() {
   if(!dateStatus('notices',noticesState))return [];
@@ -1959,7 +1976,7 @@ function filteredNotices() {
       item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents,
       item.disputeMode,item.legalBasisCode,item.proposalStart,item.proposalEnd];
     return !query || ataMatches.has(item.pncpId) || matchesCatalogSearch(query,values);
-  }).sort((a,b)=>(b.published||b.month||'').localeCompare(a.published||a.month||'')||b.pncpId.localeCompare(a.pncpId));
+  }).sort((a,b)=>compareCatalogDates(a,b,{sort:noticesState.sort,field:noticesState.dateKind}));
 }
 let latestProcurementAudit=null;
 function selectedAuditFindings(){
@@ -2023,10 +2040,13 @@ function renderProcurementEvidenceCoverage(){
    ' · cobertura parcial, resultados sujeitos a ampliação')+
   '. Contagens referentes às publicações PNCP do catálogo, não ao total de contratações do IFC.';
 }
+let procurementAuditSignature=null;
 function renderNotices() {
   if(!noticesData)return;
-  renderProcurementEvidenceCoverage();
-  renderProcurementEvidenceAudit();
+  const signature=[noticesData,evidenceContext(),state.manifest?.months?.length];
+  if(!procurementAuditSignature||signature.some((v,i)=>v!==procurementAuditSignature[i])){
+   renderProcurementEvidenceCoverage();renderProcurementEvidenceAudit();procurementAuditSignature=signature;
+  }
   const all=filteredNotices();
   const pages=Math.max(1,Math.ceil(all.length/20));
   noticesState.page=Math.max(0,Math.min(pages-1,noticesState.page));
@@ -2178,12 +2198,12 @@ async function initNotices() {
   }
   bindDateFilters('notices',noticesState,renderNotices);
   $('notices-reset').addEventListener('click',()=>{
-    noticesState.query='';noticesState.modality='all';noticesState.attribution='likely';
+    noticesState.query='';noticesState.modality='all';noticesState.attribution='all';
     noticesState.srp='all';noticesState.minCents=null;noticesState.maxCents=null;
     noticesState.page=0;
     $('notices-search').value='';selector.value='all';
     $('notices-srp').value='all';$('notices-min-value').value='';$('notices-max-value').value='';
-    $('notices-attribution').value='likely';
+    $('notices-attribution').value='all';
     resetDates('notices',noticesState,'published');
     $('notices-min-value').setCustomValidity('');$('notices-max-value').setCustomValidity('');
     renderNotices();

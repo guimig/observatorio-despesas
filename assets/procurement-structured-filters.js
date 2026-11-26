@@ -51,8 +51,9 @@ export function filterStructuredContract(c,{minCents=null,maxCents=null,...dates
 export function parseReaisFilter(value){
  const raw=String(value??'').trim();
  if(!raw)return null;
- if(!/^\d{1,12}(?:[.,]\d{1,2})?$/.test(raw))return null;
- const n=Number(raw.replace(',','.'));
+ const normalized=/^\d{1,3}(?:\.\d{3}){1,3},\d{1,2}$/.test(raw)?raw.replace(/\./g,''):raw;
+ if(!/^\d{1,12}(?:[.,]\d{1,2})?$/.test(normalized))return null;
+ const n=Number(normalized.replace(',','.'));
  const cents=Math.round(n*100);
  return Number.isSafeInteger(cents)?cents:null;
 }
@@ -89,4 +90,12 @@ export function matchesCatalogSearch(query,fields){
  const q=normalize(query);if(!q)return true;
  const hay=fields.map(normalize).join(' ');
  return q.split(/\s+/).every(term=>hay.includes(term)||(/^\d[\d./-]+$/.test(term)&&fields.some(v=>normalize(v).replace(/[./\s-]/g,'').includes(term.replace(/[./\s-]/g,'')))));
+}
+
+export function compareCatalogDates(a,b,{sort='recent',field='signed',fallback=''}={}){
+ const value=r=>sort==='expiry'?r.ends:r[field]||r[fallback];
+ const x=value(a),y=value(b);
+ if(!x&&!y)return String(a.id||a.pncpId||'').localeCompare(String(b.id||b.pncpId||''));
+ if(!x)return 1;if(!y)return -1;
+ return (sort==='oldest'||sort==='expiry'?x.localeCompare(y):y.localeCompare(x))||String(a.id||a.pncpId||'').localeCompare(String(b.id||b.pncpId||''));
 }
