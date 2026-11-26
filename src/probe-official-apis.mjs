@@ -20,6 +20,12 @@ export const API_CATALOG=Object.freeze([
    '/api/v2/empenho',
    '/api/v1/empenho/ano/{ano}/ug/{unidade}',
    '/api/v1/empenho/ug/{unidade}']},
+ {name:'SIAFI_STA',url:'https://sta.api.gov.br/docs?api-docs.json',
+  routes:['/api/empenho/{dado}','/api/empenho/dadosbasicos/{dado}',
+   '/api/empenho/ano/{ano}/ug/{ug}','/api/empenho/ano/{ano}/ug/{ug}/dia/{data}',
+   '/api/rp/ano/{ano}/ug/{ug}','/api/estrutura/naturezadespesas',
+   '/api/saldocontabil/ano/{ano}/ug/{unidade}/gestao/{gestao}/contacontabil/{conta_contabil}',
+   '/api/ordembancaria/documento/{dado}']},
  {name:'PNCP',url:'https://pncp.gov.br/api/consulta/v3/api-docs',
   routes:[
    '/v1/contratos/atualizacao',

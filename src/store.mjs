@@ -2,7 +2,7 @@
 import { readFile, writeFile, mkdir, rename, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertPublicSafe } from './privacy.mjs';
-import { UG } from './cgu.mjs';
+import { UG, CGU_NATURE_FIELDS } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {officialDecimal,movementClass} from './item-movements.mjs';
@@ -86,7 +86,7 @@ export function validateMonth(data) {
       throw Error('Número de processo inválido');
     }
     if (doc.nature !== undefined) {
-      assertAllowedKeys(doc.nature, ['group', 'element', 'program', 'action']);
+      assertAllowedKeys(doc.nature, Object.keys(CGU_NATURE_FIELDS));
       for (const value of Object.values(doc.nature)) {
         if (typeof value !== 'string' || !value || value.length > 120) {
           throw Error('Classificação de despesa inválida');
@@ -292,6 +292,9 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       }
       delete doc.beneficiary;
       const old=previousById.get(doc.id);
+      // Campos omitidos em nova listagem nao apagam classificacao oficial ja coletada.
+      // Nao herdar de outro documento, fase ou identidade.
+      if(old?.nature)doc.nature={...old.nature,...doc.nature};
       if(old?.description&&!doc.description)doc.description=old.description;
       if(old?.descriptionCheckedAt&&!doc.descriptionCheckedAt)
         doc.descriptionCheckedAt=old.descriptionCheckedAt;

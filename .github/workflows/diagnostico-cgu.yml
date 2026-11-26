@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/diagnostico-cgu.yml'
+      - 'src/inspect-cgu.mjs'
 
 permissions:
   contents: read

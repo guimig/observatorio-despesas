@@ -1,0 +1,39 @@
+name: Validar dicionario orcamentario SIOP - UO 26422
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/siop-dictionary.mjs'
+      - '.github/workflows/sondar-siop-dicionario.yml'
+permissions:
+  contents: read
+jobs:
+  dicionario:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verificar implementacao
+        run: node --test test/siop-dictionary.test.mjs
+      - name: Definir chave de cache semanal
+        id: cache-key
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: .cache/siop-dictionary
+          key: siop-26422-v1-${{ steps.cache-key.outputs.week }}
+          restore-keys: siop-26422-v1-
+      - name: Consultar somente classificacoes da UO 26422
+        run: node src/siop-dictionary.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dicionario-siop-26422
+          path: .cache/siop-dictionary/*.json
+          if-no-files-found: error
+          retention-days: 7
