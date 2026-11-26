@@ -430,6 +430,7 @@ html[data-theme=dark] {
     font-weight: 500;
     line-height: 1.35;
   }
+  .document-table th:is(.align-right, :last-child) { width: 1%; }
   .document-table .align-right, .document-table th:last-child { white-space: nowrap; }
 }
 
