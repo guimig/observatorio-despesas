@@ -28,13 +28,14 @@ export function auditProcurementReferences(contracts=[],documents=[],{loadedMont
    const reference=evidence.kind==='full'?evidence.ne:evidence.short;
    const key=instrument+'|'+reference;
    if(seen.has(key))continue;seen.add(key);
-   const matched=[...known.values()].some(doc=>matchDocumentContract(doc,contract)?.level==='confirmed'&&
-     (evidence.kind==='full'?doc.id===reference:doc.id.endsWith(reference)));
+   const matched=[...known.values()].some(doc=>
+     evidence.kind==='full'?doc.id===reference&&matchDocumentContract(doc,contract)?.level==='confirmed':
+     doc.id.endsWith(reference));
    findings.push({instrument,reference,procurementId:contract.procurementId||null,
-    status:matched?'verified':complete?'not_found_in_published_history':'not_checked_fully'});
+    status:matched?(evidence.kind==='full'?'verified':'indication_only'):complete?'not_found_in_published_history':'not_checked_fully'});
   }
  }
- const counts={verified:0,not_found_in_published_history:0,not_checked_fully:0};
+ const counts={verified:0,indication_only:0,not_found_in_published_history:0,not_checked_fully:0};
  for(const row of findings)counts[row.status]++;
  return {complete,loadedMonths,totalMonths,counts,findings};
 }

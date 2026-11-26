@@ -1,4 +1,5 @@
 /** Indice agregado derivado no build, nao uma segunda base de dados. */
+import {buildIntegratedIndex,summarizeIntegratedCoverage} from '../assets/integrated-trajectory.js';
 import {isIfcAdhesion} from '../assets/procurement-structured-filters.js';
 import {scopeMonths,brazilMonth,FIRST_DATE,inScopeNe,closedCatalogCoverage} from './collection-scope.mjs';
 import {currentDateInBrazil} from './backfill.mjs';
@@ -82,5 +83,6 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    arpInstrumentChecks:(participants?.details||[]).filter(d=>Object.hasOwn(d,'instruments')).length,
    arpInstrumentLinks:(participants?.details||[]).reduce((n,d)=>n+(d.instruments?.length||0),0),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
+  integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,totalMonths:manifest?.months?.length??months.length})),
   years:byYear,months:rows};
 }

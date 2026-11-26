@@ -472,3 +472,13 @@ html[data-theme=dark] {
 .siop-reference-rows{max-height:22rem;overflow:auto;display:grid;gap:.15rem}
 .siop-reference-row{display:grid;grid-template-columns:minmax(5rem,auto) minmax(0,1fr);gap:.65rem;border-bottom:1px solid var(--border);padding:.3rem 0;overflow-wrap:anywhere}
 @media(max-width:600px){.budget-bar-button{grid-template-columns:minmax(0,1fr)}.budget-bar-value{text-align:left}.siop-reference-row{grid-template-columns:1fr;gap:.15rem}}
+
+/* Rastreabilidade integrada: manter fichas compactas e navegaveis no celular. */
+.integrated-edge{gap:.35rem;overflow-wrap:anywhere}
+.integrated-origin{display:grid;gap:.15rem;border-left:2px solid var(--border);padding-left:.65rem;margin:.25rem 0}
+.integrated-items{border:1px solid var(--border);border-radius:8px;padding:.5rem .65rem;margin:.35rem 0}
+.integrated-items[open]>summary{margin-bottom:.5rem}
+.integrated-items>.relation-link{display:block;margin:.35rem 0;max-width:100%;text-align:left}
+.integrated-items .relation-item{margin:.35rem 0}
+.integrated-table-note{display:block;margin-top:.2rem}
+#record-trajectory .relation-link,#dialog-contracts .relation-link{max-width:100%;overflow-wrap:anywhere;text-align:left}

@@ -152,15 +152,19 @@
     <section id="trajectory-section" class="panel explorer" data-view="trajectory" hidden aria-labelledby="trajectory-title">
       <div class="panel-heading">
         <div>
-          <h2 id="trajectory-title" tabindex="-1">Trajetória por nota de empenho</h2>
-          <p class="small-muted">Encontre um empenho sem escolher datas e acompanhe as liquidações e os pagamentos vinculados a ele em todas as competências publicadas.</p>
+          <h2 id="trajectory-title" tabindex="-1">Trajetória integrada da despesa</h2>
+          <p class="small-muted">Pesquise empenhos, contratações, atas ou documentos financeiros. Navegue pelos vínculos oficiais e indícios em todas as competências publicadas.</p>
         </div>
         <span class="pill pill-outline" id="trajectory-count">Aguardando análise</span>
       </div>
       <p id="trajectory-status" class="small-muted" role="status"></p>
       <div class="filters">
-        <label class="filter"><span>Pesquisar NE, processo ou natureza</span>
-          <input id="trajectory-search" type="search" placeholder="Número da NE, processo ou natureza" autocomplete="off"></label>
+        <label class="filter"><span>Pesquisar NE, licitação, ata, contrato ou processo</span>
+          <input id="trajectory-search" type="search" placeholder="NE, controle PNCP, ata, pagamento…" autocomplete="off"></label>
+        <label class="filter"><span>Evidência administrativa</span><select id="trajectory-evidence">
+          <option value="all">Todas</option><option value="confirmed">NE integral conferida</option>
+          <option value="indication">Somente indícios</option><option value="none">Sem vínculo identificado</option>
+        </select></label>
         <button id="trajectory-load" class="button button-primary" type="button">Consultar histórico</button>
       </div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
@@ -168,6 +172,11 @@
           <thead><tr><th>Nota de empenho</th><th>Emissão</th><th>Processo</th><th>Elemento</th><th class="align-right">Liquidações vinculadas</th><th class="align-right">Pagamentos vinculados</th><th>Detalhes</th></tr></thead>
           <tbody id="trajectory-rows"><tr><td colspan="7">Digite o número do empenho ou consulte o histórico.</td></tr></tbody>
         </table>
+      </div>
+      <div class="pagination" aria-label="Páginas das trajetórias">
+        <button type="button" class="button button-ghost" id="trajectory-prev" disabled>Anterior</button>
+        <span class="small-muted" id="trajectory-page-info"></span>
+        <button type="button" class="button button-ghost" id="trajectory-next" disabled>Próxima</button>
       </div>
       <p class="helper">A ficha não presume que pagamento corresponda a uma liquidação específica. Valores de NE, NS e OB/DF não são somados entre fases para produzir um saldo. NEs de exercícios anteriores podem aparecer como origem de pagamentos ou liquidações de exercícios posteriores.</p>
     </section>
@@ -248,7 +257,7 @@
             <option value="all">Todas</option>
             <option value="not_found_in_published_history">Não localizada</option>
             <option value="not_checked_fully">Conferência incompleta</option>
-            <option value="verified">Conferida</option>
+            <option value="indication_only">NE abreviada coincidente (indício)</option><option value="verified">Conferida</option>
           </select></label>
           <label class="filter"><span>Pesquisar referência ou instrumento</span><input id="procurement-audit-search" type="search" placeholder="Número da NE ou instrumento"></label>
           <button id="procurement-audit-export" type="button" class="button button-secondary">Exportar CSV filtrado</button>
@@ -391,9 +400,9 @@
       <div id="dialog-relations" class="relations"></div>
       <p class="helper">Relações confirmadas pelos empenhos impactados da CGU. A ausência de vínculo não comprova inexistência de relação. Vínculos em outras competências podem exigir carregamento adicional.</p>
       <section aria-label="Contratações associadas">
-        <h3>Contratos formais relacionados</h3>
+        <h3>Contratação de origem · licitações, atas e instrumentos</h3>
         <div id="dialog-contracts" class="relations"></div>
-        <p class="helper">Somente contratos formais, sem notas de empenho substitutivas. A publicação pela Reitoria não define o campus. O vínculo financeiro confirmado requer identificação oficial da NE da UG 158459; o processo SIPAC 23349 é apenas indício.</p>
+        <p class="helper">Contratos formais e empenhos substitutivos são espécies distintas. A confirmação financeira exige NE integral confrontada com a CGU; números abreviados, unidade administrativa PNCP e processo são indícios. Ata de origem somente por identificador específico ou consulta oficial direta.</p>
       </section>
 
       <section id="dialog-trajectory-section" aria-label="Trajetória da nota de empenho">
@@ -418,6 +427,10 @@
         <button type="button" class="icon-button" id="close-record-dialog" aria-label="Fechar detalhes">✕</button>
       </div>
       <dl id="record-fields" class="document-fields"></dl>
+      <section aria-label="Rastreabilidade da contratação">
+        <h3>Trajetória administrativa e financeira</h3>
+        <div id="record-trajectory" class="relations"></div>
+      </section>
       <p class="helper">Informações públicas do PNCP/Compras.gov.br. Publicação pela Reitoria não comprova execução financeira pelo Campus Araquari.</p>
       <a id="record-official-link" class="inline-link" target="_blank" rel="noopener noreferrer" hidden>Consultar registro oficial</a>
     </div>

@@ -123,7 +123,7 @@ test('Vínculo NE exige unidade oficial e correspondência CGU, não CNPJ public
  assert.equal(matchDocumentContract(doc,institutional).level,'context');
  const campus=normalizePncp(fixture(idReitoria,'158459'));
  assert.equal(campus.scope,'ifc');
- assert.equal(matchDocumentContract(doc,campus).level,'confirmed');
+ assert.equal(matchDocumentContract(doc,campus).level,'ne_indication');
  assert.equal(matchDocumentContract({...doc,partyRef:'00000000000000'},institutional).level,'process');
  assert.equal(matchDocumentContract({...doc,process:'23349.000002/2026-01'},institutional),null);
 });

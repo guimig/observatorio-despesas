@@ -1,3 +1,4 @@
+import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor} from './integrated-trajectory.js';
 import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
@@ -55,7 +56,8 @@ const contractsState={query:'',source:'all',scope:'all',attribution:'likely',min
 const contractsPerPage=20;
 const cache = new Map();
 let commitmentTrajectories=[];
-let trajectoryReady=false;
+let trajectoryReady=false,trajectoryPage=0;
+let integratedMemo=null,integratedHistoryLoading=null;
 const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetGroup:'all',budgetMetric:'count',
   historyYear: null, loadingHistory: false, loadingMonth: false };
 const pendingMonths = new Map();
@@ -117,12 +119,14 @@ function appendDetailField(host,label,value,{long=false}={}){
   host.append(group);
 }
 function showCatalogDetail(record,kind){
-  const isNotice=kind==='notice';
+  const isNotice=kind==='notice',isAta=kind==='ata';
   const dialog=$('record-dialog'),fields=$('record-fields');
+  if($('document-dialog').open)$('document-dialog').close();
   $('record-title').textContent=isNotice?
     (MODALITIES[record.modality]||'Licitação')+' · '+(record.number||record.pncpId):
-    'Contrato formal · '+(record.number||record.id);
-  $('record-eyebrow').textContent=isNotice?'PUBLICAÇÃO PNCP':'INSTRUMENTO CONTRATUAL';
+    isAta?'Ata de registro de preços · '+(record.number||record.sequence):
+    (isFormalContract(record)?'Contrato formal':record.kind||'Instrumento substitutivo')+' · '+(record.number||record.id);
+  $('record-eyebrow').textContent=isNotice?'PUBLICAÇÃO PNCP':isAta?'ATA DE REGISTRO DE PREÇOS':'INSTRUMENTO CONTRATUAL';
   fields.replaceChildren();
   const data=isNotice?[
     ['Identificador PNCP',record.pncpId],
@@ -135,6 +139,14 @@ function showCatalogDetail(record,kind){
     ['Estimativa da contratação',fmtMoney(record.estimatedCents)],
     ['Valor homologado',fmtMoney(record.homologatedCents)],
     ['Evidência de Araquari',campusEvidenceLabel(noticeEvidence(record))]
+  ]:isAta?[
+    ['Controle PNCP da ata',ataControlFor(record)||record.id],
+    ['Contratação de origem',record.procurementId],
+    ['Número da ata',record.number||record.sequence],
+    ['Assinatura',record.signed?localDate(record.signed):'Não informada'],
+    ['Início da vigência',record.starts?localDate(record.starts):'Não informado'],
+    ['Fim da vigência',record.ends?localDate(record.ends):'Não informado'],
+    ['Cancelada',record.cancelled===true?'Sim':record.cancelled===false?'Não':'Não informado']
   ]:[
     ['Identificador',record.pncpId||record.id],
     ['Número do instrumento',record.number],
@@ -148,7 +160,7 @@ function showCatalogDetail(record,kind){
     ['Valor contratual',fmtMoney(record.amountCents)],
     ['Evidência de Araquari',campusEvidenceLabel(campusEvidence(record))]
   ];
-  if(!isNotice&&record.source==='pncp'){
+  if(!isNotice&&!isAta&&record.source==='pncp'){
     data.push(['Adesão realizada pelo IFC',isIfcAdhesion(record)?'Sim — IFC aderente':record.adhesion===false?'Não':'Não informado']);
     if(record.ataControl)data.push(['Controle PNCP da ata de origem',record.ataControl]);
     if(record.remanejamento!==undefined)data.push(['Remanejamento informado pelo PNCP',record.remanejamento?'Sim':'Não']);
@@ -161,11 +173,13 @@ function showCatalogDetail(record,kind){
   if(record.revisionCount)data.push(['Revisões materiais observadas',
     String(record.revisionCount)]);
   for(const [label,value] of data)appendDetailField(fields,label,value);
-  appendDetailField(fields,isNotice?'Objeto da licitação':'Objeto do contrato',
+  if(!isAta)appendDetailField(fields,isNotice?'Objeto da licitação':'Objeto do instrumento',
     record.object||'Descrição não disponível na fonte consultada',{long:true});
-  const url=isNotice?publicNoticeUrl(record):publicPncpUrl(record);
+  renderCatalogTrajectory(record,kind);
+  const url=isNotice?publicNoticeUrl(record):isAta?publicNoticeUrl({pncpId:record.procurementId}):publicPncpUrl(record);
   const link=$('record-official-link');
   link.hidden=!url;
+  link.textContent=isAta?'Consultar publicação de origem no PNCP':'Consultar registro oficial';
   if(url)link.href=url;
   else link.removeAttribute('href');
   showDialogFromTop(dialog);
@@ -555,52 +569,199 @@ function campusEvidenceLabel(evidence) {
 function contractBadge(contract){
   return contractSourceName(contract.source)+' · '+contractScopeName(contract.scope);
 }
-function showContractAssociations(doc){
-  const slot=$('dialog-contracts');
-  slot.replaceChildren();
-  if(!procurementData){
-    slot.append(element('p','small-muted','Catálogo de contratos ainda não disponível.'));
-    return;
-  }
-  const matches=procurementData.contracts.filter(isFormalContract).map(contract=>
-    ({contract,evidence:matchDocumentContract(doc,contract)}))
-    .filter(item=>item.evidence)
-    .sort((a,b)=>(a.evidence.level==='confirmed'?0:1)-
-      (b.evidence.level==='confirmed'?0:1));
-  if(!matches.length){
-    slot.append(element('p','small-muted',
-      'Nenhuma correspondência comprovada ou contextual encontrada no catálogo consultado.'));
-    return;
-  }
-  for(const {contract,evidence} of matches.slice(0,8)){
-    const block=element('div','relation-item');
-    block.append(element('strong','',
-      (evidence.level==='confirmed'?'NE da UG 158459 confirmada':
-       evidence.level==='context'?'Correspondência processo + CNPJ':
-       'Correspondência processual não confirmada')+
-      ' · '+(contract.number||contract.id)));
-    block.append(element('span','small-muted',contractBadge(contract)));
-    block.append(element('span','small-muted',evidence.reason));
-    if(contract.object)block.append(element('span','small-muted',contract.object));
-    if(contract.procurementId){
-      const official=publicNoticeUrl({pncpId:contract.procurementId});
-      if(official){
-        const anchor=element('a','inline-link','Licitação de origem no PNCP');
-        anchor.href=official;anchor.target='_blank';anchor.rel='noopener noreferrer';
-        block.append(anchor);
-      }
-    }
-    const url=publicPncpUrl(contract);
-    if(url){
-      const link=element('a','inline-link','Ver registro oficial no PNCP');
-      link.href=url;link.target='_blank';link.rel='noopener noreferrer';
-      block.append(link);
-    }
-    slot.append(block);
-  }
-  if(matches.length>8)slot.append(element('p','small-muted',
-    'Outras '+(matches.length-8)+' correspondência(s) disponíveis no explorador.'));
+function integratedIndex(){
+ const signature=[cache.size,state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data];
+ if(integratedMemo&&signature.every((v,i)=>v===integratedMemo.signature[i]))return integratedMemo.index;
+ const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
+  notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
+  tender:tenderItemsState.data,totalMonths:state.manifest?.months?.length||0});
+ integratedMemo={signature,index};return index;
 }
+const evidenceLabels={confirmed:'NE integral conferida',declared_ne:'NE integral declarada; CGU não localizada',
+ contextual_candidate:'Candidato contextual · não confirmado',ne_indication:'NE abreviada / unidade · indício',
+ context:'Processo e CNPJ · indício',process:'Mesmo processo · indício'};
+const instrumentTitle=c=>(isFormalContract(c)?'Contrato formal':c.kind||'Instrumento')+' · '+(c.number||c.pncpId||c.id);
+function relationButton(label,action){
+ const b=element('button','relation-link',label);b.type='button';b.addEventListener('click',action);return b;
+}
+function externalNoticeLink(id,label){
+ const url=publicNoticeUrl({pncpId:id});
+ if(!url)return element('span','small-muted',label);
+ const a=element('a','inline-link',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;
+}
+function renderOriginButtons(host,index,instrumentId){
+ for(const p of index.noticeEdges.get(instrumentId)||[]){
+  const name='Licitação / contratação '+(p.notice?.number||p.purchaseId);
+  const route=p.sources.includes('controle_compra_instrumento')?'Contratação informada no instrumento':'Contratação de origem da ata (pode ser distinta da adesão)';
+  const row=element('div','integrated-origin');
+  row.append(element('span','small-muted',route));
+  row.append(p.notice?relationButton(name,()=>showCatalogDetail(p.notice,'notice')):externalNoticeLink(p.purchaseId,name+' · fora do catálogo local'));
+  host.append(row);
+ }
+ const aa=index.ataEdges.get(instrumentId)||[];
+ if(aa.length>1)host.append(element('p','helper','Mais de uma ata específica declarada; não alocar valores por ata.'));
+ for(const a of aa){
+  const row=element('div','integrated-origin');
+  row.append(element('span','small-muted','Ata específica · '+a.sources.map(s=>s==='controle_ata_instrumento'?'controle informado no instrumento':'consulta direta da ata').join(' + ')));
+  if(a.ata)row.append(relationButton('Ata '+(a.ata.number||a.ata.sequence),()=>showCatalogDetail(a.ata,'ata')));
+  else row.append(element('span','small-muted',a.ataId+' · não localizada no catálogo'));
+  host.append(row);
+ }
+}
+function historyControl(host,index,refresh){
+ host.append(element('p','helper','Competências CGU carregadas: '+fmtCount(index.loadedMonths)+' de '+fmtCount(index.totalMonths)+
+  '. Acervo publicado parcial em relação à execução real; ausência de relação não comprova ausência de despesa.'));
+ if(!index.complete&&index.totalMonths){
+  const button=relationButton('Conferir todas as competências publicadas',async()=>{
+   button.disabled=true;button.textContent='Consultando histórico publicado…';
+   try{
+    if(!integratedHistoryLoading)integratedHistoryLoading=(async()=>{
+     for(const month of state.manifest.months)try{await fetchMonth(month)}catch{/* preserva lacuna */}
+    })().finally(()=>{integratedHistoryLoading=null;});
+    await integratedHistoryLoading;
+    if(button.isConnected)refresh();
+    if(trajectoryReady)renderCommitmentTrajectories();
+   }finally{button.disabled=false;}
+  });
+  host.append(button);
+ }
+}
+async function openIntegratedNe(id,button){
+ let entry=integratedIndex().byNe.get(id);
+ if(!entry?.document){
+  button.disabled=true;const label=button.textContent;button.textContent='Localizando NE…';
+  try{await locateLinkedDocument(id);entry=integratedIndex().byNe.get(id);}
+  catch{/* origem pode continuar ausente */}
+  finally{button.disabled=false;button.textContent=label;}
+ }
+ if(!button.isConnected)return;
+ if(entry){
+  if($('record-dialog').open)$('record-dialog').close();
+  showCommitmentTrajectory(entry);
+ }else button.textContent='NE ainda não localizada no acervo';
+}
+function neButton(id){
+ const b=element('button','relation-link doc-code',id);b.type='button';
+ b.addEventListener('click',()=>openIntegratedNe(id,b));return b;
+}
+function renderNeAdministrative(host,index,id){
+ const edges=[...(index.neEdges.get(id)||[])].sort((a,b)=>Number(b.level==='confirmed')-Number(a.level==='confirmed'));
+ if(!edges.length){host.append(element('p','small-muted','Nenhum vínculo administrativo encontrado para '+id+' nos catálogos consultados.'));return;}
+ for(const e of edges.slice(0,30)){
+  const c=index.instruments.get(e.instrumentId);if(!c)continue;
+  const block=element('div','relation-item integrated-edge');
+  block.append(element('strong','',evidenceLabels[e.level]||e.level),
+   relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')),
+   element('span','small-muted',e.reason));
+  renderOriginButtons(block,index,e.instrumentId);
+  host.append(block);
+ }
+ if(edges.length>30)host.append(element('p','helper','Exibidas 30 de '+fmtCount(edges.length)+' correspondências. Refine pela contratação ou consulte a ficha do instrumento.'));
+}
+function renderItemCrossReferences(host,index,entry,refresh){
+ if(!entry?.items?.some(i=>i.purchaseItem))return;
+ const references=itemReferenceCandidates(index,entry);
+ const box=element('details','integrated-items');
+ box.append(element('summary','relation-link','Conferência de itens da contratação e da ata'));
+ box.append(element('p','helper','Correspondência candidata pelo número do item extraído da descrição CGU e pelo identificador da contratação. Não comprova equivalência de unidades de medida, consumo, saldo ou vínculo por subitem de liquidação/pagamento.'));
+ if(!tenderItemsState.data)box.append(relationButton('Carregar catálogo de itens licitados',async()=>{
+  await loadTenderItems();if(box.isConnected)refresh();
+ }));
+ for(const r of references.slice(0,50)){
+  const row=element('div','relation-item');
+  row.append(element('strong','','Item NE '+r.seq+' · item da compra '+r.number));
+  if(r.tender)row.append(element('span','small-muted','PNCP: '+r.tender.description+' · quantidade licitada informada: '+r.tender.quantity));
+  if(r.ataItem){
+   row.append(element('span','small-muted','Ata '+(r.ata.number||r.ata.sequence)+' · mesmo item e CNPJ; quantidade homologada do fornecedor: '+(r.ataItem.homologatedSupplier??'não informada')));
+   if(r.ataItem.committedQuantity!==undefined)row.append(element('span','small-muted','Quantidade empenhada declarada no Compras.gov para o item: '+r.ataItem.committedQuantity+' (não saldo da UG)'));
+   for(const unit of r.unitRecords)row.append(element('span','small-muted','Registro UASG '+unit.unitCode+': '+unit.registered+' (não necessariamente reserva do campus)'));
+  }
+  box.append(row);
+ }
+ if(references.length>50)box.append(element('p','helper','Exibidas 50 de '+fmtCount(references.length)+' correspondências candidatas.'));
+ if(!references.length)box.append(element('p','small-muted','Nenhuma correspondência inequívoca de catálogo para comparar os itens; não inferir a partir de outra compra/ata.'));
+ host.append(box);
+}
+function showContractAssociations(doc,{entry=null}={}){
+ const slot=$('dialog-contracts');slot.replaceChildren();
+ const index=integratedIndex(),refresh=()=>showContractAssociations(doc,{entry:entry?integratedIndex().byNe.get(entry.id)||entry:null});
+ if(!procurementData)slot.append(element('p','small-muted','Catálogo de instrumentos ainda indisponível.'));
+ if(entry||doc?.phase===1){
+  const id=entry?.id||doc.id;
+  renderNeAdministrative(slot,index,id);
+  renderItemCrossReferences(slot,index,index.byNe.get(id)||entry,refresh);
+ }else if(doc){
+  const origins=index.originsByDoc.get(doc.id)||[];
+  if(!origins.length)slot.append(element('p','small-muted','Sem NE impactada localizada. Não atribuir a contratação diretamente por processo/fornecedor do pagamento ou liquidação.'));
+  for(const {entry:origin,link} of origins){
+   const block=element('div','relation-item');
+   block.append(element('span','small-muted','NE impactada pela CGU · '+fmtMoney(link.cents)),neButton(origin.id));
+   renderNeAdministrative(block,index,origin.id);slot.append(block);
+  }
+ }
+ historyControl(slot,index,refresh);
+}
+function financialMetric(host,label,group,extra=''){
+ host.append(element('p','small-muted',label+': '+(group.known?fmtMoney(group.cents):'Indisponível')+
+  ' · '+fmtCount(group.known)+' vínculo(s)/documento(s) com valor'+(group.unknown?' · '+group.unknown+' sem valor seguro':'')+extra));
+}
+function renderCatalogTrajectory(record,kind){
+ const host=$('record-trajectory');host.replaceChildren();
+ const index=integratedIndex(),refresh=()=>renderCatalogTrajectory(record,kind);
+ const id=kind==='notice'?record.pncpId:kind==='ata'?record.id:record.id||record.pncpId;
+ const scope=kind==='notice'||kind==='ata'?kind:'instrument';
+ if(scope==='instrument')renderOriginButtons(host,index,id);
+ if(scope==='ata'){
+  const notice=index.noticeMap.get(record.procurementId);
+  host.append(notice?relationButton('Contratação de origem · '+(notice.number||notice.pncpId),()=>showCatalogDetail(notice,'notice')):
+   externalNoticeLink(record.procurementId,'Contratação de origem · '+record.procurementId));
+ }
+ if(scope==='notice'){
+  const aa=index.byAtaPurchase.get(id)||[];
+  if(aa.length){
+   const details=element('details','integrated-items');
+   details.append(element('summary','relation-link','Atas da contratação · '+fmtCount(aa.length)));
+   for(const a of aa)details.append(relationButton('Ata '+(a.number||a.sequence),()=>showCatalogDetail(a,'ata')));
+   host.append(details);
+  }
+ }
+ const associations=instrumentAssociations(index,scope,id);
+ if(scope!=='instrument'){
+  const details=element('details','integrated-items');
+  details.append(element('summary','relation-link','Instrumentos vinculados por identificador oficial · '+fmtCount(associations.length)));
+  for(const e of associations){
+   const c=index.instruments.get(e.instrumentId);if(!c)continue;
+   const row=element('div','relation-item');row.append(relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
+   if(scope==='notice')row.append(element('span','small-muted',e.sources.map(s=>s==='origem_da_ata'?'Via ata de origem':'Contratação informada no instrumento').join(' + ')));
+   details.append(row);
+  }
+  host.append(details);
+ }
+ const finance=scopeFinancialEvidence(index,scope,id);
+ const summary=element('div','relation-item integrated-edge');
+ summary.append(element('strong','','Execução documental vinculada · UG 158459'),
+  element('span','small-muted',fmtCount(finance.confirmed.length)+' NE(s) integrais conferidas · '+fmtCount(finance.declared.length)+' declaradas sem NE local · '+fmtCount(finance.candidates.length)+' somente indícios'));
+ financialMetric(summary,'Valores documentais das NEs elegíveis',finance.commitment);
+ financialMetric(summary,'Impactos de liquidação disponíveis',finance.liquidation,' · '+fmtCount(finance.liquidation.documents)+' documentos distintos');
+ financialMetric(summary,'Impactos de pagamento disponíveis',finance.payment,' · '+fmtCount(finance.payment.documents)+' documentos distintos');
+ if(finance.excluded.length)summary.append(element('p','helper',fmtCount(finance.excluded.length)+' NE(s) sem alocação de valores por ambiguidades ou divergências.'));
+ summary.append(element('p','helper','Somente NE integral e um único instrumento confirmado; valores de impactos CGU por NE, sem rateio do documento inteiro. Não são saldos, execução líquida, percentual de consumo, nem valores exclusivos entre fichas de licitação e ata.'));
+ host.append(summary);
+ for(const [title,rows] of [['NEs integrais conferidas',finance.confirmed],['Referências integrais ainda não localizadas',finance.declared],['Indícios sem confirmação financeira',finance.candidates]]){
+  if(!rows.length)continue;
+  const details=element('details','integrated-items');
+  details.append(element('summary','relation-link',title+' · '+fmtCount(rows.length)));
+  for(const row of rows){
+   const block=element('div','relation-item');
+   block.append(neButton(row.ne),element('span','small-muted',uniqueReasons(row.edges)));
+   if(finance.excluded.includes(row.ne))block.append(element('span','small-muted','Valores excluídos do agrupamento por ambiguidade/divergência.'));
+   details.append(block);
+  }
+  host.append(details);
+ }
+ historyControl(host,index,refresh);
+}
+function uniqueReasons(edges){return [...new Set(edges.map(e=>(evidenceLabels[e.level]||e.level)+' · '+e.reason))].join(' | ');}
 function explainSiafiReconciliation(items,doc){
  const a=reconcileSiafiCommitment(items,{listingDate:doc?.date,
    documentCents:doc?.cents,commitmentYear:doc?.id?.slice(11,15)});
@@ -730,6 +891,7 @@ function renderSiafiItems(target,items){
  }
 }
 function showDocument(doc, monthData = state.data) {
+  if($('record-dialog').open)$('record-dialog').close();
   $('dialog-trajectory-section').hidden=true;
   $('dialog-relations-title').hidden=false;
   $('dialog-title').textContent = doc.id;
@@ -943,19 +1105,26 @@ async function loadAllTrajectoryMonths(){
 }
 function renderCommitmentTrajectories(){
   const query=$('trajectory-search').value;
-  const all=filterCommitmentTrajectories(commitmentTrajectories,query);
+  const index=integratedIndex(),level=$('trajectory-evidence').value;
+  const all=commitmentTrajectories.filter(entry=>trajectoryMatches(index,entry,query)&&
+    (level==='all'||neEvidenceLevel(index,entry.id)===level));
+  const pages=Math.max(1,Math.ceil(all.length/25));trajectoryPage=Math.max(0,Math.min(pages-1,trajectoryPage));
+  $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
+  $('trajectory-page-info').textContent='Página '+fmtCount(trajectoryPage+1)+' de '+fmtCount(pages);
   const tbody=$('trajectory-rows');tbody.replaceChildren();
   $('trajectory-count').textContent=fmtCount(all.length)+' empenho(s) com registro ou vínculo';
   if(!all.length){
     const row=element('tr'),cell=element('td','','Nenhum empenho corresponde à pesquisa.');
     cell.colSpan=7;row.append(cell);tbody.append(row);return;
   }
-  for(const entry of all){
+  for(const entry of all.slice(trajectoryPage*25,(trajectoryPage+1)*25)){
     const row=element('tr');
     const ne=element('td','doc-code',entry.id);
     const date=element('td','',entry.document?.date?localDate(entry.document.date):'NE não coletada');
     const process=element('td','doc-code',entry.document?.process||'—');
     const object=element('td','beneficiary-cell',entry.document?.nature?.element||'Não informado');
+    const e=neEvidenceLevel(index,entry.id);
+    object.append(element('span','small-muted integrated-table-note',e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
     const pg=element('td','align-right',fmtMoney(entry.paymentCents));
     const action=element('td','');
@@ -983,6 +1152,7 @@ function renderTrajectoryLinks(target,links,emptyText){
   }
 }
 function showCommitmentTrajectory(entry){
+  if($('record-dialog').open)$('record-dialog').close();
   $('dialog-trajectory-section').hidden=false;
   $('document-trajectory').hidden = true;
   $('document-permalink').hidden = true;
@@ -1027,20 +1197,23 @@ function showCommitmentTrajectory(entry){
     'Vínculos de liquidação: '+fmtCount(entry.liquidations.length)+' documento(s), '+fmtMoney(entry.liquidationCents)+
     '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+fmtMoney(entry.paymentCents)+
     '. Pendências de consulta: '+(entry.pendingLiquidations||entry.pendingPayments?'sim':'não identificado nos documentos vinculados carregados')+'.';
-  $('dialog-contracts').replaceChildren(element('p','small-muted',
-    'A associação com contrato formal permanece na seção de contratações e depende de evidência oficial; empenho substitutivo não é classificado como contrato formal.'));
+  showContractAssociations(doc,{entry});
   showDialogFromTop($('document-dialog'));
 }
 async function initTrajectories(){
   $('trajectory-search').addEventListener('input',()=>{
-    if (trajectoryReady) renderCommitmentTrajectories();
+    trajectoryPage=0;if (trajectoryReady) renderCommitmentTrajectories();
   });
+  $('trajectory-evidence').addEventListener('change',()=>{trajectoryPage=0;if(trajectoryReady)renderCommitmentTrajectories();});
+  $('trajectory-prev').addEventListener('click',()=>{trajectoryPage--;renderCommitmentTrajectories();});
+  $('trajectory-next').addEventListener('click',()=>{trajectoryPage++;renderCommitmentTrajectories();});
   $('trajectory-search').addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.isComposing) loadTrajectoryView();
   });
   $('trajectory-load').addEventListener('click',loadTrajectoryView);
   $('document-trajectory').addEventListener('click',()=>{
     $('trajectory-search').value = $('dialog-title').textContent;
+    $('trajectory-evidence').value='all';trajectoryPage=0;
     $('document-dialog').close();
     navigateTo('trajectory-section');
     $('trajectory-search').focus();
@@ -1515,7 +1688,7 @@ function renderProcurementEvidenceAudit(){
  const audit=auditProcurementReferences(procurementData?.contracts||[],loadedCguDocuments(),
   {loadedMonths:cache.size,totalMonths:total});
  $('procurement-audit-status').textContent='Referências conferidas: '+
-  fmtCount(audit.counts.verified)+' · não localizadas no histórico publicado: '+
+  fmtCount(audit.counts.verified)+' · coincidências abreviadas (indícios): '+fmtCount(audit.counts.indication_only||0)+' · não localizadas no histórico publicado: '+
   fmtCount(audit.counts.not_found_in_published_history)+' · conferência incompleta: '+
   fmtCount(audit.counts.not_checked_fully)+' · competências '+fmtCount(audit.loadedMonths)+
   '/'+fmtCount(audit.totalMonths)+'. '+(audit.complete?'Histórico mensal publicado carregado.':
@@ -1530,7 +1703,8 @@ function renderProcurementEvidenceAudit(){
  }
  for(const row of filtered.slice(0,100)){
   const tr=element('tr');
-  const status=row.status==='verified'?'Conferida com CGU':
+  const status=row.status==='verified'?'NE integral conferida com CGU':
+   row.status==='indication_only'?'NE abreviada coincidente; vínculo não confirmado':
    row.status==='not_found_in_published_history'?'Não localizada no histórico publicado':
    'Conferência histórica incompleta';
   tr.append(element('td','',row.instrument),element('td','',row.reference),element('td','',status));
@@ -1608,7 +1782,7 @@ function renderNotices() {
     const financial=procurementFinancialEvidence(notice,procurementData?.contracts||[],loadedCguDocuments());
     if(financial.verifiedCommitments){
       const evidence=element('span','small-muted',fmtCount(financial.verifiedCommitments)+' NE(s) Araquari conferida(s) com CGU');
-      evidence.title='NE da UG 158459 identificada em documento CGU e vinculada ao instrumento PNCP pelo numero integral ou UG + numero da NE. Nao equivale a quantidade adquirida por item.';
+      evidence.title='NE integral da UG 158459 identificada em documento CGU e vinculada ao instrumento pelo identificador completo. Nao equivale a quantidade adquirida por item.';
       related.append(evidence);
     }else if(financial.confirmedInstruments){
       const evidence=element('span','small-muted',fmtCount(financial.confirmedInstruments)+' instrumento(s) com referencia de NE 158459 no PNCP');
@@ -1648,6 +1822,7 @@ function renderNotices() {
           const expanded=element('details'),summary=element('summary','relation-link','Detalhes de '+fmtCount(records.length)+' ata(s)');expanded.append(summary);
           for(const {ata,detail} of records){
             const sub=element('details'),head=element('summary','', 'Ata '+(ata.number||ata.sequence));sub.append(head);
+            sub.append(relationButton('Abrir ficha e trajetória da ata',()=>showCatalogDetail(ata,'ata')));
             if (!detail?.unitItems?.some(item=>item.units.some(unit=>unit.unitCode==='158459'))) {
               sub.append(element('p','helper','Quantidade de Araquari sem registro confirmado nesta base.'));
             }
@@ -1905,5 +2080,5 @@ initEvents();
 init();
 loadSiopReference();
 initTrajectories();
-initProcurement().then(()=>{if(noticesData)renderNotices();if(state.data)renderTable();});
-initNotices();
+initProcurement().then(()=>{if(noticesData)renderNotices();if(state.data)renderTable();if(trajectoryReady)renderCommitmentTrajectories();});
+initNotices().then(()=>{if(trajectoryReady)renderCommitmentTrajectories();});

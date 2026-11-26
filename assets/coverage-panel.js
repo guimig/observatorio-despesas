@@ -26,6 +26,17 @@ function render(root,x){
  root.append(elem('p','helper','Referências a NEs anteriores ao corte: '+fmt(c.originsBeforeCutoff)+'. Não entram na fila de origem. Sobreposições entre fases: '+fmt(c.phaseObservations)+'. Nenhum destes indicadores constitui saldo ou conclusão de irregularidade.'));
  root.append(elem('h3','','Contratações e instrumentos'));
  metricGrid(root,[['Meses encerrados conferidos PNCP',fraction(p.pncpMonths,p.closedMonths)],['Meses encerrados conferidos Compras.gov',fraction(p.comprasMonths,p.closedMonths)],['Modalidades / meses encerrados PNCP',fraction(p.modalitiesComplete,p.modalitiesTotal)],['Contratos e instrumentos com consulta de NE pendente',fmt(p.commitmentLinksPending)],['Instrumentos sem contratação vinculada',fmt(p.purchaseLinksPending)],['Publicações SRP com atas consultadas',fraction(p.srpAtasChecked,p.srp)],['Publicações SRP com itens consultados',fraction(p.srpItemsChecked,p.srp)],['Atas com participação consultada',fraction(p.ataParticipationChecked,p.atas)],['Itens com resultados consultados',fraction(p.itemResultsChecked||0,p.tenderItems||0)],['Resultados PNCP recuperados',fmt(p.itemResults||0)],['Atas com itens Compras.gov identificados',fraction(p.arpItemsMatched||0,p.atas)],['Atas com instrumentos consultados',fraction(p.arpInstrumentChecks||0,p.atas)],['Vínculos ata–instrumento identificados',fmt(p.arpInstrumentLinks||0)],['Instrumentos decorrentes de adesões do IFC',fmt(p.ifcAdhesionInstruments||0)],['Instrumentos PNCP sem informação de adesão',fmt(p.adhesionUnknown||0)],['Itens com registros de unidade identificados',fmt(p.arpUnitItems||0)],['Itens com registro da UASG Araquari',fmt(p.arpCampusUnitItems||0)]]);
+ if(x.integrated){
+  const g=x.integrated;
+  root.append(elem('h3','','Rastreabilidade integrada · acervo publicado'));
+  metricGrid(root,[['NEs com referência integral conferida',fraction(g.confirmedCommitments,g.commitments)],
+   ['NEs somente com indícios',fmt(g.indicatedCommitments)],['NEs com instrumentos concorrentes (sem alocação)',fmt(g.ambiguousCommitments)],
+   ['Liquidações com origem NE confirmada',fmt(g.liquidationsWithConfirmedOrigin)],['Pagamentos com origem NE confirmada',fmt(g.paymentsWithConfirmedOrigin)],
+   ['Instrumentos com contratação presente',fmt(g.instrumentsWithLocalPurchase)],
+   ['Instrumentos com ata específica presente',fmt(g.instrumentsWithLocalAta)],
+   ['Instrumentos com múltiplas atas declaradas',fmt(g.instrumentsWithMultipleAtas)]]);
+  root.append(elem('p','helper','Contagens únicas no acervo de '+fmt(g.loadedMonths)+' competências publicadas. Ausência de relação não prova inexistência de execução; não são saldos de contratos ou atas.'));
+ }
  root.append(elem('h3','','Atualidade e procedência'));
  const meta=elem('div','coverage-meta');
  for(const line of ['CGU · data documental mais recente com fase completa: '+dt(c.lastCoveredDate),'CGU · última gravação canônica: '+dt(c.lastDataWrite),'PNCP · janela de atualizações globais até '+dt(p.deltaThrough)+'; '+fmt(p.pendingPublications)+' publicações pendentes de recuperação.','PNCP · última revisão individual registrada: contratos '+dt(p.lastContractRevisionRecorded)+'; licitações '+dt(p.lastNoticeRevisionRecorded),'PNCP/Compras · última gravação contratual: '+dt(p.lastContractsWrite)+'; publicações: '+dt(p.lastNoticesWrite)])meta.append(elem('div','',line));
