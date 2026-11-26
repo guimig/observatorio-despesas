@@ -14,6 +14,31 @@ export function closedDaysInMonth(month,now=new Date()){
   return month<today?last:month>today?0:Math.min(last,Math.max(0,+parts.day-1));
 }
 
+/** Soma documental somente dos dias encerrados com consulta e valores verificáveis. */
+export function summarizeDocumentPhases(month,{now=new Date()}={}){
+  const expectedDays=closedDaysInMonth(month.month,now);
+  const lastDate=month.month+'-'+String(expectedDays).padStart(2,'0');
+  const observedIds=new Set((month.phaseObservations||[]).map(obs=>obs.id));
+  return PHASES.map(phase=>{
+    const coverage=month.coverage.filter(entry=>entry.phase===phase&&entry.date<=lastDate);
+    const overlaps=new Set((month.phaseObservations||[]).filter(obs=>
+      obs.date<=lastDate&&obs.phase===phase).map(obs=>obs.date));
+    // O proprietário do documento também integra a ocorrência em outro filtro.
+    const documents=month.documents.filter(doc=>doc.phase===phase&&doc.date<=lastDate);
+    for(const doc of documents)if(observedIds.has(doc.id))overlaps.add(doc.date);
+    const eligible=new Set(coverage.filter(entry=>entry.complete&&entry.invalid===0&&
+      !overlaps.has(entry.date)).map(entry=>entry.date));
+    const subtotal=documents.filter(doc=>eligible.has(doc.date)).reduce((sum,doc)=>sum+BigInt(doc.cents),0n);
+    return {
+      phase,expectedDays,days:eligible.size,
+      cents:eligible.size&&Number.isSafeInteger(Number(subtotal))?Number(subtotal):null,
+      missing:expectedDays-coverage.filter(entry=>entry.complete).length,
+      unknown:coverage.filter(entry=>entry.invalid>0).length,
+      overlap:overlaps.size
+    };
+  });
+}
+
 /** Cobertura diária, enriquecimento e qualidade estrutural: métricas independentes. */
 export function auditMonth(month,{now=new Date()}={}){
   if(!month||!MONTH.test(month.month)||!Array.isArray(month.documents)||

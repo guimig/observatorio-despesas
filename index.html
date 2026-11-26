@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Observatório de Despesas Públicas do IFC: documentos da CGU com consulta, filtros e rastreabilidade.">
   <title>Observatório de Despesas · IFC Araquari</title>
-  <link rel="stylesheet" href="./assets/style.css?v=2">
+  <link rel="stylesheet" href="./assets/style.css?v=3">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -81,6 +81,7 @@
           <span id="coverage-chip"></span>
           <a href="#cobertura-fontes" class="coverage-help" aria-label="Entenda a cobertura dos dados">?</a>
           <span id="updated"></span>
+          <span class="small-muted" id="current-day-note" hidden>Os registros de hoje são provisórios e dependem da atualização da CGU.</span>
         </div>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Tabela de documentos">
           <table class="document-table">
@@ -89,8 +90,8 @@
           </table>
         </div>
         <div class="pagination">
-          <span id="page-information" class="small-muted"></span>
-          <div class="page-actions"><button class="button button-secondary" id="previous-page" type="button">Anterior</button><button class="button button-secondary" id="next-page" type="button">Próxima</button></div>
+          <span id="page-information" class="small-muted" role="status"></span>
+          <nav id="document-pagination" class="page-actions" aria-label="Páginas dos documentos" hidden></nav>
         </div>
       </div>
     </section>
@@ -104,7 +105,8 @@
       <section id="resumo-despesas" class="summary-view" data-view="summary" hidden aria-labelledby="summary-title">
       <h2 id="summary-title" tabindex="-1" class="phase-heading">Valores documentais por fase</h2>
       <p class="small-muted" id="summary-month"></p>
-      <p class="small-muted phase-helper">Selecione uma fase para filtrar a competência. Valores dos dias consultados.</p>
+      <p class="small-muted phase-helper">Subtotais da competência por data de emissão, em dias encerrados com consulta completa, valores disponíveis e sem sobreposição entre fases. Selecione uma fase para consultar seus documentos.</p>
+      <p class="small-muted phase-helper">Em Empenhos, a soma usa o valor documental das notas emitidas nas datas incluídas. Os reforços e as anulações são movimentos do empenho e não são apurados por data neste resumo.</p>
       <div class="stats" aria-label="Indicadores das fases">
         <button class="stat-card" type="button" aria-pressed="false" data-phase="1" aria-label="Filtrar empenhos">
           <span class="stat-top"><span class="stat-label">Empenhos</span><span class="stat-icon">NE</span></span>
@@ -129,7 +131,7 @@
       <div class="panel-heading">
         <div>
           <h2 id="trajectory-title" tabindex="-1">Trajetória por nota de empenho</h2>
-          <p class="small-muted">Veja as liquidações e os pagamentos vinculados a um empenho.</p>
+          <p class="small-muted">Encontre um empenho sem escolher datas e acompanhe as liquidações e os pagamentos vinculados a ele em todas as competências publicadas.</p>
         </div>
         <span class="pill pill-outline" id="trajectory-count">Aguardando análise</span>
       </div>
@@ -401,7 +403,7 @@
   <footer class="site-footer">
     <div class="container"><span>Observatório de Despesas · Projeto público experimental</span><span>Fonte oficial CGU · Dados minimizados · Sem integração com Tesouro Gerencial</span></div>
   </footer>
-  <script type="module" src="./assets/app.js"></script>
+  <script type="module" src="./assets/app.js?v=3"></script>
   <script type="module" src="./assets/coverage-panel.js"></script>
 </body>
 </html>

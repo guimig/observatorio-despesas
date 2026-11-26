@@ -5,11 +5,17 @@ async function main() {
   const token = process.env.CGU_API_KEY;
   if (!token) throw Error('CGU_API_KEY não configurada neste repositório');
   const now = new Date();
+  let failed = 0;
   const patches = await collectWindow({
     token, now,
     lookback: process.env.CGU_LOOKBACK_DAYS || 7,
     maxPages: process.env.CGU_MAX_PAGES || 30,
-    maxImpactPages: process.env.CGU_MAX_IMPACT_PAGES || 8
+    maxImpactPages: process.env.CGU_MAX_IMPACT_PAGES || 8,
+    includeToday: process.env.CGU_INCLUDE_TODAY === 'true',
+    onPhaseFailure({date,phase,failure}) {
+      failed++;
+      console.warn('CGU: '+date+' fase '+phase+' sem nova coleta ('+failure+').');
+    }
   });
   const partial = patches.filter(patch => !patch.coverage.complete);
   const invalid = patches.reduce((acc, patch) => acc + patch.coverage.invalid, 0);
@@ -24,13 +30,13 @@ async function main() {
     }
     for (const [month, group] of months) mergeMonth(null, month, group, now);
     console.log('Simulação CGU: '+patches.length+' consultas; '+count+
-      ' documentos; consultas parciais: '+partial.length+'; valores ausentes: '+invalid);
+      ' documentos; consultas com falha: '+failed+'; consultas parciais: '+partial.length+'; valores ausentes: '+invalid);
     return;
   }
   const outcome = await persistWindow(process.cwd(), patches, now);
   await validatePublishedData(process.cwd());
   console.log('CGU UG 158459: '+patches.length+' consultas; '+count+
-    ' documentos; consultas parciais: '+partial.length+
+    ' documentos; consultas com falha: '+failed+'; consultas parciais: '+partial.length+
     '; valores ausentes: '+invalid+
     '; meses modificados: '+outcome.updatedMonths.join(', ')+
     '; nenhum dado pessoal bruto persistido');

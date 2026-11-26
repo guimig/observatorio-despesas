@@ -10,7 +10,7 @@ import { documentSpecies,financialPhaseDescription } from './document-species.js
 import {showDialogFromTop} from './dialog-scroll.js';
 import {auditSiafiItemMovements} from './siafi-movement-audit.js';
 import {reconcileSiafiCommitment} from './siafi-movement-reconciliation.js';
-import { auditMonth } from './quality.js';
+import { auditMonth, summarizeDocumentPhases } from './quality.js?v=3';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
 const $ = id => document.getElementById(id);
@@ -157,30 +157,16 @@ function monthName(month) {
   const date = new Date(month + '-15T12:00:00Z');
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
-function summarize(phase) {
-  const coverage = state.data.coverage.filter(entry => entry.phase === phase);
-  const documents = state.data.documents.filter(doc => doc.phase === phase);
-  const complete = coverage.length > 0 && coverage.every(entry => entry.complete);
-  const invalid = coverage.reduce((n, x) => n + x.invalid, 0);
-  const count = coverage.reduce((n, x) => n + x.count, 0);
-  const overlap=(state.data.phaseObservations||[]).some(obs=>obs.phase===phase);
-  const sum = complete && !invalid && !overlap &&
-    documents.every(doc => Number.isSafeInteger(doc.cents))
-    ? documents.reduce((n, doc) => n + doc.cents, 0) : null;
-  return { count, sum, complete, invalid, overlap };
-}
 function renderStats() {
   $('summary-month').textContent = monthName(state.month) + ' · CGU · UG 158459';
-  const stats = [1, 2, 3].map(summarize);
-  stats.forEach((stat, index) => {
-    const phase = index + 1;
-    $('amount-' + phase).textContent = fmtMoney(stat.sum);
-    const prefix = stat.complete ? '' : 'Pelo menos ';
-    $('count-' + phase).textContent = prefix + fmtCount(stat.count) +
-      ' ocorrência(s) documentais nas datas consultadas' +
-      (stat.invalid ? ' · ' + stat.invalid + ' valor(es) indisponível(is)' : '')+
-      (stat.overlap ? ' · sobreposição entre fases (total monetário suspenso)' : '');
-  });
+  for (const stat of summarizeDocumentPhases(state.data)) {
+    $('amount-' + stat.phase).textContent = stat.cents === null ? 'Sem subtotal verificável' : fmtMoney(stat.cents);
+    const notes = [fmtCount(stat.days) + ' de ' + fmtCount(stat.expectedDays) + ' dias encerrados no subtotal'];
+    if (stat.missing) notes.push(fmtCount(stat.missing) + ' sem consulta concluída');
+    if (stat.unknown) notes.push(fmtCount(stat.unknown) + ' com valores ausentes');
+    if (stat.overlap) notes.push(fmtCount(stat.overlap) + ' com documentos em mais de uma fase');
+    $('count-' + stat.phase).textContent = notes.join(' · ');
+  }
 }
 function renderQuality() {
   $('monthly-quality').hidden = false;
@@ -231,7 +217,7 @@ function filteredDocuments() {
   const query = searchText(state.search);
   const compactCode = value => searchText(value).replace(/[.\/\s-]/g, '');
   const code = compactCode(query);
-  const exact = [], matches = [];
+  const matches = [];
   for (const data of months) {
     const observed = new Set((data.phaseObservations || [])
       .filter(item => String(item.phase) === state.phase).map(item => item.id));
@@ -244,11 +230,12 @@ function filteredDocuments() {
       const exactCode = code && codes.includes(code);
       if (!query || exactCode || searchText(fields.filter(Boolean).join(' ')).includes(query) ||
           (code && codes.some(value => value.includes(code)))) {
-        (exactCode ? exact : matches).push({doc, data});
+        matches.push({doc, data});
       }
     }
   }
-  return exact.concat(matches);
+  return matches.sort((a, b) => b.doc.date.localeCompare(a.doc.date) ||
+    b.doc.id.localeCompare(a.doc.id));
 }
 function renderActiveFilters() {
   const root = $('active-filters');
@@ -274,6 +261,40 @@ function renderActiveFilters() {
     card.setAttribute('aria-pressed', String(!state.historyYear && card.dataset.phase === state.phase));
   }
 }
+function renderDocumentPagination(totalPages) {
+  const nav = $('document-pagination');
+  nav.hidden = totalPages < 2;
+  if (nav.hidden) return;
+  const focused = document.activeElement;
+  const action = focused?.dataset.pageAction;
+  const goTo = page => {
+    state.page = page;
+    renderTable();
+  };
+  const first = Math.max(0, Math.min(state.page - 1, totalPages - 3));
+  const pages = Array.from({length: Math.min(3, totalPages)}, (_, i) => first + i);
+  const controls = [
+    ['Primeira', 0, 'Primeira página', 'first', state.page === 0],
+    ['Anterior', state.page - 1, 'Página anterior', 'previous', state.page === 0],
+    ...pages.map(page => [String(page + 1), page, 'Página ' + (page + 1), 'number', false]),
+    ['Próxima', state.page + 1, 'Próxima página', 'next', state.page === totalPages - 1],
+    ['Última', totalPages - 1, 'Última página', 'last', state.page === totalPages - 1]
+  ];
+  nav.replaceChildren(...controls.map(([label, page, accessible, kind, disabled]) => {
+    const button = element('button', 'button button-secondary', label);
+    button.type = 'button';
+    button.dataset.pageAction = kind;
+    button.setAttribute('aria-label', accessible);
+    if (kind === 'number' && page === state.page) button.setAttribute('aria-current', 'page');
+    button.disabled = disabled;
+    button.addEventListener('click', () => goTo(page));
+    return button;
+  }));
+  if (action) {
+    (nav.querySelector('[data-page-action="' + action + '"]:not(:disabled):not([data-page-action="number"])') ||
+      nav.querySelector('[aria-current="page"]')).focus({preventScroll:true});
+  }
+}
 function renderTable() {
   const all = filteredDocuments();
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
@@ -282,10 +303,11 @@ function renderTable() {
   $('table-count').textContent = fmtCount(all.length) + (all.length === 1 ? ' resultado' : ' resultados');
   $('export-button').disabled = !all.length || state.loadingHistory || state.loadingMonth;
   $('page-information').textContent = all.length
-    ? 'Página ' + (state.page + 1) + ' de ' + totalPages : '';
+    ? 'Página ' + fmtCount(state.page + 1) + ' de ' + fmtCount(totalPages) +
+      ' · ' + fmtCount(state.page * pageSize + 1) + '–' + fmtCount(state.page * pageSize + shown.length) +
+      ' de ' + fmtCount(all.length) : '';
   renderActiveFilters();
-  $('previous-page').disabled = state.page === 0;
-  $('next-page').disabled = state.page >= totalPages - 1;
+  renderDocumentPagination(totalPages);
   const body = $('doc-rows');
   body.replaceChildren();
   if (!shown.length) {
@@ -919,6 +941,8 @@ function updateScope() {
   $('scope-status').hidden = !scope;
   $('coverage-chip').hidden = Boolean(scope);
   $('updated').hidden = Boolean(scope);
+  $('current-day-note').hidden = Boolean(scope) || state.month !==
+    new Intl.DateTimeFormat('en-CA', {timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).format(new Date());
   $('history-retry').hidden = !scope || state.loadingHistory || loaded === months.length;
 }
 async function searchHistory(year) {
@@ -1034,8 +1058,6 @@ function initEvents() {
       navigateTo('despesas');
     });
   }
-  $('previous-page').addEventListener('click', () => { state.page--; renderTable(); });
-  $('next-page').addEventListener('click', () => { state.page++; renderTable(); });
   $('export-button').addEventListener('click', exportCsv);
   $('close-dialog').addEventListener('click', () => $('document-dialog').close());
   $('close-record-dialog').addEventListener('click', () => $('record-dialog').close());

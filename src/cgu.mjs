@@ -50,13 +50,13 @@ export function isoDate(brDate) {
   return iso;
 }
 
-export function datesBeforeToday(now = new Date(), lookback = 7) {
+export function datesBeforeToday(now = new Date(), lookback = 7, { includeToday = false } = {}) {
   const days = integer(lookback, 7, 31);
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric'
   }).formatToParts(now).map(part => [part.type, part.value]));
   const midnight = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
-  return Array.from({ length: days }, (_, i) => {
+  return Array.from({ length: days + Number(includeToday) }, (_, i) => {
     const dt = new Date(midnight - (days - i) * 86400000);
     return String(dt.getUTCDate()).padStart(2, '0') + '/' +
       String(dt.getUTCMonth() + 1).padStart(2, '0') + '/' + dt.getUTCFullYear();
@@ -303,24 +303,35 @@ export async function collectDayPhase(date, phase, {
 
 export async function collectWindow({
   token, now = new Date(), lookback = 7, dates = undefined, maxPages = 30,
-  maxImpactPages = 8, getDocuments = requestDocuments, getImpacts = requestImpacts
+  maxImpactPages = 8, getDocuments = requestDocuments, getImpacts = requestImpacts,
+  includeToday = false, onPhaseFailure
 } = {}) {
   if (!token) throw Error('CGU_API_KEY ausente');
-  const selected = dates === undefined ? datesBeforeToday(now, lookback).filter(d=>inScopeDate(isoDate(d))) : dates;
-  if (!Array.isArray(selected) || selected.length < 1 || selected.length > 31 ||
+  const selected = dates === undefined ? datesBeforeToday(now, lookback, {includeToday}).filter(d=>inScopeDate(isoDate(d))) : dates;
+  if (!Array.isArray(selected) || selected.length < 1 || selected.length > (dates === undefined && includeToday ? 32 : 31) ||
       new Set(selected).size !== selected.length) throw Error('Janela de datas CGU inválida');
   selected.forEach(d=>{if(!inScopeDate(isoDate(d)))throw Error('Consulta anterior ao recorte de 2024')}); // Datas legíveis e existentes, sem receber texto arbitrário.
-  const queries = selected.flatMap(date => PHASES.map(phase => ({ date, phase })));
+  const ordered = includeToday && dates === undefined ? selected.slice().reverse() : selected;
+  const queries = ordered.flatMap(date => PHASES.map(phase => ({ date, phase })));
   // Concorrência baixa para evitar cota CGU. Nenhuma resposta bruta é persistida.
   const output = new Array(queries.length);
   let cursor = 0;
   await Promise.all(Array.from({ length: 2 }, async () => {
     while (cursor < queries.length) {
       const i = cursor++;
-      output[i] = await collectDayPhase(queries[i].date, queries[i].phase, {
-        token, maxPages, maxImpactPages, getDocuments, getImpacts
-      });
+      const {date,phase}=queries[i];
+      try {
+        output[i] = await collectDayPhase(date, phase, {
+          token, maxPages, maxImpactPages, getDocuments, getImpacts
+        });
+      } catch (error) {
+        if (!onPhaseFailure || [401,403,429].includes(error.status)) throw error;
+        onPhaseFailure({date:isoDate(date),phase,
+          failure:Number.isInteger(error.status)?'http_'+error.status:error.code||'invalid_response'});
+      }
     }
   }));
-  return output;
+  const collected = output.filter(Boolean);
+  if (!collected.length) throw Error('CGU indisponível em toda a janela consultada');
+  return collected;
 }
