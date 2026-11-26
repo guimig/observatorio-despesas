@@ -416,7 +416,7 @@ html[data-theme=dark] {
   .document-table .document-mobile-hidden { display: none; }
   .document-table .mobile-document-meta { display: block; }
   .document-table td .mobile-document-meta { overflow-wrap: normal; }
-  .document-table .doc-code {
+  .document-table td:first-child {
     max-width: none;
     font-family: inherit;
     font-weight: 600;
