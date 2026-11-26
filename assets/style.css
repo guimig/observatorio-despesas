@@ -482,3 +482,5 @@ html[data-theme=dark] {
 .integrated-items .relation-item{margin:.35rem 0}
 .integrated-table-note{display:block;margin-top:.2rem}
 #record-trajectory .relation-link,#dialog-contracts .relation-link{max-width:100%;overflow-wrap:anywhere;text-align:left}
+
+.budget-analysis{margin-top:.65rem}.budget-analysis>summary{cursor:pointer}.budget-filters .icon-button{flex:0 0 auto}.budget-filters #budget-add{align-self:end}#record-evidence .relation-item .inline-link{display:block;margin-top:.35rem}#record-evidence .relation-item p{margin:.35rem 0}#siop-dialog .dialog-heading{margin-bottom:1rem}

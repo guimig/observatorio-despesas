@@ -49,6 +49,11 @@ export function referenceFor(catalog,bucket,dimension){
   (!context.has(dimension)||r.action===bucket.action))||[];
  return rows.length===1?rows[0].label:null;
 }
+/** OR within each dimension, AND across dimensions. Missing and multiple are explicit buckets. */
+export function matchesBudgetFilters(doc,filters,{confirmedPi=[],except=null}={}){
+ return Object.entries(filters||{}).every(([dimension,keys])=>dimension===except||!keys.length||
+  keys.includes(budgetBucket(doc,dimension,{confirmedPi}).key));
+}
 export function summarizeBudget(entries,dimension,{confirmedPi=()=>[]}={}){
  const groups=new Map();
  for(const entry of entries||[]){

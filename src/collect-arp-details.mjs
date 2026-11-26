@@ -18,24 +18,12 @@ async function main(){
  const report={compras:{},instruments:{},units:{},balanceProbe:[]};
  const start=Date.now(),count=(kind,reason)=>{const r=report[kind];r[reason]=(r[reason]||0)+1};
  let changed=false,probeCount=0;
- // Sondagem independente: usa atas ja identificadas, mesmo sem novos itens.
- for(const task of planArpUnitProbes(atas,[...details.values()],{state,now})){
-  if(Date.now()-start>90000)break;
-  try{
-   const result=await scanArpUnit(task.ata,task.compras,task.number);
-   if(!result.ok){count('units',result.reason);state[task.key]=today;continue}
-   const before=details.get(task.ata.id),next=applyArpUnit(before,task.ata,result.data);
-   if(next!==before){details.set(task.ata.id,next);changed=true;count('units','changed')}
-   state[task.key]=today;count('units','success');
-   for(const u of result.data.units)count('units',u.unitCode==='158459'?'campusRows':'reitoriaRows');
-  }catch(e){count('units',e.status?'http_'+e.status:'validation_or_conflict');if([401,403,429].includes(e.status))break}
- }
  for(const kind of ['compras','instruments']){
   const eligible=kind==='compras'?atas.filter(a=>a.starts&&byNotice.has(a.procurementId)):atas;
-  const plan=planArpDetails(eligible,[...details.values()],{kind,state,now,limit:5});
+  const plan=planArpDetails(eligible,[...details.values()],{kind,state,now,limit:10});
   report[kind].planned=plan.length;
   for(const ata of plan){
-   if(Date.now()-start>240000){count(kind,'deferred');break}
+   if(Date.now()-start>(kind==='compras'?150000:240000)){count(kind,'deferred');break}
    try{
     const result=kind==='compras'?await scanComprasArp(ata,byNotice.get(ata.procurementId)): {ok:true,data:await scanAtaInstruments(ata)};
     if(!result.ok){count(kind,result.reason);state[arpKey(ata,kind)]=today;continue}
@@ -49,6 +37,18 @@ async function main(){
     }else report.instruments.links=(report.instruments.links||0)+result.data.length;
    }catch(e){count(kind,e.status?'http_'+e.status:'validation_or_conflict');if([401,403,429].includes(e.status))break}
   }
+ }
+ // Sondagem independente: usa atas ja identificadas, mesmo sem novos itens.
+ for(const task of planArpUnitProbes(atas,[...details.values()],{state,now})){
+  if(Date.now()-start>300000)break;
+  try{
+   const result=await scanArpUnit(task.ata,task.compras,task.number);
+   if(!result.ok){count('units',result.reason);state[task.key]=today;continue}
+   const before=details.get(task.ata.id),next=applyArpUnit(before,task.ata,result.data);
+   if(next!==before){details.set(task.ata.id,next);changed=true;count('units','changed')}
+   state[task.key]=today;count('units','success');
+   for(const u of result.data.units)count('units',u.unitCode==='158459'?'campusRows':'reitoriaRows');
+  }catch(e){count('units',e.status?'http_'+e.status:'validation_or_conflict');if([401,403,429].includes(e.status))break}
  }
  if(changed){
   data.details=[...details.values()].sort((a,b)=>a.ataId.localeCompare(b.ataId));

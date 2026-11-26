@@ -66,18 +66,24 @@
           </div>
         </div>
         <details class="advanced-filters budget-classification-panel">
-          <summary>Classificação orçamentária e análise documental</summary>
+          <summary>Filtros avançados <span id="budget-filter-count"></span></summary>
           <div class="advanced-fields budget-filters">
             <label class="filter"><span>Dimensão</span><select id="budget-dimension"></select></label>
-            <label class="filter"><span>Classificação</span><select id="budget-group"><option value="all">Todas</option></select></label>
-            <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental conhecido (uma fase)</option></select></label>
+            <label class="filter"><span>Classificação</span><select id="budget-group"><option value="all">Selecionar classificação…</option></select></label>
+            <button type="button" id="budget-add" class="button button-secondary" disabled>Adicionar</button>
+            <button type="button" id="siop-help" class="icon-button" aria-label="Ajuda: dicionário orçamentário SIOP" title="Dicionário orçamentário SIOP">?</button>
           </div>
+          <p class="small-muted">Combine dimensões diferentes (E). Na mesma dimensão, qualquer classificação selecionada será aceita (OU). Remova seleções nos filtros ativos.</p>
           <p class="small-muted" id="budget-coverage" role="status"></p>
+          <details class="budget-analysis"><summary>Análise documental da dimensão escolhida</summary>
+          <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental conhecido (uma fase)</option></select></label>
           <div class="budget-bars" id="budget-bars"></div>
           <p class="small-muted">Agrupamento dos documentos consultados, por exercício. Valores documentais de uma fase, não saldo orçamentário nem execução líquida do período. Documentos com múltiplas classificações ficam separados, sem rateio. PI candidato não integra filtros ou gráficos.</p>
+          </details>
         </details>
-        <details class="catalog-note siop-reference-panel">
-          <summary>Dicionário orçamentário SIOP · IFC (UO 26422)</summary>
+        <dialog id="siop-dialog" class="document-dialog" aria-labelledby="siop-title">
+          <div class="dialog-content">
+          <div class="dialog-heading"><h2 id="siop-title" tabindex="-1">Dicionário orçamentário SIOP · IFC (UO 26422)</h2><button type="button" id="close-siop-dialog" class="icon-button" aria-label="Fechar ajuda">✕</button></div>
           <div class="advanced-fields budget-filters">
             <label class="filter"><span>Exercício</span><select id="siop-year"></select></label>
             <label class="filter"><span>Dimensão</span><select id="siop-kind"></select></label>
@@ -86,7 +92,8 @@
           <p id="siop-status" class="small-muted" role="status">Carregando catálogo de referência…</p>
           <div id="siop-rows" class="siop-reference-rows"></div>
           <p class="small-muted">Referência anual da UO, não classificação individual nem crédito da UG 158459. Fonte, esfera, resultado primário e identificador de uso não são atribuídos a empenhos por coincidência de ação.</p>
-        </details>
+          </div>
+        </dialog>
         <div class="query-scope">
           <span id="scope-status" role="status" hidden></span>
           <button id="history-retry" class="button button-ghost" type="button" hidden>Consultar meses indisponíveis</button>
@@ -427,6 +434,10 @@
         <button type="button" class="icon-button" id="close-record-dialog" aria-label="Fechar detalhes">✕</button>
       </div>
       <dl id="record-fields" class="document-fields"></dl>
+      <section id="record-evidence-section" hidden aria-label="Evidências e itens da contratação">
+        <h3 id="record-evidence-title">Evidências documentais</h3>
+        <div id="record-evidence" class="relations"></div>
+      </section>
       <section aria-label="Rastreabilidade da contratação">
         <h3>Trajetória administrativa e financeira</h3>
         <div id="record-trajectory" class="relations"></div>

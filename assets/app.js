@@ -1,5 +1,5 @@
 import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor} from './integrated-trajectory.js';
-import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget} from './budget-classification.js';
+import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
@@ -58,7 +58,7 @@ const cache = new Map();
 let commitmentTrajectories=[];
 let trajectoryReady=false,trajectoryPage=0;
 let integratedMemo=null,integratedHistoryLoading=null;
-const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetGroup:'all',budgetMetric:'count',
+const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetSelections:{},budgetMetric:'count',
   historyYear: null, loadingHistory: false, loadingMonth: false };
 const pendingMonths = new Map();
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
@@ -175,11 +175,12 @@ function showCatalogDetail(record,kind){
   for(const [label,value] of data)appendDetailField(fields,label,value);
   if(!isAta)appendDetailField(fields,isNotice?'Objeto da licitação':'Objeto do instrumento',
     record.object||'Descrição não disponível na fonte consultada',{long:true});
+  renderCatalogEvidence(record,kind);
   renderCatalogTrajectory(record,kind);
-  const url=isNotice?publicNoticeUrl(record):isAta?publicNoticeUrl({pncpId:record.procurementId}):publicPncpUrl(record);
+  const url=isNotice?publicNoticeUrl(record):isAta?publicAtaUrl(record):publicPncpUrl(record);
   const link=$('record-official-link');
   link.hidden=!url;
-  link.textContent=isAta?'Consultar publicação de origem no PNCP':'Consultar registro oficial';
+  link.textContent=isAta?'Consultar ata oficial no PNCP':'Consultar registro oficial';
   if(url)link.href=url;
   else link.removeAttribute('href');
   showDialogFromTop(dialog);
@@ -253,7 +254,18 @@ function searchText(value) {
 function confirmedPi(doc){
  return pncpCommitmentEvidence(doc).map(({detail})=>detail.pi).filter(Boolean);
 }
-function budgetGroupFor(doc){return budgetBucket(doc,state.budgetDimension,{confirmedPi:confirmedPi(doc)});}
+function budgetMatches(doc,except=null){return matchesBudgetFilters(doc,state.budgetSelections,{confirmedPi:confirmedPi(doc),except});}
+function toggleBudgetSelection(dimension,key){
+ const current=state.budgetSelections[dimension]||[];
+ const next=current.includes(key)?current.filter(k=>k!==key):[...current,key];
+ if(next.length)state.budgetSelections[dimension]=next;else delete state.budgetSelections[dimension];
+ refreshFilters();
+}
+function budgetSelectionLabel(dimension,key){
+ const labels={missing:'Não recuperado / não informado',multiple:'Múltiplas classificações (sem rateio)',context_missing:'Sem ação inequívoca'};
+ if(labels[key])return labels[key];
+ try{const [year,,action,code]=JSON.parse(key);return year+' · '+(action?action+' / ':'')+code;}catch{return key;}
+}
 function filteredDocuments({ignoreBudget=false}={}) {
   const months = state.historyYear
     ? availableMonths(state.historyYear).reverse().map(month => cache.get(month)).filter(Boolean)
@@ -268,7 +280,7 @@ function filteredDocuments({ignoreBudget=false}={}) {
     for (const doc of data.documents) {
       if (state.phase !== 'all' && String(doc.phase) !== state.phase && !observed.has(doc.id)) continue;
       if (state.day !== 'all' && doc.date !== state.day) continue;
-      if(!ignoreBudget&&state.budgetGroup!=='all'&&budgetGroupFor(doc).key!==state.budgetGroup)continue;
+      if(!ignoreBudget&&!budgetMatches(doc))continue;
       const codes = [doc.id, doc.process, doc.partyRef].filter(Boolean).map(compactCode);
       const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
         doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {}),
@@ -299,7 +311,13 @@ function renderActiveFilters() {
   };
   if (state.search) add('Busca: ' + state.search, $('search-doc'), '');
   if (state.day !== 'all') add(localDate(state.day), $('day-filter'), 'all');
-  if(state.budgetGroup!=='all')add('Classificação: '+($('budget-group').selectedOptions[0]?.textContent||'selecionada'),$('budget-group'),'all');
+  for(const [dimension,keys] of Object.entries(state.budgetSelections))for(const key of keys){
+    const label=BUDGET_DIMENSIONS[dimension]+': '+budgetSelectionLabel(dimension,key);
+    const chip=element('button','filter-chip',label+' ×');chip.type='button';
+    chip.setAttribute('aria-label','Remover filtro '+label);
+    chip.addEventListener('click',()=>{toggleBudgetSelection(dimension,key);$('budget-dimension').focus();});
+    root.append(chip);
+  }
   $('clear-filters').hidden = !root.childElementCount && state.phase === 'all';
   for (const button of document.querySelectorAll('[data-document-phase]')) {
     button.setAttribute('aria-pressed', String(button.dataset.documentPhase === state.phase));
@@ -343,20 +361,24 @@ function renderDocumentPagination(totalPages) {
   }
 }
 function renderBudgetPanel(base){
- const groups=summarizeBudget(base,state.budgetDimension,{confirmedPi});
+ const dimension=state.budgetDimension,selected=state.budgetSelections[dimension]||[];
+ const contextual=base.filter(({doc})=>budgetMatches(doc,dimension));
+ const groups=summarizeBudget(contextual,dimension,{confirmedPi});
  const selector=$('budget-group');
- const options=groups.map(g=>new Option(g.label+' ('+fmtCount(g.count)+')',g.key));
- if(state.budgetGroup!=='all'&&!groups.some(g=>g.key===state.budgetGroup))
-  options.push(new Option('Classificação selecionada (sem documentos no recorte)',state.budgetGroup));
- selector.replaceChildren(new Option('Todas','all'),...options);selector.value=state.budgetGroup;
+ const options=groups.map(g=>new Option((selected.includes(g.key)?'✓ ':'')+g.label+' ('+fmtCount(g.count)+')',g.key));
+ for(const key of selected)if(!groups.some(g=>g.key===key))options.push(new Option('✓ '+budgetSelectionLabel(dimension,key)+' (0)',key));
+ selector.replaceChildren(new Option('Selecionar classificação…','all'),...options);selector.value='all';
+ $('budget-add').disabled=true;
+ $('budget-filter-count').textContent=Object.values(state.budgetSelections).reduce((n,keys)=>n+keys.length,0)?' · '+Object.values(state.budgetSelections).reduce((n,keys)=>n+keys.length,0)+' selecionado(s)':'';
+
  const single=['1','2','3'].includes(state.phase);
  $('budget-metric').options[1].disabled=!single;
  if(!single)state.budgetMetric='count';
  $('budget-metric').value=state.budgetMetric;
  const missing=groups.filter(g=>g.kind==='missing').reduce((n,g)=>n+g.count,0);
  const multiple=groups.filter(g=>g.kind==='multiple').reduce((n,g)=>n+g.count,0);
- const known=base.length-missing-multiple;
- $('budget-coverage').textContent=fmtCount(base.length)+' documentos antes do filtro de classificação · '+
+ const known=contextual.length-missing-multiple;
+ $('budget-coverage').textContent=fmtCount(contextual.length)+' documentos compatíveis com as outras dimensões · '+
   fmtCount(known)+' classificados · '+fmtCount(missing)+' não recuperados/sem contexto · '+fmtCount(multiple)+' múltiplos'+
   (state.loadingHistory?' · cobertura em carregamento':' · somente competências carregadas')+
   (state.budgetDimension==='pi'?' · somente identidade SIAFI integral declarada no PNCP':'');
@@ -367,7 +389,7 @@ function renderBudgetPanel(base){
  const max=Math.max(1,...ranked.map(metric));
  for(const g of ranked){
   const button=element('button','budget-bar-button');button.type='button';
-  button.setAttribute('aria-pressed',String(state.budgetGroup===g.key));
+  button.setAttribute('aria-pressed',String(selected.includes(g.key)));
   const title=element('span','budget-bar-label',g.label);
   const ref=referenceFor(siopCatalog,g,state.budgetDimension);
   if(ref)title.append(element('span','small-muted','SIOP: '+ref));
@@ -382,7 +404,7 @@ function renderBudgetPanel(base){
   const track=element('progress','budget-bar-progress');track.max=max;track.value=metric(g);
   track.setAttribute('aria-label',g.label+' · '+amount.textContent);
   button.append(title,amount,track);
-  button.addEventListener('click',()=>{state.budgetGroup=state.budgetGroup===g.key?'all':g.key;refreshFilters();});
+  button.addEventListener('click',()=>{toggleBudgetSelection(dimension,g.key);});
   host.append(button);
  }
  if(groups.length>10)host.append(element('p','small-muted','10 de '+fmtCount(groups.length)+' grupos; todos disponíveis no filtro.'));
@@ -416,7 +438,7 @@ async function loadSiopReference(){
 function renderTable() {
   const base=filteredDocuments({ignoreBudget:true});
   renderBudgetPanel(base);
-  const all=state.budgetGroup==='all'?base:base.filter(({doc})=>budgetGroupFor(doc).key===state.budgetGroup);
+  const all=base.filter(({doc})=>budgetMatches(doc));
   const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
   state.page = Math.min(Math.max(0, state.page), totalPages - 1);
   const shown = all.slice(state.page * pageSize, (state.page + 1) * pageSize);
@@ -707,6 +729,59 @@ function financialMetric(host,label,group,extra=''){
  host.append(element('p','small-muted',label+': '+(group.known?fmtMoney(group.cents):'Indisponível')+
   ' · '+fmtCount(group.known)+' vínculo(s)/documento(s) com valor'+(group.unknown?' · '+group.unknown+' sem valor seguro':'')+extra));
 }
+function renderCatalogEvidence(record,kind){
+ const section=$('record-evidence-section'),host=$('record-evidence');host.replaceChildren();
+ delete host.dataset.ataId;
+ section.hidden=kind!=='notice'&&kind!=='ata';if(section.hidden)return;
+ $('record-evidence-title').textContent=kind==='notice'?'Evidências documentais e atas':'Itens, unidades e documentos da ata';
+ if(kind==='notice'){
+  const entries=procurementEvidenceDetails(record,procurementData?.contracts||[],loadedCguDocuments());
+  for(const entry of entries){
+   const status=entry.level==='verified_ne'?'NE conferida com CGU':entry.level==='declared_ne'?'Referência de NE no PNCP':entry.level==='indication'?'Indício não confirmado':'Sem evidência de Araquari';
+   const row=element('div','relation-item');row.append(element('strong','',status),element('p','small-muted','Instrumento: '+entry.instrument+' · '+entry.reason+(entry.commitments.length?' · NE(s): '+entry.commitments.join(', '):'')));host.append(row);
+  }
+  if(!entries.length)host.append(element('p','helper','Nenhuma evidência documental de instrumento no catálogo carregado.'));
+  const atas=(atasData?.atas||[]).filter(a=>a.procurementId===record.pncpId);
+  if(atas.length){
+   host.append(element('h3','',fmtCount(atas.length)+' atas da contratação'));
+   for(const ata of atas){
+    const row=element('div','relation-item'),detail=arpDetailsById?.get(ata.id);
+    row.append(relationButton('Ata '+(ata.number||ata.sequence),()=>showCatalogDetail(ata,'ata')),
+     element('span','small-muted',detail?.compras?fmtCount(detail.compras.items.length)+' registros de item/fornecedor recuperados':'Itens ainda não recuperados'));
+    const url=publicAtaUrl(ata);if(url){const link=element('a','inline-link','PNCP · ata oficial');link.href=url;link.target='_blank';link.rel='noopener noreferrer';row.append(link);}
+    host.append(row);
+   }
+  }else if(record.srp===true)host.append(element('p','helper',(atasData?.checks||[]).some(c=>c.procurementId===record.pncpId)?'Nenhuma ata retornada na última consulta completa.':'Atas ainda não consultadas nesta base.'));
+  return;
+ }
+ const detail=arpDetailsById?.get(record.id);
+ const tender=tenderItemsState.data?.procedures?.find(p=>p.pncpId===record.procurementId);
+ if(!tenderItemsState.data){
+  host.append(relationButton('Carregar descrições dos itens licitados',async()=>{
+   await loadTenderItems();
+   if($('record-dialog').open&&$('record-evidence').dataset.ataId===record.id)renderCatalogEvidence(record,kind);
+  }));
+ }
+ host.dataset.ataId=record.id;
+ if(!detail?.compras)host.append(element('p','helper','Itens da ata ainda não recuperados pelo Compras.gov.br. Itens licitados não demonstram, por si sós, sua inclusão nesta ata.'));
+ else{
+  host.append(element('p','helper','Itens comprovados pelo controle oficial da ata. Descrição vinculada somente pela mesma contratação e número de item. Quantidades totais da ata não são saldo de Araquari.'));
+  for(const i of detail.compras.items){
+   const match=tender?.items?.filter(t=>t.number===i.number&&t.pncpId===record.procurementId)||[];
+   const row=element('div','relation-item');
+   row.append(element('strong','','Item '+i.number+(match.length===1&&match[0].description?' · '+match[0].description:'')));
+   const parts=[i.supplierCnpj?'CNPJ '+i.supplierCnpj:'CPF '+i.supplierCpfMasked,i.excluded?'Excluído':null,i.homologatedSupplier!==undefined?'Homologado fornecedor: '+i.homologatedSupplier:null,i.committedQuantity!==undefined?'Quantidade empenhada informada: '+i.committedQuantity:null,i.unitPrice!==undefined?'Unitário informado (R$): '+i.unitPrice:null,i.totalPrice!==undefined?'Total informado (R$): '+i.totalPrice:null];
+   row.append(element('p','small-muted',parts.filter(Boolean).join(' · ')));host.append(row);
+  }
+ }
+ if(!detail?.unitItems?.some(i=>i.units.some(u=>u.unitCode==='158459')))host.append(element('p','helper','Quantidade de Araquari sem registro confirmado nesta base.'));
+ if(detail?.unitItems?.length){
+  host.append(element('p','helper','Registros administrativos por unidade; não comprovam reserva interna por campus.'));
+  for(const entry of detail.unitItems)for(const u of entry.units)host.append(element('div','relation-item','Item '+entry.number+' · '+(u.unitCode==='158459'?'UASG Araquari':'UASG Reitoria')+' · Quantidade registrada: '+u.registered+(u.sourceUpdatedAt?' · Atualização '+localDate(u.sourceUpdatedAt):'')));
+ }
+ const url=publicAtaUrl(record);
+ if(url){const files=element('a','inline-link','Consultar lista de documentos oficiais da ata (API PNCP)');files.href=url.replace('/app/atas/','/api/pncp/v1/orgaos/').replace(/(orgaos\/\d{14})\/(20\d{2})\/(\d+)\/(\d+)$/,'$1/compras/$2/$3/atas/$4/arquivos');files.target='_blank';files.rel='noopener noreferrer';host.append(files);}
+}
 function renderCatalogTrajectory(record,kind){
  const host=$('record-trajectory');host.replaceChildren();
  const index=integratedIndex(),refresh=()=>renderCatalogTrajectory(record,kind);
@@ -720,12 +795,7 @@ function renderCatalogTrajectory(record,kind){
  }
  if(scope==='notice'){
   const aa=index.byAtaPurchase.get(id)||[];
-  if(aa.length){
-   const details=element('details','integrated-items');
-   details.append(element('summary','relation-link','Atas da contratação · '+fmtCount(aa.length)));
-   for(const a of aa)details.append(relationButton('Ata '+(a.number||a.sequence),()=>showCatalogDetail(a,'ata')));
-   host.append(details);
-  }
+  if(aa.length)host.append(element('p','helper','Consulte as '+fmtCount(aa.length)+' atas na seção Evidências documentais e atas acima.'));
  }
  const associations=instrumentAssociations(index,scope,id);
  if(scope!=='instrument'){
@@ -1348,8 +1418,11 @@ function exportCsv() {
 function initEvents() {
   $('budget-dimension').replaceChildren(...Object.entries(BUDGET_DIMENSIONS).map(([key,label])=>new Option(label,key)));
   $('budget-dimension').value=state.budgetDimension;
-  $('budget-dimension').addEventListener('change',e=>{state.budgetDimension=e.target.value;state.budgetGroup='all';if(state.data)refreshFilters();});
-  $('budget-group').addEventListener('change',e=>{state.budgetGroup=e.target.value;if(state.data)refreshFilters();});
+  $('budget-dimension').addEventListener('change',e=>{state.budgetDimension=e.target.value;if(state.data)renderTable();});
+  $('budget-group').addEventListener('change',e=>{$('budget-add').disabled=e.target.value==='all';$('budget-add').textContent=(state.budgetSelections[state.budgetDimension]||[]).includes(e.target.value)?'Remover':'Adicionar';});
+  $('budget-add').addEventListener('click',()=>{const key=$('budget-group').value;if(key!=='all')toggleBudgetSelection(state.budgetDimension,key);$('budget-add').textContent='Adicionar';});
+  $('siop-help').addEventListener('click',()=>showDialogFromTop($('siop-dialog')));
+  $('close-siop-dialog').addEventListener('click',()=>$('siop-dialog').close());
   $('budget-metric').addEventListener('change',e=>{state.budgetMetric=e.target.value;if(state.data)renderTable();});
   $('siop-kind').replaceChildren(...Object.entries(SIOP_DIMENSIONS).filter(([key])=>!['pi','subtitle'].includes(key)).map(([key,label])=>new Option(label,key)));
   $('siop-kind').value='action';
@@ -1399,7 +1472,7 @@ function initEvents() {
     state.day = event.target.value; refreshFilters();
   });
   $('clear-filters').addEventListener('click', () => {
-    state.search = ''; state.phase = 'all'; state.day = 'all'; state.budgetGroup='all';
+    state.search = ''; state.phase = 'all'; state.day = 'all'; state.budgetSelections={};
     $('search-doc').value = ''; $('day-filter').value = 'all';
     refreshFilters();
   });
@@ -1678,6 +1751,11 @@ async function initProcurement(){
 }
 
 
+function publicAtaUrl(ata){
+ const m=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(ata?.procurementId||'');
+ return m&&Number.isSafeInteger(ata.sequence)&&ata.sequence>0&&ata.sequence<=999999&&ata.id===ata.procurementId+':ata:'+ata.sequence?
+  'https://pncp.gov.br/app/atas/'+m[1]+'/'+m[3]+'/'+Number(m[2])+'/'+ata.sequence:null;
+}
 function publicNoticeUrl(notice) {
   const id=/^(\d{14})-1-(\d{6})\/(20\d{2})$/.exec(notice?.pncpId||'');
   return id?'https://pncp.gov.br/app/editais/'+id[1]+'/'+id[3]+'/'+Number(id[2]):null;
@@ -1821,66 +1899,8 @@ function renderNotices() {
       evidence.title='Indicios administrativos ou de NE nao conferida; nao constituem prova de despesa de Araquari.';
       related.append(evidence);
     }
-    if(financial.instruments){
-      const details=element('details','');
-      const summary=element('summary','relation-link','Ver evidências documentais');
-      summary.title='Detalhamento dos instrumentos vinculados pelo identificador PNCP e da situação de comprovação de NE da UG 158459.';
-      details.append(summary);
-      const entries=procurementEvidenceDetails(notice,procurementData?.contracts||[],loadedCguDocuments());
-      const list=element('ul','');
-      for(const entry of entries){
-        const li=element('li','small-muted');
-        const status=entry.level==='verified_ne'?'NE conferida com CGU':
-          entry.level==='declared_ne'?'Referência de NE no PNCP':
-          entry.level==='indication'?'Indício não confirmado':'Sem evidência de Araquari';
-        li.append(element('strong','',status),element('span','',' · Instrumento: '+entry.instrument));
-        li.append(element('span','',' · '+entry.reason));
-        if(entry.commitments.length)li.append(element('span','',' · NE(s): '+entry.commitments.join(', ')));
-        list.append(li);
-      }
-      details.append(list);related.append(details);
-    }
-    if(ataCount){
-      const ataLabel=element('span','small-muted',fmtCount(ataCount)+' ata(s) institucionais identificada(s) no PNCP');
-      ataLabel.title='Atas institucionais do órgão publicador. Quantidade licitada, registrada e saldo disponível são indicadores distintos. Não há atribuição automática de quantidades a Araquari nem presunção de compra ou empenho.';
-      related.append(ataLabel);
-      {
-        const records=noticeAtas.map(ata=>({ata,detail:arpDetailsById?.get(ata.id)}));
-        if(records.length){
-          const expanded=element('details'),summary=element('summary','relation-link','Detalhes de '+fmtCount(records.length)+' ata(s)');expanded.append(summary);
-          for(const {ata,detail} of records){
-            const sub=element('details'),head=element('summary','', 'Ata '+(ata.number||ata.sequence));sub.append(head);
-            sub.append(relationButton('Abrir ficha e trajetória da ata',()=>showCatalogDetail(ata,'ata')));
-            if (!detail?.unitItems?.some(item=>item.units.some(unit=>unit.unitCode==='158459'))) {
-              sub.append(element('p','helper','Quantidade de Araquari sem registro confirmado nesta base.'));
-            }
-            if(detail?.compras){
-              sub.append(element('p','helper','Itens identificados pelo controle oficial da ata no Compras.gov. Quantidades totais da ata; não são saldo de Araquari nem necessariamente exclusivas do IFC.'));
-              const list=element('ul');for(const i of detail.compras.items){
-                const parts=['Item '+i.number,i.supplierCnpj?'CNPJ '+i.supplierCnpj:'CPF '+i.supplierCpfMasked,i.excluded?'Excluído':null,i.homologatedSupplier!==undefined?'Homologado fornecedor: '+i.homologatedSupplier:null,i.committedQuantity!==undefined?'Quantidade empenhada informada: '+i.committedQuantity:null,i.unitPrice!==undefined?'Unitário informado (R$): '+i.unitPrice:null];
-                list.append(element('li','small-muted',parts.filter(Boolean).join(' · ')));
-              }sub.append(list);
-              if(detail.unitItems?.length){
-                sub.append(element('p','helper','Registros de unidade informados pelo Compras.gov (não somados; não comprovam reserva interna por campus).'));
-                for(const entry of detail.unitItems)for(const u of entry.units)sub.append(element('p','small-muted','Item '+entry.number+' · '+(u.unitCode==='158459'?'UASG Araquari':'UASG Reitoria')+' · Quantidade registrada informada: '+new Intl.NumberFormat('pt-BR',{maximumFractionDigits:8}).format(Number(u.registered))+(u.sourceUpdatedAt?' · Atualização da fonte '+localDate(u.sourceUpdatedAt):'')));
-              }
-            }
-            if(detail && Object.hasOwn(detail,'instruments')){
-              sub.append(element('p','helper',detail.instruments.length?'Instrumentos vinculados diretamente pelo PNCP; unidade administrativa não equivale automaticamente à UG SIAFI.':'Consulta sem instrumento IFC identificado.'));
-              for(const i of detail.instruments){
-                const row=element('p','small-muted'),link=element('a','doc-code',i.pncpId),m=/^(\d{14})-2-(\d{6})\/(20\d{2})$/.exec(i.pncpId);
-                if(m){link.href='https://pncp.gov.br/app/contratos/'+m[1]+'/'+m[3]+'/'+Number(m[2]);link.target='_blank';link.rel='noopener noreferrer'}
-                row.append(link,document.createTextNode((i.unitCode?' · Unidade PNCP '+i.unitCode:'')+(i.adhesion===true?' · Adesão realizada pelo IFC':'')));sub.append(row);
-              }
-            }expanded.append(sub);
-          }related.append(expanded);
-        }
-      }
-    }else if(notice.srp===true){
-      related.append(element('span','small-muted',ataChecked?
-        'Nenhuma ata retornada na última consulta PNCP':
-        'Atas ainda não consultadas nesta base'));
-    }
+    if(ataCount)related.append(element('span','small-muted',fmtCount(ataCount)+' ata(s) PNCP'));
+    else if(notice.srp===true)related.append(element('span','small-muted',ataChecked?'Nenhuma ata retornada na última consulta':'Atas ainda não consultadas'));
     if(linked.formal.length) {
       const button=element('button','relation-link',
         linked.formal.length+' contrato(s) formal(is)');
