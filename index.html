@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Observatório de Despesas Públicas do IFC: documentos da CGU com consulta, filtros e rastreabilidade.">
   <title>Observatório de Despesas · IFC Araquari</title>
-  <link rel="stylesheet" href="./assets/style.css?v=3">
+  <link rel="stylesheet" href="./assets/style.css?v=4">
 </head>
 <body>
   <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
@@ -66,14 +66,16 @@
           </div>
         </div>
         <details class="advanced-filters budget-classification-panel">
-          <summary>Filtros avançados <span id="budget-filter-count"></span></summary>
+          <summary><span class="ui-icon icon-filter" aria-hidden="true"></span> Filtros avançados <span id="budget-filter-count"></span></summary>
           <div class="advanced-fields budget-filters">
-            <label class="filter"><span>Dimensão</span><select id="budget-dimension"></select></label>
-            <label class="filter"><span>Classificação</span><select id="budget-group"><option value="all">Selecionar classificação…</option></select></label>
-            <button type="button" id="budget-add" class="button button-secondary" disabled>Adicionar</button>
+            <label class="filter"><span>Dimensão orçamentária</span><select id="budget-dimension"></select></label>
+            <label class="filter"><span>Buscar código ou classificação</span><input id="budget-option-search" type="search" placeholder="Ex.: 20RL, material, 3" autocomplete="off"></label>
             <button type="button" id="siop-help" class="icon-button" aria-label="Ajuda: dicionário orçamentário SIOP" title="Dicionário orçamentário SIOP">?</button>
           </div>
-          <p class="small-muted">Combine dimensões diferentes (E). Na mesma dimensão, qualquer classificação selecionada será aceita (OU). Remova seleções nos filtros ativos.</p>
+          <div id="budget-dimension-list" class="facet-dimensions" aria-label="Dimensões com filtros ativos"></div>
+          <div id="budget-options" class="facet-options" role="group" aria-label="Classificações selecionáveis"></div>
+          <div class="filter-actions"><button type="button" id="budget-clear" class="button button-secondary">Limpar classificação</button><button type="button" id="budget-all-history" class="button button-secondary"><span class="ui-icon icon-calendar" aria-hidden="true"></span> Consultar todo o histórico</button></div>
+          <p class="small-muted">Marque uma ou mais classificações. Dimensões diferentes são combinadas (E); opções da mesma dimensão são alternativas (OU). As opções mostram o exercício e quantos documentos são compatíveis com os outros filtros. Campos não recuperados pela CGU não são inferidos.</p>
           <p class="small-muted" id="budget-coverage" role="status"></p>
           <details class="budget-analysis"><summary>Análise documental da dimensão escolhida</summary>
           <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental conhecido (uma fase)</option></select></label>
@@ -194,7 +196,8 @@
         <p>Encontre licitações, atas e contratos publicados pelo IFC.</p>
       </div>
       <nav class="view-tabs" aria-label="Consultas de contratações">
-        <a href="#notices-section" data-tab="notices">Licitações e atas</a>
+        <a href="#notices-section" data-tab="notices">Licitações</a>
+        <a href="#atas-section" data-tab="atas">Atas de registro de preços</a>
         <a href="#procurement-section" data-tab="contracts">Contratos formais</a>
         <a href="#tender-items-panel" data-tab="items">Itens e resultados</a>
         <a href="#ifc-adhesions" data-tab="adhesions">Adesões de Araquari</a>
@@ -203,7 +206,7 @@
       <div class="panel-heading">
         <div>
           <div class="eyebrow">PNCP · REITORIA UASG 158125</div>
-          <h2 id="notices-title" tabindex="-1">Licitações, contratações diretas e atas</h2>
+          <h2 id="notices-title" tabindex="-1">Licitações e contratações diretas</h2>
           <p class="small-muted">Pregões, concorrências, dispensas, inexigibilidades e demais modalidades publicadas centralmente pelo IFC. No registro de preços, a ata pode existir sem compra, contrato ou empenho posterior.</p>
         </div>
         <span class="pill pill-outline" id="notices-count">Aguardando consulta</span>
@@ -221,24 +224,23 @@
           </select>
         </label>
       </div>
-      <details class="advanced-filters catalog-options">
-        <summary>Mais filtros</summary>
-        <div class="advanced-fields">
+      <div class="filter-block"><h3><span class="ui-icon icon-filter" aria-hidden="true"></span> Classificação e valores</h3>
+        <div class="filter-grid">
         <label class="filter"><span>Modalidade</span>
           <select id="notices-modality"><option value="all">Todas as modalidades</option></select>
         </label>
         <label class="filter"><span>Registro de preços</span><select id="notices-srp"><option value="all">Todos</option><option value="yes">Somente SRP</option><option value="no">Sem SRP</option></select></label>
         <label class="filter"><span>Estimado mínimo (R$)</span><input id="notices-min-value" inputmode="decimal" placeholder="0,00"></label>
         <label class="filter"><span>Estimado máximo (R$)</span><input id="notices-max-value" inputmode="decimal" placeholder="Sem limite"></label>
-        <button type="button" class="button button-ghost" id="notices-reset">Limpar</button>
-        </div>
-      </details>
+        </div></div>
+      <div class="filter-block date-filter-block"><h3><span class="ui-icon icon-calendar" aria-hidden="true"></span> Período e datas</h3><div class="filter-grid"><label class="filter"><span>Data de referência</span><select id="notices-date-kind"><option value="published">Publicação</option><option value="proposalStart">Início das propostas</option><option value="proposalEnd">Fim das propostas</option></select></label><label class="filter"><span>De</span><input id="notices-date-from" type="date" ></label><label class="filter"><span>Até</span><input id="notices-date-to" type="date" ></label></div><p class="filter-hint" id="notices-date-hint" role="status"></p></div>
+      <div class="filter-actions"><span id="notices-filter-status" class="filter-feedback-text" role="status"></span><button type="button" class="button button-secondary filter-reset" id="notices-reset"><span aria-hidden="true">↺</span> Limpar filtros</button></div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
           <thead>
             <tr><th scope="col">Modalidade</th><th scope="col">Número / PNCP</th><th scope="col">Instrumentos decorrentes</th>
               <th scope="col">Processo SIPAC</th><th scope="col">Evidência de Araquari</th>
-              <th scope="col" class="align-right">Valor estimado</th><th scope="col">Detalhes</th></tr>
+              <th scope="col" class="align-right">Valor estimado</th><th scope="col">Publicação / propostas</th><th scope="col">Detalhes</th></tr>
           </thead>
           <tbody id="notices-rows"></tbody>
         </table>
@@ -284,6 +286,17 @@
       <p class="helper">A publicação centralizada é feita pela Reitoria. Uma licitação pode gerar ata(s) de registro de preços, contratos formais, instrumentos substitutivos ou nenhum instrumento decorrente identificado nesta base. A ata registra condições para compras futuras e não obriga a Administração a contratar (Lei 14.133/2021, art. 83). A ausência de empenho em licitação/SRP não é, por si, pendência ou irregularidade; a base ainda não inventaria atas. A NE substitutiva não é contada como contrato formal e não é somada novamente à execução financeira. O processo 23349 é somente indício de Araquari.</p>
     </section>
 
+    <section id="atas-section" class="panel explorer" data-view="atas" hidden aria-labelledby="atas-title">
+      <div class="panel-heading"><div><div class="eyebrow">PNCP · COMPRAS.GOV.BR</div><h2 id="atas-title" tabindex="-1">Atas de registro de preços</h2><p>Atas individualizadas, com datas e vigência próprias. Não representam compra obrigatória nem saldo de Araquari.</p></div><span class="pill pill-outline" id="ata-count" role="status">Aguardando consulta</span></div>
+      <div class="query-fields catalog-query"><label class="filter"><span>Ata, licitação, fornecedor ou objeto</span><input id="ata-search" type="search" placeholder="Número da ata, processo, CNPJ…" autocomplete="off"></label><label class="filter"><span>Escopo</span><select id="ata-scope"><option value="all">Todo o IFC</option><option value="likely">Com indícios de Araquari</option><option value="confirmed">Vínculo por NE confirmada</option></select></label></div>
+      <div class="filter-block"><h3><span class="ui-icon icon-filter" aria-hidden="true"></span> Cobertura documental</h3><div class="filter-grid"><label class="filter"><span>Itens da ata</span><select id="ata-items"><option value="all">Todas</option><option value="yes">Itens recuperados</option><option value="no">Sem itens recuperados</option></select></label><label class="filter"><span>Documentos oficiais</span><select id="ata-files"><option value="all">Todas</option><option value="yes">Com links individuais</option><option value="empty">Consulta sem arquivo</option><option value="pending">Ainda não consultados</option></select></label><label class="filter"><span>Possibilidade de adesão</span><select id="ata-adhesion"><option value="all">Todas</option><option value="yes">Sim</option><option value="no">Não</option><option value="unknown">Não informada</option></select></label></div></div>
+      <div class="filter-block date-filter-block"><h3><span class="ui-icon icon-calendar" aria-hidden="true"></span> Período e datas</h3><div class="filter-grid"><label class="filter"><span>Data de referência</span><select id="ata-date-kind"><option value="signed">Assinatura</option><option value="published">Publicação</option><option value="starts">Início da vigência</option><option value="ends">Fim da vigência</option></select></label><label class="filter"><span>De</span><input id="ata-date-from" type="date" ></label><label class="filter"><span>Até</span><input id="ata-date-to" type="date" ></label><label class="filter"><span>Vencimento de</span><input id="ata-due-from" type="date" ></label><label class="filter"><span>Vencimento até</span><input id="ata-due-to" type="date" ></label><label class="filter"><span>Vigente em</span><input id="ata-active-date" type="date" ></label><label class="filter"><span>Situação pelas datas</span><select id="ata-validity"><option value="all">Todas</option><option value="current">Vigente</option><option value="expired">Vencida</option><option value="future">Futura</option><option value="unknown">Datas insuficientes</option><option value="cancelled">Cancelada</option></select></label></div><p class="filter-hint" id="ata-date-hint" role="status"></p></div>
+      <div class="filter-actions"><span id="ata-filter-status" class="filter-feedback-text" role="status"></span><button type="button" class="button button-secondary filter-reset" id="ata-reset"><span aria-hidden="true">↺</span> Limpar filtros</button></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Atas de registro de preços"><table class="contracts-table"><thead><tr><th>Ata / PNCP</th><th>Contratação de origem</th><th>Assinatura</th><th>Vigência / vencimento</th><th>Situação pelas datas</th><th>Itens e documentos</th><th>Detalhes</th></tr></thead><tbody id="ata-rows"></tbody></table></div>
+      <div class="pagination"><span id="ata-page-info" class="small-muted"></span><div class="page-actions" id="ata-pages"></div></div>
+      <p class="helper">Atas com datas faltantes aparecem sem situação presumida. O escopo de Araquari usa evidência da contratação de origem, não comprova participação ou quantitativo reservado.</p>
+    </section>
+
     <section id="procurement-section" class="panel explorer" data-view="contracts" hidden aria-labelledby="procurement-title">
       <div class="panel-heading">
         <div>
@@ -308,9 +321,8 @@
           </select>
         </label>
       </div>
-      <details class="advanced-filters catalog-options">
-        <summary>Mais filtros</summary>
-        <div class="advanced-fields">
+      <div class="filter-block"><h3><span class="ui-icon icon-filter" aria-hidden="true"></span> Classificação e valores</h3>
+        <div class="filter-grid">
         <label class="filter"><span>Origem</span>
           <select id="contract-source"><option value="all">Todas as fontes</option><option value="pncp">PNCP</option><option value="compras">Compras.gov.br</option></select>
         </label>
@@ -319,13 +331,12 @@
         </label>
         <label class="filter"><span>Valor mínimo (R$)</span><input id="contract-min-value" inputmode="decimal" placeholder="0,00"></label>
         <label class="filter"><span>Valor máximo (R$)</span><input id="contract-max-value" inputmode="decimal" placeholder="Sem limite"></label>
-        <label class="filter"><span>Vigente na data</span><input id="contract-active-on" type="date"></label>
-        <button type="button" class="button button-ghost" id="clear-contract-filters">Limpar</button>
-        </div>
-      </details>
+        </div></div>
+      <div class="filter-block date-filter-block"><h3><span class="ui-icon icon-calendar" aria-hidden="true"></span> Período e datas</h3><div class="filter-grid"><label class="filter"><span>Data de referência</span><select id="contract-date-kind"><option value="signed">Assinatura</option><option value="starts">Início da vigência</option><option value="ends">Fim da vigência</option><option value="publishedMonth">Publicação (mês disponível)</option></select></label><label class="filter"><span>De</span><input id="contract-date-from" type="date" ></label><label class="filter"><span>Até</span><input id="contract-date-to" type="date" ></label><label class="filter"><span>Vencimento de</span><input id="contract-due-from" type="date" ></label><label class="filter"><span>Vencimento até</span><input id="contract-due-to" type="date" ></label><label class="filter"><span>Vigente em</span><input id="contract-active-date" type="date" ></label><label class="filter"><span>Situação pelas datas</span><select id="contract-validity"><option value="all">Todas</option><option value="current">Vigente</option><option value="expired">Vencida</option><option value="future">Futura</option><option value="unknown">Datas insuficientes</option></select></label></div><p class="filter-hint" id="contract-date-hint" role="status"></p></div>
+      <div class="filter-actions"><span id="contract-filter-status" class="filter-feedback-text" role="status"></span><button type="button" class="button button-secondary filter-reset" id="clear-contract-filters"><span aria-hidden="true">↺</span> Limpar filtros</button></div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
-          <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Licitação de origem</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor contratual</th><th scope="col">Detalhes</th></tr></thead>
+          <thead><tr><th scope="col">Publicador / fonte</th><th scope="col">Evidência de Araquari</th><th scope="col">Instrumento</th><th scope="col">Licitação de origem</th><th scope="col">Fornecedor</th><th scope="col">Processo</th><th scope="col" class="align-right">Valor contratual</th><th scope="col">Vigência / vencimento</th><th scope="col">Detalhes</th></tr></thead>
           <tbody id="contract-rows"></tbody>
         </table>
       </div>
@@ -348,6 +359,9 @@
           <label class="filter"><span>Licitação</span><select id="tender-items-procedure"><option value="all">Todas as licitações coletadas</option></select></label>
           <button id="tender-items-load" type="button" class="button button-secondary">Carregar itens</button>
         </div>
+        <div class="filter-block"><h3><span class="ui-icon icon-filter" aria-hidden="true"></span> Resultados e modalidade</h3><div class="filter-grid"><label class="filter"><span>Resultados</span><select id="tender-items-result"><option value="all">Todos</option><option value="has">Com resultado informado</option><option value="empty">Consultado sem resultado</option><option value="pending">Ainda não consultado</option></select></label><label class="filter"><span>Registro de preços</span><select id="tender-items-srp"><option value="all">Todos</option><option value="yes">Somente SRP</option><option value="no">Sem SRP</option></select></label><label class="filter"><span>Modalidade</span><select id="tender-items-modality"><option value="all">Todas</option></select></label></div></div>
+        <div class="filter-block date-filter-block"><h3><span class="ui-icon icon-calendar" aria-hidden="true"></span> Período e datas</h3><div class="filter-grid"><label class="filter"><span>Data de referência</span><select id="tender-items-date-kind"><option value="published">Publicação da licitação</option><option value="resultDate">Data do resultado</option><option value="checkedAt">Data da coleta</option></select></label><label class="filter"><span>De</span><input id="tender-items-date-from" type="date" ></label><label class="filter"><span>Até</span><input id="tender-items-date-to" type="date" ></label></div><p class="filter-hint" id="tender-items-date-hint" role="status"></p></div>
+        <div class="filter-actions"><span id="tender-items-filter-status" class="filter-feedback-text" role="status"></span><button type="button" class="button button-secondary filter-reset" id="tender-items-reset"><span aria-hidden="true">↺</span> Limpar filtros</button></div>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta"><table class="contracts-table">
           <thead><tr><th>Licitação PNCP</th><th>Item</th><th>Descrição</th><th class="align-right">Quantidade licitada · IFC</th><th>Coleta</th><th>Resultados homologados</th></tr></thead>
           <tbody id="tender-items-rows"><tr><td colspan="6">Clique em Carregar itens.</td></tr></tbody>
@@ -356,7 +370,12 @@
       </section>
       <section id="ifc-adhesions" class="panel explorer" data-view="adhesions" hidden aria-labelledby="ifc-adhesions-summary">
         <h2 id="ifc-adhesions-summary" tabindex="-1">Adesões de Araquari</h2>
+        <p class="helper">Instrumentos publicados pelo IFC como aderente, com unidade administrativa Araquari identificada. Não inclui adesões de terceiros a atas do IFC.</p>
+        <div class="query-fields catalog-query"><label class="filter"><span>Instrumento, ata, processo ou fornecedor</span><input id="adhesion-search" type="search" placeholder="Pesquisar adesões…" autocomplete="off"></label><label class="filter"><span>Espécie</span><select id="adhesion-kind"><option value="all">Todas</option><option value="formal">Contratos formais</option><option value="other">Outros instrumentos</option></select></label></div>
+        <div class="filter-block date-filter-block"><h3><span class="ui-icon icon-calendar" aria-hidden="true"></span> Período e datas</h3><div class="filter-grid"><label class="filter"><span>Data de referência</span><select id="adhesion-date-kind"><option value="signed">Assinatura</option><option value="starts">Início da vigência</option><option value="ends">Fim da vigência</option><option value="publishedMonth">Publicação (mês disponível)</option></select></label><label class="filter"><span>De</span><input id="adhesion-date-from" type="date" ></label><label class="filter"><span>Até</span><input id="adhesion-date-to" type="date" ></label><label class="filter"><span>Vencimento de</span><input id="adhesion-due-from" type="date" ></label><label class="filter"><span>Vencimento até</span><input id="adhesion-due-to" type="date" ></label><label class="filter"><span>Vigente em</span><input id="adhesion-active-date" type="date" ></label><label class="filter"><span>Situação pelas datas</span><select id="adhesion-validity"><option value="all">Todas</option><option value="current">Vigente</option><option value="expired">Vencida</option><option value="future">Futura</option><option value="unknown">Datas insuficientes</option></select></label></div><p class="filter-hint" id="adhesion-date-hint" role="status"></p></div>
+        <div class="filter-actions"><span id="adhesion-filter-status" class="filter-feedback-text" role="status"></span><button type="button" class="button button-secondary filter-reset" id="adhesion-reset"><span aria-hidden="true">↺</span> Limpar filtros</button></div>
         <div id="ifc-adhesions-content" role="status">Carregando adesões…</div>
+        <div class="pagination"><span id="adhesion-page-info" class="small-muted"></span><div id="adhesion-pages" class="page-actions"></div></div>
       </section>
     </section>
     <section class="workspace coverage-workspace" id="cobertura-fontes" data-workspace="coverage" hidden aria-labelledby="coverage-heading">
@@ -446,10 +465,11 @@
       <a id="record-official-link" class="inline-link" target="_blank" rel="noopener noreferrer" hidden>Consultar registro oficial</a>
     </div>
   </dialog>
+  <dialog id="item-result-dialog" aria-labelledby="item-result-title" class="document-dialog"><div class="dialog-content"><div class="dialog-heading"><div><div class="eyebrow">PNCP · RESULTADOS DO ITEM</div><h2 id="item-result-title" tabindex="-1">Item licitado</h2></div><button type="button" id="close-item-result" class="icon-button" aria-label="Fechar resultados">✕</button></div><div id="item-result-content" class="relations"></div></div></dialog>
   <footer class="site-footer">
     <div class="container"><span>Observatório de Despesas · Projeto público experimental</span><span>Fonte oficial CGU · Dados minimizados · Sem integração com Tesouro Gerencial</span></div>
   </footer>
-  <script type="module" src="./assets/app.js?v=3"></script>
+  <script type="module" src="./assets/app.js?v=4"></script>
   <script type="module" src="./assets/coverage-panel.js"></script>
 </body>
 </html>

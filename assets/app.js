@@ -1,6 +1,6 @@
 import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl} from './integrated-trajectory.js';
-import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters} from './budget-classification.js';
-import {filterStructuredNotice,filterStructuredContract,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
+import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters,budgetFacetOptions} from './budget-classification.js';
+import {filterStructuredNotice,filterStructuredContract,filterStructuredAta,filterStructuredTenderItem,validRange,validityStatus,matchesCatalogSearch,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
 import {procurementFinancialEvidence,procurementEvidenceDetails} from './procurement-financial-evidence.js';
 import {summarizeProcurementEvidence} from './procurement-evidence-coverage.js';
@@ -54,11 +54,71 @@ let arpDetailsById=null;
 const noticesState={query:'',modality:'all',attribution:'likely',srp:'all',minCents:null,maxCents:null,page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',minCents:null,maxCents:null,activeOn:'',page:0};
 const contractsPerPage=20;
+const todayBrazil=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const dateDefaults=kind=>({dateKind:kind,dateFrom:'',dateTo:'',dueFrom:'',dueTo:'',activeOn:'',validity:'all'});
+const ataState={query:'',scope:'all',items:'all',files:'all',adhesion:'all',page:0,...dateDefaults('signed')};
+const adhesionState={query:'',kind:'all',page:0,...dateDefaults('signed')};
+Object.assign(noticesState,dateDefaults('published'));
+Object.assign(contractsState,dateDefaults('signed'));
+const validityLabels={current:'Vigente',expired:'Vencida',future:'Futura',unknown:'Datas insuficientes',cancelled:'Cancelada'};
+function dateStatus(prefix,s){
+ const errors=[];
+ if(!validRange(s.dateFrom,s.dateTo))errors.push('Período inválido: a data inicial deve preceder a final.');
+ if(!validRange(s.dueFrom,s.dueTo))errors.push('Intervalo de vencimento inválido.');
+ const hint=$(prefix+'-date-hint');
+ if(hint){hint.textContent=errors.join(' ')||(s.dateKind==='publishedMonth'?'A fonte informa somente o mês de publicação: o filtro considera os meses que intersectam o intervalo.':s.dateKind==='resultDate'?'O item aparece se algum resultado tiver data no intervalo.':'Limites inclusivos. Campos ausentes não correspondem a filtros de data ativos.');hint.classList.toggle('filter-error',errors.length>0);}
+ for(const [x,y] of [['date-from','date-to'],['due-from','due-to']]){
+  const start=$(prefix+'-'+x),end=$(prefix+'-'+y);if(start&&end){const valid=validRange(start.value,end.value);start.setAttribute('aria-invalid',String(!valid));end.setAttribute('aria-invalid',String(!valid));}
+ }
+ return !errors.length;
+}
+function bindDateFilters(prefix,s,render){
+ const fields=[['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity']];
+ for(const [id,key] of fields){const el=$(prefix+'-'+id);if(!el)continue;el.addEventListener('change',()=>{s[key]=el.value;s.page=0;render();});}
+ dateStatus(prefix,s);
+}
+function resetDates(prefix,s,kind){
+ Object.assign(s,dateDefaults(kind));
+ for(const [id,key] of [['date-kind','dateKind'],['date-from','dateFrom'],['date-to','dateTo'],['due-from','dueFrom'],['due-to','dueTo'],['active-date','activeOn'],['validity','validity']]){const el=$(prefix+'-'+id);if(el)el.value=s[key];}
+ dateStatus(prefix,s);
+}
+function countFilterStatus(prefix,s,results,total,extra=[]){
+ const active=[s.query&&'Busca',s.dateFrom||s.dateTo?'Período':'',s.dueFrom||s.dueTo?'Vencimento':'',s.activeOn&&'Vigente em',s.validity&&s.validity!=='all'?'Situação':'',...extra].filter(Boolean);
+ const el=$(prefix+'-filter-status');if(el)el.textContent=fmtCount(results)+' de '+fmtCount(total)+' resultados'+(active.length?' · '+active.join(' · '):' · sem filtros adicionais');
+}
+function compactPagination(host,s,total,perPage,render){
+ const pages=Math.max(1,Math.ceil(total/perPage));s.page=Math.max(0,Math.min(pages-1,s.page));
+ host.replaceChildren();
+ const make=(label,page,disabled=false,current=false)=>{
+  const btn=element('button','button button-secondary',label);btn.type='button';btn.disabled=disabled;
+  if(current)btn.setAttribute('aria-current','page');btn.addEventListener('click',()=>{s.page=page;render();});return btn;
+ };
+ host.append(make('«',0,s.page===0),make('‹',s.page-1,s.page===0));
+ for(let p=Math.max(0,Math.min(s.page-1,pages-3));p<Math.min(pages,Math.max(0,Math.min(s.page-1,pages-3))+3);p++)host.append(make(String(p+1),p,false,p===s.page));
+ host.append(make('›',s.page+1,s.page>=pages-1),make('»',pages-1,s.page>=pages-1));
+ return pages;
+}
+function enrichPagination(prevId,nextId,s,pages,render){
+ const prev=$(prevId),next=$(nextId);if(!prev||!next)return;
+ const parent=prev.parentElement;if(parent!==next.parentElement)return;
+ for(const el of parent.querySelectorAll('[data-extra-page]'))el.remove();
+ const make=(label,page,disabled,title,current=false)=>{const el=element('button','button button-secondary',label);el.type='button';el.dataset.extraPage='true';el.disabled=disabled;el.title=title;el.setAttribute('aria-label',title);if(current)el.setAttribute('aria-current','page');el.addEventListener('click',()=>{s.page=page;render();});return el;};
+ parent.insertBefore(make('«',0,s.page===0,'Primeira página'),prev);
+ const start=Math.max(0,Math.min(s.page-1,pages-3));for(let p=start;p<Math.min(pages,start+3);p++)parent.insertBefore(make(String(p+1),p,false,'Página '+(p+1),p===s.page),next);
+ parent.insertBefore(make('»',pages-1,s.page>=pages-1,'Última página'),next.nextSibling);
+}
+function dateCell(record,{notice=false}={}){
+ const cell=element('td','date-cell');
+ const add=(label,date)=>{const line=element('span','');line.append(element('span','small-muted',label),element('strong','',date?localDate(date):'—'));cell.append(line);};
+ if(notice){add('Publicação',record.published);add('Fim propostas',record.proposalEnd);}
+ else{add('Início',record.starts);add('Fim',record.ends);const status=validityStatus(record,todayBrazil());cell.append(element('span','validity-tag validity-'+status,validityLabels[status]));}
+ return cell;
+}
 const cache = new Map();
 let commitmentTrajectories=[];
 let trajectoryReady=false,trajectoryPage=0;
 let integratedMemo=null,integratedHistoryLoading=null;
-const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetSelections:{},budgetMetric:'count',
+const state = { manifest: null, month: null, data: null, search: '', phase: 'all', day: 'all', page: 0, budgetDimension:'action',budgetSelections:{},budgetOptionSearch:'',budgetMetric:'count',
   historyYear: null, loadingHistory: false, loadingMonth: false };
 const pendingMonths = new Map();
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
@@ -71,6 +131,7 @@ const views = {
   'resumo-despesas': ['expenses', 'summary', 'summary-title'],
   contratacoes: ['procurement', 'notices', 'procurement-nav-title'],
   'notices-section': ['procurement', 'notices', 'notices-title'],
+  'atas-section': ['procurement', 'atas', 'atas-title'],
   'procurement-section': ['procurement', 'contracts', 'procurement-title'],
   'tender-items-panel': ['procurement', 'items', 'items-title'],
   'ifc-adhesions': ['procurement', 'adhesions', 'ifc-adhesions-summary'],
@@ -92,6 +153,8 @@ function showView(route, focus = false) {
     else link.removeAttribute('aria-current');
   }
   if (view === 'items' && !tenderItemsState.data) loadTenderItems();
+  if (view === 'atas') renderAtas();
+  if (view === 'adhesions'&&procurementData) renderIfcAdhesions();
   if (area === 'coverage') $('historical-coverage').open = true;
   if (focus) {
     window.scrollTo({top:0, behavior:'instant'});
@@ -264,7 +327,7 @@ function toggleBudgetSelection(dimension,key){
 function budgetSelectionLabel(dimension,key){
  const labels={missing:'Não recuperado / não informado',multiple:'Múltiplas classificações (sem rateio)',context_missing:'Sem ação inequívoca'};
  if(labels[key])return labels[key];
- try{const [year,,action,code]=JSON.parse(key);return year+' · '+(action?action+' / ':'')+code;}catch{return key;}
+ try{const parts=JSON.parse(key),[year,,action,code]=parts;return year+' · '+(parts.length===3?action:(action?action+' / ':'')+code);}catch{return key;}
 }
 function filteredDocuments({ignoreBudget=false}={}) {
   const months = state.historyYear
@@ -364,22 +427,40 @@ function renderBudgetPanel(base){
  const dimension=state.budgetDimension,selected=state.budgetSelections[dimension]||[];
  const contextual=base.filter(({doc})=>budgetMatches(doc,dimension));
  const groups=summarizeBudget(contextual,dimension,{confirmedPi});
- const selector=$('budget-group');
- const options=groups.map(g=>new Option((selected.includes(g.key)?'✓ ':'')+g.label+' ('+fmtCount(g.count)+')',g.key));
- for(const key of selected)if(!groups.some(g=>g.key===key))options.push(new Option('✓ '+budgetSelectionLabel(dimension,key)+' (0)',key));
- selector.replaceChildren(new Option('Selecionar classificação…','all'),...options);selector.value='all';
- $('budget-add').disabled=true;
- $('budget-filter-count').textContent=Object.values(state.budgetSelections).reduce((n,keys)=>n+keys.length,0)?' · '+Object.values(state.budgetSelections).reduce((n,keys)=>n+keys.length,0)+' selecionado(s)':'';
-
+ const facet=budgetFacetOptions(base,dimension,state.budgetSelections,{confirmedPi});
+ const known=new Set(facet.map(g=>g.key));
+ for(const key of selected)if(!known.has(key))facet.push({key,label:budgetSelectionLabel(dimension,key),compatible:0,count:0});
+ const selectionCount=Object.values(state.budgetSelections).reduce((n,keys)=>n+keys.length,0);
+ $('budget-filter-count').textContent=selectionCount?' · '+selectionCount+' selecionado(s)':'';
+ const dimensions=$('budget-dimension-list');dimensions.replaceChildren();
+ for(const [key,keys] of Object.entries(state.budgetSelections)){
+  const btn=element('button','filter-chip',BUDGET_DIMENSIONS[key]+' · '+keys.length);
+  btn.type='button';btn.setAttribute('aria-pressed',String(key===dimension));btn.addEventListener('click',()=>{state.budgetDimension=key;state.budgetOptionSearch='';$('budget-dimension').value=key;$('budget-option-search').value='';renderTable();});dimensions.append(btn);
+ }
+ const hostOptions=$('budget-options'),focusKey=document.activeElement?.dataset?.budgetKey;
+ hostOptions.replaceChildren();
+ const q=searchText(state.budgetOptionSearch);
+ const visible=facet.filter(g=>!q||searchText(g.label+' '+(referenceFor(siopCatalog,g,dimension)||'')).includes(q)).sort((x,y)=>Number(selected.includes(y.key))-Number(selected.includes(x.key))||y.compatible-x.compatible||x.label.localeCompare(y.label,'pt-BR'));
+ for(const g of visible){
+  const label=element('label','facet-option'),check=element('input');check.type='checkbox';check.checked=selected.includes(g.key);check.dataset.budgetKey=g.key;
+  check.addEventListener('change',()=>toggleBudgetSelection(dimension,g.key));
+  const caption=element('span','',g.label);const count=element('span','facet-count',fmtCount(g.compatible));
+  count.title='Documentos compatíveis com os outros filtros; total antes desses filtros: '+fmtCount(g.count);
+  label.append(check,caption,count);hostOptions.append(label);
+  if(focusKey===g.key)check.focus({preventScroll:true});
+ }
+ if(!visible.length)hostOptions.append(element('p','helper','Nenhuma classificação para a busca neste período.'));
+ $('budget-clear').disabled=!selectionCount;
+ $('budget-all-history').disabled=state.loadingHistory||state.loadingMonth||state.historyYear==='all';
  const single=['1','2','3'].includes(state.phase);
  $('budget-metric').options[1].disabled=!single;
  if(!single)state.budgetMetric='count';
  $('budget-metric').value=state.budgetMetric;
  const missing=groups.filter(g=>g.kind==='missing').reduce((n,g)=>n+g.count,0);
  const multiple=groups.filter(g=>g.kind==='multiple').reduce((n,g)=>n+g.count,0);
- const known=contextual.length-missing-multiple;
+ const knownCount=contextual.length-missing-multiple;
  $('budget-coverage').textContent=fmtCount(contextual.length)+' documentos compatíveis com as outras dimensões · '+
-  fmtCount(known)+' classificados · '+fmtCount(missing)+' não recuperados/sem contexto · '+fmtCount(multiple)+' múltiplos'+
+  fmtCount(knownCount)+' classificados · '+fmtCount(missing)+' não recuperados/sem contexto · '+fmtCount(multiple)+' múltiplos'+
   (state.loadingHistory?' · cobertura em carregamento':' · somente competências carregadas')+
   (state.budgetDimension==='pi'?' · somente identidade SIAFI integral declarada no PNCP':'');
  const host=$('budget-bars');host.replaceChildren();
@@ -1472,9 +1553,10 @@ function exportCsv() {
 function initEvents() {
   $('budget-dimension').replaceChildren(...Object.entries(BUDGET_DIMENSIONS).map(([key,label])=>new Option(label,key)));
   $('budget-dimension').value=state.budgetDimension;
-  $('budget-dimension').addEventListener('change',e=>{state.budgetDimension=e.target.value;if(state.data)renderTable();});
-  $('budget-group').addEventListener('change',e=>{$('budget-add').disabled=e.target.value==='all';$('budget-add').textContent=(state.budgetSelections[state.budgetDimension]||[]).includes(e.target.value)?'Remover':'Adicionar';});
-  $('budget-add').addEventListener('click',()=>{const key=$('budget-group').value;if(key!=='all')toggleBudgetSelection(state.budgetDimension,key);$('budget-add').textContent='Adicionar';});
+  $('budget-dimension').addEventListener('change',e=>{state.budgetDimension=e.target.value;state.budgetOptionSearch='';$('budget-option-search').value='';if(state.data)renderTable();});
+  $('budget-option-search').addEventListener('input',e=>{state.budgetOptionSearch=e.target.value;if(state.data)renderTable();});
+  $('budget-clear').addEventListener('click',()=>{state.budgetSelections={};state.budgetOptionSearch='';$('budget-option-search').value='';if(state.data)refreshFilters();});
+  $('budget-all-history').addEventListener('click',()=>searchHistory('all'));
   $('siop-help').addEventListener('click',()=>showDialogFromTop($('siop-dialog')));
   $('close-siop-dialog').addEventListener('click',()=>$('siop-dialog').close());
   $('budget-metric').addEventListener('change',e=>{state.budgetMetric=e.target.value;if(state.data)renderTable();});
@@ -1526,7 +1608,7 @@ function initEvents() {
     state.day = event.target.value; refreshFilters();
   });
   $('clear-filters').addEventListener('click', () => {
-    state.search = ''; state.phase = 'all'; state.day = 'all'; state.budgetSelections={};
+    state.search = ''; state.phase = 'all'; state.day = 'all'; state.budgetSelections={};state.budgetOptionSearch='';$('budget-option-search').value='';
     $('search-doc').value = ''; $('day-filter').value = 'all';
     refreshFilters();
   });
@@ -1615,9 +1697,10 @@ async function init() {
 
 function filteredContracts(){
   if(!procurementData)return [];
+  if(!dateStatus('contract',contractsState))return [];
   return procurementData.contracts.filter(contract=>{
     if(!isFormalContract(contract))return false;
-    if(!filterStructuredContract(contract,contractsState))return false;
+    if(!filterStructuredContract(contract,{...contractsState,today:todayBrazil()}))return false;
     if(contractsState.source!=='all'&&contract.source!==contractsState.source)return false;
     if(contractsState.scope!=='all'&&contract.scope!==contractsState.scope)return false;
     const evidence=campusEvidence(contract);
@@ -1630,11 +1713,11 @@ function filteredContracts(){
       contract.starts,contract.ends,contract.publishedMonth,contract.unitCode,
       contract.amountCents,contract.commitmentStatus,contract.procurementLinkStatus,
       ...(contract.commitmentRefs||[])];
-    return !contractsState.query||fields.filter(Boolean).join(' ').toLowerCase()
-      .includes(contractsState.query);
-  });
+    return matchesCatalogSearch(contractsState.query,fields);
+  }).sort((a,b)=>(b.signed||b.starts||b.publishedMonth||'').localeCompare(a.signed||a.starts||a.publishedMonth||'')||String(b.id).localeCompare(String(a.id)));
 }
 function renderContracts(){
+  if(!procurementData)return;
   const all=filteredContracts();
   const totalPages=Math.max(1,Math.ceil(all.length/contractsPerPage));
   contractsState.page=Math.min(Math.max(contractsState.page,0),totalPages-1);
@@ -1646,12 +1729,14 @@ function renderContracts(){
   $('contract-pages').textContent='Página '+(contractsState.page+1)+' de '+totalPages;
   $('contract-prev').disabled=contractsState.page===0;
   $('contract-next').disabled=contractsState.page>=totalPages-1;
+  enrichPagination('contract-prev','contract-next',contractsState,totalPages,renderContracts);
+  countFilterStatus('contract',contractsState,all.length,formal,[contractsState.source!=='all'?'Fonte':'',contractsState.scope!=='all'?'Publicador':'',contractsState.attribution!=='all'?'Escopo':'',contractsState.minCents!==null||contractsState.maxCents!==null?'Valor':'']);
   const tbody=$('contract-rows');
   tbody.replaceChildren();
   if(!rows.length){
     const row=element('tr'),cell=element('td','',
       'Nenhum contrato disponível para os filtros e períodos já consultados.');
-    cell.colSpan=8;row.append(cell);tbody.append(row);return;
+    cell.colSpan=9;row.append(cell);tbody.append(row);return;
   }
   for(const contract of rows){
     const row=element('tr');
@@ -1693,7 +1778,7 @@ function renderContracts(){
         contract.procurementLinkStatus==='not_reported'?'Sem referência informada':
         'Aguardando consulta'));
     }
-    row.append(source,proof,idcell,purchaseCell,supplier,process,amount,details);
+    row.append(source,proof,idcell,purchaseCell,supplier,process,amount,dateCell(contract),details);
     tbody.append(row);
   }
 }
@@ -1725,22 +1810,61 @@ function renderContractCoverage(){
     'os que possuem evidências de Araquari. Processos e publicações podem ser incompletos.';
 }
 function renderIfcAdhesions(){
-  const root=$('ifc-adhesions-content');
-  const rows=(procurementData?.contracts||[]).filter(isAraquariAdhesion);
-  root.replaceChildren(element('p','helper','Adesões realizadas pelo IFC com unidade 158459 (Araquari) identificada no instrumento publicado no PNCP.'));
-  if(!rows.length){
-    root.append(element('p','small-muted','Nenhuma adesão de Araquari identificada no acervo consultado.'));
-    return;
-  }
-  const list=element('ul');
-  for(const c of rows){
-    const li=element('li','small-muted'),link=element('a','doc-code',c.number||c.pncpId),url=publicPncpUrl(c);
-    if(url){link.href=url;link.target='_blank';link.rel='noopener noreferrer'}
-    li.append(link,document.createTextNode(' · '+(c.kind||'Instrumento PNCP')+' · Unidade 158459 (Araquari)'+(c.ataControl?' · Ata de origem '+c.ataControl:'')));
-    // Referencias apenas, sem repetir valores financeiros ou tratar NE como contrato formal.
-    list.append(li);
-  }
-  root.append(list);
+ const root=$('ifc-adhesions-content');if(!procurementData)return;
+ const all=(procurementData.contracts||[]).filter(isAraquariAdhesion);
+ const rows=dateStatus('adhesion',adhesionState)?all.filter(c=>filterStructuredContract(c,{...adhesionState,today:todayBrazil()})&&
+  (adhesionState.kind==='all'||(adhesionState.kind==='formal')===isFormalContract(c))&&matchesCatalogSearch(adhesionState.query,[c.number,c.pncpId,c.ataControl,c.process,c.object,c.supplierName,c.supplierCnpj,c.supplierCpfMasked])).sort((a,b)=>(b.signed||'').localeCompare(a.signed||'')): [];
+ root.replaceChildren();
+ countFilterStatus('adhesion',adhesionState,rows.length,all.length,[adhesionState.kind!=='all'?'Espécie':'']);
+ const pages=compactPagination($('adhesion-pages'),adhesionState,rows.length,20,renderIfcAdhesions);
+ $('adhesion-page-info').textContent='Página '+(adhesionState.page+1)+' de '+pages+' · '+fmtCount(rows.length)+' adesões';
+ if(!rows.length){root.append(element('p','helper','Nenhuma adesão identificada para os filtros no acervo consultado.'));return;}
+ const host=element('div','adhesion-cards');
+ for(const c of rows.slice(adhesionState.page*20,(adhesionState.page+1)*20)){
+  const card=element('article','relation-item adhesion-card');
+  card.append(element('strong','',c.number||c.pncpId),element('span','small-muted',c.kind||'Instrumento PNCP'),element('span','',contractSupplier(c)),element('span','small-muted','Assinatura: '+(c.signed?localDate(c.signed):'—')+' · Fim: '+(c.ends?localDate(c.ends):'—')),
+   element('span','validity-tag validity-'+validityStatus(c,todayBrazil()),validityLabels[validityStatus(c,todayBrazil())]));
+  if(c.ataControl)card.append(element('span','small-muted','Ata de origem: '+c.ataControl));
+  card.append(relationButton('Ver ficha e trajetória',()=>showCatalogDetail(c,'instrument')));
+  const url=publicPncpUrl(c);if(url){const link=element('a','inline-link','Registro oficial PNCP');link.href=url;link.target='_blank';link.rel='noopener noreferrer';card.append(link);}
+  host.append(card);
+ }
+ root.append(host);
+}
+function renderAtas(){
+ if(!atasData){$('ata-count').textContent='Catálogo de atas indisponível';return;}
+ const notices=new Map((noticesData?.notices||[]).map(n=>[n.pncpId,n]));
+ const rows=dateStatus('ata',ataState)?atasData.atas.filter(ata=>{
+  const n=notices.get(ata.procurementId),detail=arpDetailsById?.get(ata.id);
+  if(!filterStructuredAta(ata,detail,{...ataState,today:todayBrazil()}))return false;
+  if(ataState.scope!=='all'){const ev=n?noticeEvidence(n):{level:'unverified'};if(ataState.scope==='confirmed'?ev.level!=='confirmed':ev.level==='unverified')return false;}
+  return matchesCatalogSearch(ataState.query,[ata.number,ata.id,ataControlFor(ata),n?.number,n?.process,n?.object,...(detail?.compras?.items||[]).map(i=>i.supplierCnpj||i.supplierCpfMasked)]);
+ }).sort((a,b)=>(b.signed||b.published||'').localeCompare(a.signed||a.published||'')||b.id.localeCompare(a.id)): [];
+ const pages=compactPagination($('ata-pages'),ataState,rows.length,20,renderAtas);
+ $('ata-count').textContent=fmtCount(rows.length)+' de '+fmtCount(atasData.atas.length)+' atas IFC';
+ $('ata-page-info').textContent='Página '+(ataState.page+1)+' de '+pages;
+ countFilterStatus('ata',ataState,rows.length,atasData.atas.length,[ataState.scope!=='all'?'Escopo':'',ataState.items!=='all'?'Itens':'',ataState.files!=='all'?'Documentos':'',ataState.adhesion!=='all'?'Adesão':'']);
+ const tbody=$('ata-rows');tbody.replaceChildren();
+ if(!rows.length){const tr=element('tr'),td=element('td','','Nenhuma ata corresponde aos filtros no acervo consultado.');td.colSpan=7;tr.append(td);tbody.append(tr);return;}
+ for(const ata of rows.slice(ataState.page*20,(ataState.page+1)*20)){
+  const tr=element('tr'),n=notices.get(ata.procurementId),detail=arpDetailsById?.get(ata.id),id=element('td'),origin=element('td'),status=validityStatus(ata,todayBrazil()),st=element('td'),coverage=element('td'),actions=element('td');
+  id.append(relationButton('Ata '+(ata.number||ata.sequence),()=>showCatalogDetail(ata,'ata')),element('span','small-muted',ataControlFor(ata)||ata.id));
+  if(n)origin.append(relationButton((MODALITIES[n.modality]||'Licitação')+' · '+(n.number||n.pncpId),()=>showCatalogDetail(n,'notice')));
+  else origin.append(element('span','small-muted',ata.procurementId));
+  st.append(element('span','validity-tag validity-'+status,validityLabels[status]));
+  coverage.append(element('span','small-muted',detail?.compras?fmtCount(detail.compras.items.length)+' registros de item/fornecedor':'Itens pendentes'),element('span','small-muted',Array.isArray(detail?.files)?fmtCount(detail.files.length)+' documento(s)':'Arquivos ainda não consultados'));
+  actions.append(relationButton('Ver detalhes',()=>showCatalogDetail(ata,'ata')));
+  const url=publicAtaUrl(ata);if(url){const link=element('a','inline-link','PNCP ↗');link.href=url;link.target='_blank';link.rel='noopener noreferrer';actions.append(link);}
+  tr.append(id,origin,element('td','',ata.signed?localDate(ata.signed):'—'),dateCell(ata),st,coverage,actions);tbody.append(tr);
+ }
+}
+function initAtaAdhesionFilters(){
+ bindDateFilters('ata',ataState,renderAtas);bindDateFilters('adhesion',adhesionState,renderIfcAdhesions);
+ for(const [prefix,s,render,keys] of [['ata',ataState,renderAtas,['scope','items','files','adhesion']],['adhesion',adhesionState,renderIfcAdhesions,['kind']]]){
+  $(prefix+'-search').addEventListener('input',e=>{s.query=e.target.value;s.page=0;render();});
+  for(const key of keys)$(prefix+'-'+key).addEventListener('change',e=>{s[key]=e.target.value;s.page=0;render();});
+  $(prefix+'-reset').addEventListener('click',()=>{s.query='';s.page=0;$(prefix+'-search').value='';for(const key of keys){s[key]='all';$(prefix+'-'+key).value='all';}resetDates(prefix,s,'signed');render();});
+ }
 }
 async function initProcurement(){
   $('contract-search').addEventListener('input',value=>{
@@ -1763,15 +1887,14 @@ async function initProcurement(){
       contractsState[field]=parsed;contractsState.page=0;renderContracts();
     });
   }
-  $('contract-active-on').addEventListener('change',e=>{
-    contractsState.activeOn=e.target.value;contractsState.page=0;renderContracts();
-  });
+  bindDateFilters('contract',contractsState,renderContracts);
   $('clear-contract-filters').addEventListener('click',()=>{
     contractsState.query='';contractsState.source='all';contractsState.scope='all';
     contractsState.attribution='likely';contractsState.minCents=null;
     contractsState.maxCents=null;contractsState.activeOn='';
     contractsState.page=0;
-    for(const id of ['contract-min-value','contract-max-value','contract-active-on'])$(id).value='';
+    resetDates('contract',contractsState,'signed');
+    for(const id of ['contract-min-value','contract-max-value']){$(id).value='';$(id).setCustomValidity('');}
     $('contract-search').value='';
     $('contract-source').value='all';$('contract-scope').value='all';
     $('contract-attribution').value='likely';
@@ -1818,6 +1941,7 @@ function noticeEvidence(notice) {
   return assessNoticeAttribution(notice,procurementData?.contracts||[],loadedCguDocuments());
 }
 function filteredNotices() {
+  if(!dateStatus('notices',noticesState))return [];
   const query = searchText(noticesState.query);
   const ataMatches = new Set(query ? (atasData?.atas || []).filter(ata =>
     [ata.id, ata.number].some(value => searchText(value).includes(query)))
@@ -1834,9 +1958,8 @@ function filteredNotices() {
       MODALITIES[item.modality],item.unitCode,item.published,item.month,
       item.situation,item.srp?'SRP':'',item.estimatedCents,item.homologatedCents,
       item.disputeMode,item.legalBasisCode,item.proposalStart,item.proposalEnd];
-    return !query || ataMatches.has(item.pncpId) ||
-      searchText(values.filter(Boolean).join(' ')).includes(query);
-  });
+    return !query || ataMatches.has(item.pncpId) || matchesCatalogSearch(query,values);
+  }).sort((a,b)=>(b.published||b.month||'').localeCompare(a.published||a.month||'')||b.pncpId.localeCompare(a.pncpId));
 }
 let latestProcurementAudit=null;
 function selectedAuditFindings(){
@@ -1912,12 +2035,14 @@ function renderNotices() {
   $('notices-page-info').textContent='Página '+(noticesState.page+1)+' de '+pages;
   $('notices-prev').disabled=noticesState.page===0;
   $('notices-next').disabled=noticesState.page>=pages-1;
+  enrichPagination('notices-prev','notices-next',noticesState,pages,renderNotices);
+  countFilterStatus('notices',noticesState,all.length,noticesData.notices.length,[noticesState.attribution!=='all'?'Escopo':'',noticesState.modality!=='all'?'Modalidade':'',noticesState.srp!=='all'?'SRP':'',noticesState.minCents!==null||noticesState.maxCents!==null?'Valor':'']);
   const tbody=$('notices-rows');
   tbody.replaceChildren();
   if(!all.length){
     const row=element('tr'),cell=element('td','',
       'Nenhuma publicação correspondente aos filtros ou competências já consultadas.');
-    cell.colSpan=7;row.append(cell);tbody.append(row);
+    cell.colSpan=8;row.append(cell);tbody.append(row);
     return;
   }
   for(const notice of all.slice(noticesState.page*20,(noticesState.page+1)*20)){
@@ -1961,6 +2086,9 @@ function renderNotices() {
       button.type='button';
       button.title='Vínculo entre a contratação e os termos de contrato pelo ID PNCP. Não equivale à nota de empenho da UG 158459.';
       button.addEventListener('click',()=>{
+        resetDates('contract',contractsState,'signed');
+        contractsState.minCents=null;contractsState.maxCents=null;
+        for(const id of ['contract-min-value','contract-max-value']){$(id).value='';$(id).setCustomValidity('');}
         contractsState.query=notice.pncpId.toLowerCase();
         contractsState.attribution='all';
         contractsState.source='all';
@@ -2000,7 +2128,7 @@ function renderNotices() {
       Number.isSafeInteger(notice.estimatedCents)?
         fmtMoney(notice.estimatedCents):'Não informado');
     value.title='Estimativa da licitação, não despesa empenhada, contratada ou paga';
-    row.append(modality,docCell,related,process,status,value,details);
+    row.append(modality,docCell,related,process,status,value,dateCell(notice,{notice:true}),details);
     tbody.append(row);
   }
 }
@@ -2048,6 +2176,7 @@ async function initNotices() {
       noticesState[field]=parsed;noticesState.page=0;renderNotices();
     });
   }
+  bindDateFilters('notices',noticesState,renderNotices);
   $('notices-reset').addEventListener('click',()=>{
     noticesState.query='';noticesState.modality='all';noticesState.attribution='likely';
     noticesState.srp='all';noticesState.minCents=null;noticesState.maxCents=null;
@@ -2055,6 +2184,8 @@ async function initNotices() {
     $('notices-search').value='';selector.value='all';
     $('notices-srp').value='all';$('notices-min-value').value='';$('notices-max-value').value='';
     $('notices-attribution').value='likely';
+    resetDates('notices',noticesState,'published');
+    $('notices-min-value').setCustomValidity('');$('notices-max-value').setCustomValidity('');
     renderNotices();
   });
   $('notices-prev').addEventListener('click',()=>{noticesState.page--;renderNotices();});
@@ -2077,29 +2208,32 @@ async function initNotices() {
       throw Error('Dados PNCP incompatíveis');
     noticesData=data;
     renderNoticesCoverage();
-    renderNotices();
+    renderNotices();renderAtas();if(tenderItemsState.data)renderTenderItems();
   }catch{
     noticesData={notices:[],coverage:[]};
     $('notices-coverage').className='notice warning';
     $('notices-coverage').textContent=
       'Aguardando a primeira coleta de licitações e contratações diretas. Nenhuma contratação foi presumida.';
-    renderNotices();
+    renderNotices();renderAtas();if(tenderItemsState.data)renderTenderItems();
   }
 }
 
-const tenderItemsState={data:null,query:'',procedure:'all',page:0,loading:false};
+const tenderItemsState={data:null,query:'',procedure:'all',page:0,loading:false,result:'all',srp:'all',modality:'all',...dateDefaults('published')};
 function renderTenderItems(){
  const d=tenderItemsState.data;if(!d)return;
  const all=d.procedures.flatMap(p=>p.items.map(item=>({...item,checkedAt:p.checkedAt})));
- const q=tenderItemsState.query;
- const filtered=all.filter(item=>
-  (tenderItemsState.procedure==='all'||item.pncpId===tenderItemsState.procedure)&&
-  (!q||[item.description,item.pncpId,String(item.number),...(item.results||[]).flatMap(r=>[r.supplierCnpj||'',r.supplierCpfMasked||''])].some(v=>v.toLowerCase().includes(q))));
+ const q=tenderItemsState.query,notices=new Map((noticesData?.notices||[]).map(n=>[n.pncpId,n]));
+ const filtered=dateStatus('tender-items',tenderItemsState)?all.filter(item=>{
+  const notice=notices.get(item.pncpId);
+  return (tenderItemsState.procedure==='all'||item.pncpId===tenderItemsState.procedure)&&filterStructuredTenderItem(item,notice,tenderItemsState)&&matchesCatalogSearch(q,[item.description,item.pncpId,item.number,notice?.object,notice?.process,...(item.results||[]).flatMap(r=>[r.supplierCnpj,r.supplierCpfMasked])]);
+ }).sort((a,b)=>(notices.get(b.pncpId)?.published||'').localeCompare(notices.get(a.pncpId)?.published||'')||b.pncpId.localeCompare(a.pncpId)||a.number-b.number):[];
  const pages=Math.max(1,Math.ceil(filtered.length/25));
  tenderItemsState.page=Math.max(0,Math.min(tenderItemsState.page,pages-1));
  $('tender-items-page-info').textContent='Página '+(tenderItemsState.page+1)+' de '+pages+' · '+fmtCount(filtered.length)+' itens';
  $('tender-items-prev').disabled=tenderItemsState.page===0;
  $('tender-items-next').disabled=tenderItemsState.page>=pages-1;
+ enrichPagination('tender-items-prev','tender-items-next',tenderItemsState,pages,renderTenderItems);
+ countFilterStatus('tender-items',tenderItemsState,filtered.length,all.length,[tenderItemsState.procedure!=='all'?'Licitação':'',tenderItemsState.modality!=='all'?'Modalidade':'',tenderItemsState.result!=='all'?'Resultados':'',tenderItemsState.srp!=='all'?'SRP':'']);
  const tbody=$('tender-items-rows');tbody.replaceChildren();
  if(!filtered.length){const tr=element('tr'),td=element('td','', 'Nenhum item encontrado nos procedimentos coletados.');td.colSpan=6;tr.append(td);tbody.append(tr);return;}
  for(const item of filtered.slice(tenderItemsState.page*25,(tenderItemsState.page+1)*25)){
@@ -2117,15 +2251,17 @@ function renderTenderItems(){
   if(!Object.hasOwn(item,'results'))resultCell.textContent='Ainda não consultado';
   else if(!item.results.length)resultCell.textContent='Consulta sem resultado informado';
   else{
-   const details=element('details'),summary=element('summary','',fmtCount(item.results.length)+' resultado(s)');
-   details.append(summary);
+   const button=element('button','details-button',fmtCount(item.results.length)+' resultado(s)');button.type='button';
+   button.addEventListener('click',()=>{
+    $('item-result-title').textContent='Item '+item.number+' · '+item.description;
+    const details=$('item-result-content');details.replaceChildren();
    const dec=v=>v===undefined?'Não informado':new Intl.NumberFormat('pt-BR',{maximumFractionDigits:8}).format(Number(v));
    for(const r of item.results){
     const vendor=r.supplierCnpj?'CNPJ '+r.supplierCnpj:r.supplierCpfMasked?'CPF '+r.supplierCpfMasked:r.supplierType==='PE'?'Fornecedor estrangeiro':'Fornecedor não identificado publicamente';
     const description=[vendor,r.status===2?'Cancelado':'Informado','Data: '+localDate(r.date),'Quantidade homologada: '+dec(r.quantity),'Unitário homologado: R$ '+dec(r.unitPrice),r.total!==undefined?'Total informado: R$ '+dec(r.total):null,r.rank?'Classificação SRP: '+r.rank:null,r.reserve===2?'Remanescente':r.reserve===3?'Cadastro de reserva':null,r.cancelledAt?'Cancelado em '+localDate(r.cancelledAt):null].filter(Boolean).join(' · ');
-    details.append(element('p','helper',description));
+    details.append(element('div','relation-item',description));
    }
-   resultCell.append(details);
+   showDialogFromTop($('item-result-dialog'));});resultCell.append(button);
   }
   tr.append(resultCell);tbody.append(tr);
  }
@@ -2145,7 +2281,7 @@ async function loadTenderItems(){
   for(const p of data.procedures){
    const opt=element('option','',p.pncpId);opt.value=p.pncpId;sel.append(opt);
   }
-  tenderItemsState.procedure='all';tenderItemsState.page=0;
+  if([...sel.options].some(o=>o.value===tenderItemsState.procedure))sel.value=tenderItemsState.procedure;else tenderItemsState.procedure='all';tenderItemsState.page=0;
   const count=data.procedures.reduce((n,p)=>n+p.items.length,0);
   $('tender-items-coverage').textContent=fmtCount(count)+' itens de '+fmtCount(data.procedures.length)+
    ' licitações coletadas · '+fmtCount((noticesData?.notices||[]).filter(n=>n.srp===true).length)+
@@ -2170,6 +2306,11 @@ $('procurement-audit-export').addEventListener('click',()=>{
 });
 $('historical-ne-load').addEventListener('click',loadHistoricalNeEvidence);
 function initTenderItems(){
+ bindDateFilters('tender-items',tenderItemsState,renderTenderItems);
+ for(const [id,key] of [['result','result'],['srp','srp'],['modality','modality']])$('tender-items-'+id).addEventListener('change',e=>{tenderItemsState[key]=e.target.value;tenderItemsState.page=0;renderTenderItems();});
+ for(const [key,label] of Object.entries(MODALITIES))$('tender-items-modality').append(new Option(label,key));
+ $('tender-items-reset').addEventListener('click',()=>{Object.assign(tenderItemsState,{query:'',procedure:'all',result:'all',srp:'all',modality:'all',page:0});$('tender-items-search').value='';for(const id of ['procedure','result','srp','modality'])$('tender-items-'+id).value='all';resetDates('tender-items',tenderItemsState,'published');renderTenderItems();});
+ $('close-item-result').addEventListener('click',()=>$('item-result-dialog').close());
  $('tender-items-load').addEventListener('click',loadTenderItems);
  $('tender-items-search').addEventListener('input',e=>{tenderItemsState.query=e.target.value.trim().toLowerCase();tenderItemsState.page=0;renderTenderItems();});
  $('tender-items-procedure').addEventListener('change',e=>{tenderItemsState.procedure=e.target.value;tenderItemsState.page=0;renderTenderItems();});
@@ -2177,10 +2318,11 @@ function initTenderItems(){
  $('tender-items-next').addEventListener('click',()=>{tenderItemsState.page++;renderTenderItems();});
 }
 
+initAtaAdhesionFilters();
 initTenderItems();
 initEvents();
 init();
 loadSiopReference();
 initTrajectories();
-initProcurement().then(()=>{if(noticesData)renderNotices();if(state.data)renderTable();if(trajectoryReady)renderCommitmentTrajectories();});
+initProcurement().then(()=>{if(noticesData)renderNotices();if(atasData)renderAtas();if(state.data)renderTable();if(trajectoryReady)renderCommitmentTrajectories();});
 initNotices().then(()=>{if(trajectoryReady)renderCommitmentTrajectories();});

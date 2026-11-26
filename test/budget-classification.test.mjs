@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {budgetBucket,observedCode,referenceFor,summarizeBudget,matchesBudgetFilters} from '../assets/budget-classification.js';
+import {budgetBucket,observedCode,referenceFor,summarizeBudget,matchesBudgetFilters,budgetFacetOptions} from '../assets/budget-classification.js';
 const doc={phase:1,date:'2026-11-01',cents:100,nature:{action:'20RL - Funcionamento',budgetPlan:'0000 - Plano'}};
 test('PO depende de acao e exercicio; ausencia e multiplos nao viram codigo',()=>{
  assert.equal(observedCode(doc.nature.budgetPlan,'budgetPlan'),'0000');
@@ -40,4 +40,13 @@ test('filtros combinam E entre dimensoes, OU na mesma dimensao e exclusao contex
  assert.equal(matchesBudgetFilters({...a,nature:{...a.nature,group:'4 - Investimento'}},filters,{except:'group'}),true);
  assert.equal(matchesBudgetFilters({...a,nature:{...a.nature,action:'2994'}},filters),false);
  assert.equal(matchesBudgetFilters(a,{}),true);
+});
+
+test('facetas mantem opcoes sem correspondencia e contagem condicionada; PI tem chave consistente',()=>{
+ const a={...doc,nature:{...doc.nature,group:'3 - ODC'}},b={...doc,nature:{action:'2994',group:'4 - Investimentos'}};
+ const groups=budgetFacetOptions([{doc:a},{doc:b}],'action',{group:[budgetBucket(a,'group').key]});
+ assert.equal(groups.length,2);
+ assert.equal(groups.find(g=>g.code==='2994').compatible,0);
+ assert.equal(groups.find(g=>g.code==='20RL').compatible,1);
+ assert.deepEqual(JSON.parse(budgetBucket(a,'pi',{confirmedPi:['ABC']}).key),['2026','pi',null,'ABC']);
 });
