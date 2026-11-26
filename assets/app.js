@@ -812,7 +812,7 @@ function renderCatalogEvidence(record,kind){
   if(!detail.instruments.length)block.append(element('p','helper','Nenhum instrumento do IFC retornado na consulta completa.'));
   for(const i of detail.instruments){
    const link=element('a','inline-link',i.pncpId+(i.unitCode?' · unidade '+i.unitCode:'')+(i.adhesion===true?' · adesão do IFC':''));
-   link.href=publicPncpUrl({pncpId:i.pncpId});if(link.href){link.target='_blank';link.rel='noopener noreferrer';block.append(link);}
+   const target=publicPncpUrl({source:'pncp',pncpId:i.pncpId});if(target){link.href=target;link.target='_blank';link.rel='noopener noreferrer';block.append(link);}
   }
   host.append(block);
  }
