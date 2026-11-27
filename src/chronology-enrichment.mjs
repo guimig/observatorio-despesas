@@ -48,6 +48,41 @@ export function needsInitialCatalog(record){
  const {doc,items}=record.owners[0];
  return doc.itemsDetailVersion!==2||!Array.isArray(items);
 }
+/** So planejar historicos para sequenciais e valores validos. A coincidencia
+ * com o valor documental nao e requisito da recuperacao independente. */
+function hasValidHistoryCatalog(record){
+ if(record?.owners?.length!==1||needsInitialCatalog(record))return false;
+ const {items}=record.owners[0];
+ return items.length>0&&items.every(i=>Number.isSafeInteger(i.seq)&&i.seq>0&&Number.isSafeInteger(i.cents)&&i.cents>=0)&&
+  new Set(items.map(i=>i.seq)).size===items.length&&safeSum(items)!==null;
+}
+function historyRequirements(record){
+ const {doc,items}=record.owners[0],year=doc.id.slice(11,15);
+ return items.map(item=>({item,kind:item.historyChecked!==true?'unchecked':
+  requiresCanonicalHistoryCheckpoint(record,item)?'stale':
+  reconcileSiafiItem(item,{commitmentYear:year}).status!=='reconciled'?'repair':null}));
+}
+function needsIndependentHistory(record){
+ const {doc,items}=record.owners[0],reference=latestReference(doc,record.observations);
+ return !Number.isSafeInteger(reference.cents)||safeSum(items)!==reference.cents;
+}
+/** Contagens da fila real de historicos, sem valores ou IDs. Nao equivale
+ * ao numero de NEs conciliadas: a regra financeira permanece independente. */
+export function summarizeHistoryBacklog(months){
+ const empty=()=>({validCatalogs:0,notesWithWork:0,independentNotesWithWork:0,uncheckedItems:0,staleItems:0,repairItems:0});
+ const result={...empty(),byYear:{}};
+ for(const record of indexCommitmentChronology(months).entries){
+  if(!hasValidHistoryCatalog(record))continue;
+  const y=result.byYear[record.id.slice(11,15)]||=empty();
+  const work=historyRequirements(record).filter(row=>row.kind);
+  for(const bucket of [result,y]){
+   bucket.validCatalogs++;
+   if(work.length){bucket.notesWithWork++;if(needsIndependentHistory(record))bucket.independentNotesWithWork++;}
+   for(const {kind} of work)bucket[kind==='unchecked'?'uncheckedItems':kind==='stale'?'staleItems':'repairItems']++;
+  }
+ }
+ return result;
+}
 export function summarizeCatalogBacklog(months){
  const rows=indexCommitmentChronology(months).entries,byYear={};
  const result={identities:rows.length,missing:0,empty:0,available:0,duplicate:0,byYear};
@@ -99,6 +134,17 @@ export function catalogPageLimit(record,state={},now=new Date()){
  const k=catalogPaginationKey(record),stamp=k&&state[k];
  return validDay(stamp)&&stamp<=todayOf(now)&&Date.parse(todayOf(now))-Date.parse(stamp)<30*DAY?20:8;
 }
+/** Uma paginacao incompleta nunca e persistida como historico integral.
+ * Somente a proxima tentativa da mesma evidencia ganha limite maior. */
+export function historyPaginationKey(record,task){
+ if(task?.kind!=='itemHistory'||!hasValidHistoryCatalog(record)||
+    !record.owners[0].items.some(i=>i.seq===task.seq))return null;
+ return stateKey(['cgu-history-pagination-v1',chronologyAttemptKey(record,task)]);
+}
+export function historyPageLimit(record,task,state={},now=new Date()){
+ const k=historyPaginationKey(record,task),stamp=k&&state[k];
+ return validDay(stamp)&&stamp<=todayOf(now)&&Date.parse(todayOf(now))-Date.parse(stamp)<30*DAY?20:8;
+}
 export function chronologyAttemptKey(record,task){
  if(!record||record.owners.length!==1||!isNeTask(task))return null;
  const {doc,items}=record.owners[0],reference=latestReference(doc,record.observations);
@@ -116,38 +162,44 @@ export function requiresCanonicalHistoryCheckpoint(record,item){
  const reference=latestReference(record.owners[0].doc,record.observations);
  return !validDay(item.historyCheckedAt)||item.historyCheckedAt<reference.date;
 }
-/** Uma NE pode ser completada em uma rodada apenas se catalogo e valor de
- * referencia coincidirem e todos os historicos restantes couberem no grupo.
- * Historicos ja consultados mas nao conciliaveis vao para revisao rotativa. */
+/** A recuperacao de historicos pode avancar mesmo sem valor documental
+ * comparavel. Somente catalogo valido e identidade unica; nunca altera
+ * commitmentChronologyEvidence nem confirma conciliacao documental. */
 export function classifyChronologyWork(record,{state={},now=new Date()}={}){
  if(!record||record.owners.length!==1)return {kind:'blocked',reason:'duplicate_identity'};
- const {doc,items}=record.owners[0];
- const observations=record.observations,reference=latestReference(doc,observations);
+ const {doc,items}=record.owners[0],observations=record.observations;
  const evidence=commitmentChronologyEvidence(doc,items,observations);
  if(evidence.status==='reconciled')return {kind:'done'};
  const missingCatalog=needsInitialCatalog(record);
- if(!missingCatalog&&!Number.isSafeInteger(reference.cents))return {kind:'blocked',reason:'reference_amount_pending'};
- const catalogNeeded=missingCatalog||!items.length||safeSum(items)!==reference.cents;
- if(catalogNeeded){
-   const task=currentTask('items',record),days=missingCatalog?1:7;
-   if(recentlyAttempted(record,task,state,now,days))return {kind:'cooldown'};
-   return {kind:'catalog',task,observed:observations.length>0,recheck:task.recheck,missingCatalog,lastAttempt:state[chronologyAttemptKey(record,task)]||''};
+ const catalogWork=()=>{
+  const task=currentTask('items',record),days=missingCatalog?1:7;
+  if(recentlyAttempted(record,task,state,now,days))return {kind:'cooldown'};
+  return {kind:'catalog',task,observed:observations.length>0,recheck:task.recheck,missingCatalog,lastAttempt:state[chronologyAttemptKey(record,task)]||''};
+ };
+ if(!hasValidHistoryCatalog(record))return catalogWork();
+ const independent=needsIndependentHistory(record),missing=[],repairs=[];
+ let deferredMissing=false,deferredRepair=false;
+ const work=historyRequirements(record);
+ for(const {item,kind} of work){
+  if(!kind)continue;
+  const task=currentTask('itemHistory',record,item);
+  if(kind==='repair'){
+   if(recentlyAttempted(record,task,state,now,7))deferredRepair=true;
+   else repairs.push(task);
+  }else{
+   if(recentlyAttempted(record,task,state,now,1))deferredMissing=true;
+   else missing.push(task);
+  }
  }
- const missing=[],repairs=[];
- let deferred=false;
- for(const item of items){
-   const task=currentTask('itemHistory',record,item);
-   if(item.historyChecked!==true||requiresCanonicalHistoryCheckpoint(record,item)){
-     if(recentlyAttempted(record,task,state,now,1))deferred=true;
-     else missing.push(task);
-   }else if(reconcileSiafiItem(item,{commitmentYear:doc.id.slice(11,15)}).status!=='reconciled'){
-     if(!recentlyAttempted(record,task,state,now,7))repairs.push(task);
-     else deferred=true;
-   }
- }
- if(repairs.length)return {kind:'repair',tasks:repairs,observed:observations.length>0};
- if(deferred)return {kind:'cooldown'};
- if(missing.length)return {kind:'history',tasks:missing,observed:observations.length>0};
+ if(missing.length)return {kind:'history',tasks:missing,observed:observations.length>0,independent,
+  canFinish:!deferredMissing&&!deferredRepair&&!repairs.length};
+ if(repairs.length)return {kind:'repair',tasks:repairs,observed:observations.length>0,independent};
+ if(deferredMissing)return {kind:'cooldown'};
+ // Se os historicos ja foram consultados, ainda permite revisar catalogo
+ // divergente com o intervalo anterior. Nunca trata ausencia de valor como zero.
+ const reference=latestReference(doc,observations);
+ if(Number.isSafeInteger(reference.cents)&&safeSum(items)!==reference.cents)return catalogWork();
+ if(deferredRepair)return {kind:'cooldown'};
  return {kind:'blocked',reason:evidence.reason};
 }
 function orderGroups(groups,slot){
@@ -189,18 +241,21 @@ export function planChronologyEnrichment(base,months,{
  const contractCounts=new Map();
  for(const c of cguContracts)for(const id of new Set(c.refs||[]))contractCounts.set(id,(contractCounts.get(id)||0)+1);
  const contractual=id=>contractCounts.get(id)===1;
- const catalogs=[],groups=[],largeGroups=[],repairs=[];
+ const catalogs=[],groups=[],largeGroups=[],repairs=[],workById=new Map();
  for(const record of records){
-   const work=classifyChronologyWork(record,{state,now});
+   const work=classifyChronologyWork(record,{state,now});workById.set(record.id,work);
    const tagged={...work,id:record.id,year:record.id.slice(11,15)};
    if(work.kind==='catalog')catalogs.push(tagged);
-   else if(work.kind==='history')(work.tasks.length<=MAX_GROUP?groups:largeGroups).push(tagged);
+   else if(work.kind==='history')(work.canFinish&&work.tasks.length<=MAX_GROUP?groups:largeGroups).push(tagged);
    else if(work.kind==='repair')repairs.push(tagged);
  }
  const eligible=t=>{
    const record=byId.get(t.id);
    if(record?.owners.length!==1)return false;
+   const work=workById.get(t.id);
+   if(t.kind==='items'&&['history','repair','cooldown'].includes(work?.kind))return false;
    const item=t.kind==='itemHistory'?record.owners[0].items?.find(i=>i.seq===t.seq):null;
+   if(t.kind==='itemHistory'&&(!item||!hasValidHistoryCatalog(record)))return false;
    const freshRequired=item&&requiresCanonicalHistoryCheckpoint(record,item);
    const missing=t.kind==='items'&&needsInitialCatalog(record);
    return !recentlyAttempted(record,t,state,now,t.recheck&&!freshRequired&&!missing?7:1);
@@ -232,15 +287,22 @@ export function planChronologyEnrichment(base,months,{
  // Reserva pequena para contratos univocos; o restante segue rodizio geral.
  const contractHistoryQuota=Math.max(1,Math.floor(historyQuota/3));
  for(const group of ordered.filter(g=>contractual(g.id)))addGroup(group,contractHistoryQuota);
+ // Reservar parte dos grupos para NEs que podem ganhar reconstrucao interna
+ // mesmo quando a conferencia documental permanece pendente.
+ const independentQuota=Math.min(historyQuota,priorityHistory.length+Math.max(1,Math.floor(historyQuota/3)));
+ for(const group of ordered.filter(g=>g.independent))addGroup(group,independentQuota);
  for(const group of ordered)addGroup(group,historyQuota);
  const groupTasks=priorityHistory.length;
  const repairLimit=Math.min(MAX_REPAIRS,maxHistoryRechecks,maxItemHistories-groupTasks);
- const repairTasks=orderGroups(repairs,slot).flatMap(g=>g.tasks.slice(0,1)).slice(0,repairLimit);
+ const repairTasks=orderGroups(repairs,slot).filter(g=>!catalogIds.has(g.id)).flatMap(g=>g.tasks.slice(0,1)).slice(0,repairLimit);
  priorityHistory.push(...repairTasks.map(t=>priorityTask(t,'history_review')));
  // As demais fases conservam suas vagas e os grupos de historico.
- const historyLimit=Math.min(maxItemHistories+maxHistoryRechecks,Math.max(baseHistory.length,priorityHistory.length));
  const itemIds=new Set(items.map(t=>t.id));
  const availableHistories=ordered.concat(orderGroups(largeGroups,slot)).filter(g=>!itemIds.has(g.id)).flatMap(g=>g.tasks);
+ // A fila dirigida pode encontrar historicos que nao estavam na amostra
+ // mensal inicial; ocupar vagas livres sem ampliar o teto configurado.
+ const historyLimit=Math.min(maxItemHistories+maxHistoryRechecks,Math.max(baseHistory.length,priorityHistory.length,
+  Math.min(maxItemHistories,availableHistories.length)));
  const histories=unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id)),...availableHistories]).slice(0,historyLimit);
  const other=base.filter(t=>!isNeTask(t));
  // Duas vagas de catalogo novo por ciclo enquanto houver passivo, sem
@@ -251,6 +313,9 @@ export function planChronologyEnrichment(base,months,{
    other.filter(t=>!['liquidation','payment'].includes(t.kind)),reviews]);
  return {tasks,summary:{groupsSelected,groupTasks,catalogTasks:priorityItems.length,repairTasks:repairTasks.length,
    eligibleSmallGroups:groups.length,eligibleCatalogs:catalogs.length,eligibleHistoryReviews:repairs.length,
+   independentHistoryNotes:[...groups,...largeGroups].filter(g=>g.independent).length,
+   independentHistoryTasks:histories.filter(t=>needsIndependentHistory(byId.get(t.id))).length,
+   historyTasksByYear:Object.fromEntries([...new Set(histories.map(t=>t.id.slice(11,15)))].map(y=>[y,histories.filter(t=>t.id.slice(11,15)===y).length])),
    initialCatalogEligible:missing.length,initialCatalogSelected:initialTasks.length,initialCatalogByYear:Object.fromEntries([...new Set(initial.map(x=>x.year))].map(y=>[y,initial.filter(x=>x.year===y).length])),
    contractCatalogTasks:items.filter(t=>contractual(t.id)).length,contractHistoryTasks:histories.filter(t=>contractual(t.id)).length,
    filledCatalogSlots:items.filter(t=>!baseItems.some(b=>key(b)===key(t))).length,
@@ -262,7 +327,7 @@ export function planChronologyEnrichment(base,months,{
  * Nao desaloca grupos de fechamento nem tarefas de NS/OB. */
 export function promoteCatalogHistories(tasks,index,record,{remaining=6,state={},now=new Date()}={}){
  const work=classifyChronologyWork(record,{state,now});
- if(work.kind!=='history'||work.tasks.length>MAX_FOLLOWUP||work.tasks.length>remaining)return 0;
+ if(work.kind!=='history'||!work.canFinish||work.tasks.length>MAX_FOLLOWUP||work.tasks.length>remaining)return 0;
  const done=new Set(tasks.slice(0,index+1).map(key));
  if(work.tasks.some(t=>done.has(key(t))))return 0;
  const needed=work.tasks.map(key),remove=[];

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
-import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences,summarizeCatalogBacklog,needsInitialCatalog,orderMissingCatalogs,catalogPaginationKey,catalogPageLimit} from '../src/chronology-enrichment.mjs';
+import {buildCommitmentChronology,indexCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
+import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences,summarizeCatalogBacklog,needsInitialCatalog,orderMissingCatalogs,catalogPaginationKey,catalogPageLimit,summarizeHistoryBacklog,historyPaginationKey,historyPageLimit} from '../src/chronology-enrichment.mjs';
 const now=new Date('2026-11-27T17:00:00Z'),today='2026-11-27';
 const id=(n,year=2026)=>'15845900001'+year+'NE'+String(n).padStart(6,'0');
 const doc=(n,extra={})=>({id:id(n),date:'2026-11-10',phase:1,cents:100,itemsDetailVersion:2,...extra});
@@ -43,14 +43,14 @@ test('NE com reaparição exige data de checkpoint e revisita historico mesmo co
  assert.equal(work.kind,'history');assert.equal(work.tasks[0].recheck,true);
  assert.equal(requiresCanonicalHistoryCheckpoint(r,{...i,historyCheckedAt:today}),false);
 });
-test('catalogo divergente revisado sem repetir consulta sem mudança por sete dias',()=>{
- const r=record([{doc:doc(1),items:[pending(1,80)]}]);
+test('catalogo divergente com historicos completos revisado sem repetir consulta sem mudança por sete dias',()=>{
+ const r=record([{doc:doc(1),items:[checked(1,80)]}]);
  const w=classifyChronologyWork(r,{now});
  assert.equal(w.kind,'catalog');assert.equal(w.recheck,true);
  const k=chronologyAttemptKey(r,w.task),state={[k]:'2026-11-26'};
  assert.equal(classifyChronologyWork(r,{state,now}).kind,'cooldown');
  assert.equal(classifyChronologyWork(r,{state,now:new Date('2026-12-04T17:00:00Z')}).kind,'catalog');
- const fresh=record([{doc:doc(1,{cents:120}),items:[pending(1,80)]}]);
+ const fresh=record([{doc:doc(1,{cents:120}),items:[checked(1,80)]}]);
  assert.equal(classifyChronologyWork(fresh,{state,now}).kind,'catalog');
  assert.ok(/^[a-f0-9]{64}$/.test(k));
 });
@@ -140,7 +140,7 @@ test('passivo distingue catalogo ausente ou legado, consulta vazia v2 e identida
 });
 test('planejamento ocupa as vagas de catalogos com NEs novas e limita revisoes',()=>{
  const rows=[...Array.from({length:12},(_,i)=>({doc:doc(i+1,{itemsDetailVersion:undefined})})),
-  ...Array.from({length:5},(_,i)=>({doc:doc(i+20),items:[pending(1,80)]}))];
+  ...Array.from({length:5},(_,i)=>({doc:doc(i+20),items:[checked(1,80)]}))];
  const a=month(rows),ns={kind:'liquidation',id:'ns'},ob={kind:'payment',id:'ob'};
  const base=[ns,ob,...[20,21,22].map(n=>({kind:'items',id:id(n),month:a.month,recheck:true}))];
  const {tasks,summary}=planChronologyEnrichment(base,[a],{now,maxItems:10,review:true});
@@ -187,4 +187,74 @@ test('amplia limite de paginas apenas apos falha de paginacao e somente com evid
  assert.equal(catalogPageLimit(other,state,now),8);
  const complete=record([{doc:doc(1),items:[pending(1,100)]}]);
  assert.equal(catalogPaginationKey(complete),null);assert.equal(catalogPageLimit(complete,state,now),8);
+});
+
+test('historicos de catalogos validos avancam mesmo com valor documental distinto ou indisponivel',()=>{
+ const a=month([{doc:doc(1),items:[pending(1,80)]},{doc:doc(2,{cents:null}),items:[pending(1,100)]}]);
+ for(const r of indexCommitmentChronology([a]).entries){
+  const w=classifyChronologyWork(r,{now});
+  assert.equal(w.kind,'history');assert.equal(w.independent,true);assert.equal(w.canFinish,true);
+ }
+ const review=[1,2].map(n=>({kind:'items',id:id(n),month:a.month,recheck:true}));
+ const {tasks,summary}=planChronologyEnrichment(review,[a],{now,maxItemHistories:3,review:true});
+ assert.equal(tasks.filter(t=>t.kind==='items').length,0);
+ assert.equal(tasks.filter(t=>t.kind==='itemHistory').length,2);
+ assert.equal(summary.independentHistoryNotes,2);assert.equal(summary.independentHistoryTasks,2);
+ assert.equal(buildCommitmentChronology([a],{today}).reconciled,0);
+ const complete=month([{doc:doc(1),items:[checked(1,80)]},{doc:doc(2,{cents:null}),items:[checked(1,100)]}]);
+ const values=summarizeCommitmentValues([complete],{today});
+ assert.equal(values.internal,2);assert.equal(values.documentDifferent,1);assert.equal(values.documentUnavailable,1);
+ assert.equal(buildCommitmentChronology([complete],{today}).reconciled,0);
+});
+test('cooldown de um sequencial nao bloqueia os outros nem promete fechamento do grupo',()=>{
+ const a=month([{doc:doc(1),items:[pending(1,50),pending(2,50)]}]);
+ const r=indexCommitmentChronology([a]).entries[0],state={[chronologyAttemptKey(r,task(1,1))]:today};
+ const work=classifyChronologyWork(r,{now,state});
+ assert.equal(work.kind,'history');assert.equal(work.canFinish,false);assert.deepEqual(work.tasks.map(t=>t.seq),[2]);
+ const {tasks,summary}=planChronologyEnrichment([],[a],{now,state,maxItemHistories:3});
+ assert.equal(tasks.length,1);assert.equal(tasks[0].seq,2);assert.equal(summary.groupsSelected,0);
+ assert.equal(promoteCatalogHistories([{kind:'items',id:id(1)},task(2)],0,r,{now,state}),0);
+ assert.equal(classifyChronologyWork(r,{now:new Date('2026-11-28T17:00:00Z'),state}).canFinish,true);
+});
+test('prioriza historicos ainda ausentes sem descartar revisoes e valida catalogo antes de consultar',()=>{
+ const bad={...checked(1,50),movements:[{type:'other',date:'2026-11-10',cents:50}]};
+ const r=record([{doc:doc(1),items:[bad,pending(2,50)]}]);
+ const work=classifyChronologyWork(r,{now});
+ assert.equal(work.kind,'history');assert.equal(work.canFinish,false);assert.deepEqual(work.tasks.map(t=>t.seq),[2]);
+ const next=record([{doc:doc(1),items:[bad,checked(2,50)]}]);
+ assert.equal(classifyChronologyWork(next,{now}).kind,'repair');
+ for(const items of [[pending(1,50),pending(1,50)],[{seq:1}],[pending(1,-10)]]){
+  const a=month([{doc:doc(1),items}]);
+  assert.equal(classifyChronologyWork(indexCommitmentChronology([a]).entries[0],{now}).kind,'catalog');
+  assert.ok(!planChronologyEnrichment([task(1)],[a],{now}).tasks.some(t=>t.kind==='itemHistory'));
+ }
+});
+test('catalogo pequeno divergente pode antecipar historicos sem ampliar lote ou subtotal',()=>{
+ const r=record([{doc:doc(1),items:[pending(1,80)]}]);
+ const ns={kind:'liquidation',id:'ns'},tasks=[{kind:'items',id:id(1)},ns,task(2)];
+ assert.equal(promoteCatalogHistories(tasks,0,r,{now}),1);
+ assert.equal(tasks.length,3);assert.equal(tasks[1].id,id(1));assert.ok(tasks.includes(ns));
+});
+test('telemetria distingue itens ausentes, checkpoints desatualizados e reparos sem expor identidades',()=>{
+ const d=doc(2),obs=[{id:d.id,ownerDate:d.date,date:'2026-11-27',cents:100}];
+ const a=month([{doc:doc(1),items:[pending(1,80)]},{doc:d,items:[checked(1,100)]},
+  {doc:doc(3),items:[{...checked(1,100),movements:[]}]},{doc:doc(4),items:[checked(1,100)]},
+  {doc:doc(5,{itemsDetailVersion:undefined})}],obs);
+ const b=month([{doc:{...doc(6),id:id(6,2024),date:'2024-01-10'},items:[pending(1,100)]}]);
+ const r=summarizeHistoryBacklog([a,b]);
+ assert.equal(r.validCatalogs,5);assert.equal(r.notesWithWork,4);assert.equal(r.independentNotesWithWork,1);
+ assert.equal(r.uncheckedItems,2);assert.equal(r.staleItems,1);assert.equal(r.repairItems,1);
+ assert.equal(r.byYear['2024'].uncheckedItems,1);assert.equal(r.byYear['2026'].notesWithWork,3);
+ assert.ok(!JSON.stringify(r).includes(id(1)));
+});
+test('limite ampliado de historico depende do sequencial e da evidencia da tentativa anterior',()=>{
+ const r=record([{doc:doc(1),items:[pending(1,50),pending(2,50)]}]),t=task(1,1);
+ const k=historyPaginationKey(r,t),state={[k]:today};
+ assert.equal(historyPageLimit(r,t,{},now),8);assert.equal(historyPageLimit(r,t,state,now),20);
+ assert.equal(historyPageLimit(r,task(1,2),state,now),8);
+ assert.equal(historyPageLimit(r,t,state,new Date('2026-12-28T17:00:00Z')),8);
+ assert.equal(historyPageLimit(r,t,{[k]:'2026-11-28'},now),8);
+ assert.equal(historyPaginationKey(r,task(1,3)),null);
+ const changed=record([{doc:doc(1),items:[pending(1,60),pending(2,40)]}]);
+ assert.equal(historyPageLimit(changed,t,state,now),8);
 });

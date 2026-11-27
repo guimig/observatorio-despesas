@@ -12,11 +12,11 @@ import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
-import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
+import {buildCommitmentChronology,indexCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
 import {summarizeStoredValueMeanings} from './cgu-value-semantics.mjs';
 import {planDivergenceProbes,runDivergenceProbes} from './cgu-divergence-probe.mjs';
-import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences,summarizeCatalogBacklog,needsInitialCatalog,catalogPaginationKey,catalogPageLimit} from './chronology-enrichment.mjs';
+import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences,summarizeCatalogBacklog,needsInitialCatalog,catalogPaginationKey,catalogPageLimit,summarizeHistoryBacklog,historyPaginationKey,historyPageLimit} from './chronology-enrichment.mjs';
 
 function bounded(value,fallback,max){
   const n=Number(value||fallback);
@@ -304,6 +304,8 @@ async function main(){
   const today=currentDateInBrazil(now);
   const beforeChronology=buildCommitmentChronology(months,{today});
   const beforeCatalogs=summarizeCatalogBacklog(months);
+  const beforeHistories=summarizeHistoryBacklog(months),beforeValues=summarizeCommitmentValues(months,{today});
+  console.log('Cobertura de historicos de itens antes da rodada (somente contagens): '+JSON.stringify(beforeHistories));
   console.log('Cobertura de catalogos NE antes da rodada (somente contagens): '+JSON.stringify(beforeCatalogs));
   const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
   const cguContracts=(await readCguContractEvidence(root)).contracts;
@@ -345,6 +347,7 @@ async function main(){
   console.log('Sondagem CGU de divergencias (somente contagens): '+JSON.stringify(probeReport));
   let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0,followupsPromoted=0;
   const failures=[],phaseResults={},catalogRecovery={attempted:0,recovered:0,empty:0,failed:0,paginationExtended:0,byYear:{}};
+  const historyRecovery={attempted:0,completed:0,newlyChecked:0,empty:0,failed:0,paginationExtended:0,byYear:{}};
   for(let taskIndex=0;taskIndex<tasks.length;taskIndex++){
     const task=tasks[taskIndex];
     if(budget.stopped())break;
@@ -357,16 +360,24 @@ async function main(){
     const currentRecord=record?.owners.length===1?{...record,owners:[{doc,month,items:before.itemsByDocument?.[id]}]}:record;
     const attemptKey=chronologyAttemptKey(currentRecord,task);
     const initialCatalog=kind==='items'&&needsInitialCatalog(currentRecord);
-    const pageLimit=kind==='items'?catalogPageLimit(currentRecord,historyState,new Date()):8;
+    const pageLimit=kind==='items'?catalogPageLimit(currentRecord,historyState,new Date()):
+      kind==='itemHistory'?historyPageLimit(currentRecord,task,historyState,new Date()):8;
     const catalogYear=initialCatalog?(catalogRecovery.byYear[id.slice(11,15)]||={attempted:0,recovered:0,empty:0,failed:0}):null;
     if(initialCatalog){catalogRecovery.attempted++;catalogYear.attempted++;if(pageLimit>8)catalogRecovery.paginationExtended++;}
+    const historyYear=kind==='itemHistory'?(historyRecovery.byYear[id.slice(11,15)]||={attempted:0,completed:0,newlyChecked:0,empty:0,failed:0}):null;
+    if(historyYear){historyRecovery.attempted++;historyYear.attempted++;if(pageLimit>8)historyRecovery.paginationExtended++;}
     attempted++;
     const phase=phaseResults[kind]||=( {attempted:0,successes:0,errors:0} );phase.attempted++;
     const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget}):
       kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
-      kind==='items'?await resolveItems(id,{token,budget,limit:pageLimit}):await resolveItemMovements(id,seq,{token,budget});
+      kind==='items'?await resolveItems(id,{token,budget,limit:pageLimit}):await resolveItemMovements(id,seq,{token,budget,limit:pageLimit});
     if(attemptKey&&(outcome.ok||!budget.stopped()))historyState[attemptKey]=new Date().toISOString().slice(0,10);
     if(!outcome.ok){
+      if(historyYear){
+        historyRecovery.failed++;historyYear.failed++;
+        const k=historyPaginationKey(currentRecord,task);
+        if(k&&outcome.reason==='limite_paginacao'&&!budget.stopped())historyState[k]=new Date().toISOString().slice(0,10);
+      }
       if(initialCatalog){
         catalogRecovery.failed++;catalogYear.failed++;
         const k=catalogPaginationKey(currentRecord);
@@ -411,9 +422,16 @@ async function main(){
         historyState[currentKey]=new Date().toISOString().slice(0,10);
       }
     }catch{
+      if(historyYear){historyRecovery.failed++;historyYear.failed++;}
       if(initialCatalog){catalogRecovery.failed++;catalogYear.failed++;}
       if(statePath&&!budget.stopped()&&['payment','liquidation'].includes(kind))historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
       failures.push('persistencia_invalida');errors++;phase.errors++;continue;
+    }
+    if(historyYear){
+      historyRecovery.completed++;historyYear.completed++;
+      if(!outcome.movements.length){historyRecovery.empty++;historyYear.empty++;}
+      if(old.historyChecked!==true){historyRecovery.newlyChecked++;historyYear.newlyChecked++;}
+      const k=historyPaginationKey(currentRecord,task);if(k)delete historyState[k];
     }
     if(initialCatalog){
       const key=outcome.items.length?'recovered':'empty';
@@ -430,6 +448,8 @@ async function main(){
   const comparedMonths=selected?validated.months.filter(m=>m.month===selected):validated.months;
   const afterChronology=buildCommitmentChronology(comparedMonths,{today});
   const afterCatalogs=summarizeCatalogBacklog(comparedMonths);
+  const afterHistories=summarizeHistoryBacklog(comparedMonths),afterValues=summarizeCommitmentValues(comparedMonths,{today});
+  console.log('Resultado da recuperacao de historicos de itens (somente contagens): '+JSON.stringify({before:beforeHistories,after:afterHistories,reconstruction:{before:beforeValues.internal,after:afterValues.internal,documentDifferentBefore:beforeValues.documentDifferent,documentDifferentAfter:afterValues.documentDifferent},...historyRecovery}));
   console.log('Resultado da recuperacao de catalogos NE (somente contagens): '+JSON.stringify({before:beforeCatalogs,after:afterCatalogs,deltaMissing:afterCatalogs.missing-beforeCatalogs.missing,...catalogRecovery}));
   const afterContracts=summarizeContractProgress(comparedMonths,cguContracts);
   const afterDivergences=summarizeCatalogDivergences(comparedMonths,cguContracts);
