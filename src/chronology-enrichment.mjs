@@ -19,6 +19,28 @@ function safeSum(items){
  const sum=items.reduce((n,i)=>n+BigInt(i.cents),0n);
  return sum<=BigInt(Number.MAX_SAFE_INTEGER)&&sum>=BigInt(Number.MIN_SAFE_INTEGER)?Number(sum):null;
 }
+/** Diagnostico exclusivamente agregado: igualdade com observacao anterior nao
+ * autoriza alterar o valor documental mais recente nem confirmar movimentos. */
+export function summarizeCatalogDivergences(months,cguContracts=[]){
+ const contracts=new Set(cguContracts.flatMap(c=>c.refs||[]));
+ const result={total:0,contractual:0,byYear:{},reasons:{},history:{complete:0,partial:0,none:0},direction:{above:0,below:0}};
+ for(const record of indexCommitmentChronology(months).entries){
+  if(record.owners.length!==1)continue;
+  const {doc,items}=record.owners[0];
+  if(commitmentChronologyEvidence(doc,items,record.observations).reason!=='catalog_amount_mismatch')continue;
+  const latest=latestReference(doc,record.observations),sum=safeSum(items);
+  const refs=[{date:doc.date,cents:doc.cents},...record.observations];
+  const previousMatch=refs.some(r=>r.date<latest.date&&r.cents===sum);
+  const reason=previousMatch?'matches_earlier_listing':refs.length>1?'different_from_all_observations':'single_listing_mismatch';
+  result.total++;if(contracts.has(record.id))result.contractual++;
+  const year=record.id.slice(11,15);result.byYear[year]=(result.byYear[year]||0)+1;
+  result.reasons[reason]=(result.reasons[reason]||0)+1;
+  const checked=items.filter(i=>i.historyChecked===true).length;
+  result.history[checked===items.length?'complete':checked?'partial':'none']++;
+  if(sum!==null)result.direction[sum>latest.cents?'above':'below']++;
+ }
+ return result;
+}
 function currentTask(kind,record,item){
  const {doc,month,items}=record.owners[0];
  return kind==='items'?{kind,month,id:doc.id,recheck:Array.isArray(items)}:
