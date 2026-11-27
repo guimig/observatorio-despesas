@@ -6,6 +6,10 @@ on:
         type: string
         description: 'Competência AAAA-MM (vazio = mês corrente)'
         required: false
+      historical:
+        type: boolean
+        description: 'Recuperar lacunas históricas quando a competência não for informada'
+        default: false
   push:
     branches: [main]
     paths:
@@ -48,7 +52,7 @@ jobs:
         id: collect
         env:
           PROC_MONTH: ${{ inputs.month }}
-          PROC_HISTORICAL: ${{ github.event.schedule == '35 3,15,23 * * *' && 'true' || 'false' }}
+          PROC_HISTORICAL: ${{ (inputs.historical || github.event.schedule == '35 3,15,23 * * *') && 'true' || 'false' }}
         run: npm run collect:contracts
       - name: Validar arquivo contratual normalizado
         run: npm run check:data
