@@ -34,7 +34,7 @@ async function main() {
     Number(new Intl.DateTimeFormat('en-US',{timeZone:'America/Sao_Paulo',day:'numeric'}).format(now))%2===1);
   const adaptive=process.env.BACKFILL_ADAPTIVE==='true'&&!process.env.BACKFILL_MONTH&&process.env.BACKFILL_RECHECK!=='true';
   const intensive=adaptive&&process.env.BACKFILL_INTENSIVE==='true';
-  const adaptivePlan=adaptive?await planAdaptiveBackfill({maxDays:intensive?HISTORICAL_INTENSIVE_LIMITS.days:BACKFILL_LIMITS.days,now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
+  const adaptivePlan=adaptive?await planAdaptiveBackfill({maxDays:intensive?HISTORICAL_INTENSIVE_LIMITS.days:BACKFILL_LIMITS.days,now,earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,loadExisting:readExisting,priorityYears,prioritize,prioritizeCurrent:true,priorityDates:(process.env.BACKFILL_PRIORITY_DATES||'').split(',').filter(Boolean)}):null;
   const month = adaptive?adaptivePlan.tasks[0]?.month:await chooseHistoricalMonth({
     requestedMonth:process.env.BACKFILL_MONTH||'',
     earliestMonth:process.env.BACKFILL_EARLIEST_MONTH||FIRST_MONTH,

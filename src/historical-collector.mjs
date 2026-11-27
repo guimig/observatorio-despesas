@@ -52,6 +52,19 @@ export function safeFailureCategory(error){
     ['CPF em formato diferente do mascaramento obrigatório','cpf_mask_validation'],
     ['Valor monetário inválido','money_validation'],
     ['Vínculo documental duplicado','relation_duplicate'],
+    ['Documento em datas diferentes exige revisao','document_duplicate_other_date'],
+    ['Documento duplicado no mesmo filtro','duplicate_document_conflict'],
+    ['Dia completo nao contem NE recuperada individualmente','targeted_original_missing'],
+    ['Documento de origem referenciado por outra fase: revisar retificacao','referenced_origin_missing'],
+    ['Aparicao documental em fase invalida','appearance_validation'],
+    ['Aparicao sem cobertura declarada','appearance_coverage_missing'],
+    ['Aparicoes em fases invalidas','appearance_validation'],
+    ['Itens sem empenho de origem válido','item_validation'],
+    ['Versao de itens sem catalogo','item_validation'],
+    ['Classificação de despesa inválida','classification_validation'],
+    ['Descrição de documento não sanitizada','narrative_validation'],
+    ['Proveniencia monetaria invalida','monetary_provenance'],
+    ['CGU indisponível em toda a janela consultada','source_unavailable'],
     ['CGU indisponível','network']
   ]);
   return known.get(error?.message)||'validation_or_other';

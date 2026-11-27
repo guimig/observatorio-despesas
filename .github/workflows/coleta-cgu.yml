@@ -28,6 +28,7 @@ jobs:
       contents: write
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
+      source_status: ${{ steps.collect.outputs.status }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +56,7 @@ jobs:
           npm test
           npm run check:data
       - name: Coleta incremental CGU
+        id: collect
         if: steps.credential.outputs.enabled == 'true'
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
@@ -91,3 +93,20 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/publicar-pages.yml
+
+  avaliar:
+    needs: [atualizar, publicar]
+    if: ${{ always() && needs.atualizar.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Conferir sucesso efetivo das fontes
+        env:
+          SOURCE_STATUS: ${{ needs.atualizar.outputs.source_status }}
+        run: |
+          if [ "$SOURCE_STATUS" != "complete" ]; then
+            echo "::warning::Coleta parcial, indisponivel ou sem credencial; dados validos preservados."
+            exit 1
+          fi

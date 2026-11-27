@@ -1,6 +1,7 @@
 import {planCatalogMonth,brazilMonth} from './collection-scope.mjs';
 /** Coleta independente de PNCP e Compras.gov, sem chave ou documentos brutos. */
 import {fileURLToPath} from 'node:url';
+import {appendFile} from 'node:fs/promises';
 import {CAMPUS_UG,monthBounds,scanPncp,scanCompras,HttpFailure} from './procurement.mjs';
 import {writeProcurement,readProcurement} from './procurement-store.mjs';
 
@@ -10,11 +11,18 @@ function selectedMonth(){
   }).format(new Date());
   return process.env.PROC_MONTH||now;
 }
+async function reportSourceStatus(scans){
+  const status=scans.every(scan=>scan.status==='complete')?'complete':'partial';
+  const summary={status,sources:scans.map(({source,month,status,httpStatus})=>({source,month,status,...(httpStatus!==undefined?{httpStatus}:{})}))};
+  console.log('Estado efetivo das fontes contratuais: '+JSON.stringify(summary));
+  if(process.env.GITHUB_OUTPUT)await appendFile(process.env.GITHUB_OUTPUT,'status='+status+'\n');
+  if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,JSON.stringify(summary)+'\n');
+}
 async function main(){
   const previous=await readProcurement(process.cwd());
   const historical=!process.env.PROC_MONTH&&process.env.PROC_HISTORICAL==='true';
   const plan=historical?planCatalogMonth(previous?.coverage,{keys:['pncp','compras'],kind:'source'}):null;
-  if(historical&&!plan){console.log('Cobertura historica contratual completa no recorte.');return}
+  if(historical&&!plan){console.log('Cobertura historica contratual completa no recorte.');if(!process.argv.includes('--dry-run'))await reportSourceStatus([]);return}
   const month=plan?.month||selectedMonth();
   monthBounds(month);
   if(process.argv.includes('--dry-run')){
@@ -41,6 +49,7 @@ async function main(){
     }
   }
   const outcome=await writeProcurement(process.cwd(),scans);
+  await reportSourceStatus(scans);
   console.log('Catálogo contratual: '+outcome.data.contracts.length+
     ' registro(s) acumulado(s); arquivo '+(outcome.changed?'alterado':'inalterado')+
     '. Nenhum CPF integral ou resposta bruta publicado.');

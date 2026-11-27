@@ -7,7 +7,7 @@ const brazilianDate=date=>`${date.slice(8,10)}/${date.slice(5,7)}/${date.slice(0
 
 export async function planAdaptiveBackfill({now=new Date(),earliestMonth=FIRST_MONTH,
  loadExisting=async()=>null,priorityYears=[],prioritize=false,slot=Math.floor(now.getTime()/14400000),
- maxDays=BACKFILL_LIMITS.days,priorityDates=[]}={}){
+ maxDays=BACKFILL_LIMITS.days,priorityDates=[],prioritizeCurrent=false}={}){
  assertScopeMonth(earliestMonth);
  if(!Number.isSafeInteger(slot)||slot<0||!Number.isSafeInteger(maxDays)||maxDays<1||maxDays>HISTORICAL_INTENSIVE_LIMITS.days)
   throw Error('Plano adaptativo invalido');
@@ -48,8 +48,16 @@ export async function planAdaptiveBackfill({now=new Date(),earliestMonth=FIRST_M
  // Após as datas investigadas, a próxima competência sem arquivo também
  // antecede a fila geral, que pode ficar para outro lote por falta de orçamento.
  const reserved=slot%2===0?[partialDays[0],missingMonths[0]]:[missingMonths[0],partialDays[0]];
+ // Reserva no maximo tres datas pendentes do mes em curso. Rotacao
+ // evita que uma data conflitante monopolize as rodadas seguintes.
+ const current=today.slice(0,7),recent=[];
+ if(prioritizeCurrent&&months.includes(current)){
+  const existing=await loadExisting(current);
+  const dates=planHistoricalDays({month:current,existing,now,batchDays:3,dayOffset:slot});
+  recent.push(...dates.map(date=>({month:current,date})));
+ }
  const tasks=[],seen=new Set();
- for(const task of [...reserved,...targeted,missingMonths[1]]){
+ for(const task of [...recent,...reserved,...targeted,missingMonths[1]]){
   if(tasks.length===maxDays)break;
   if(!task||seen.has(task.date))continue;
   tasks.push(task);
