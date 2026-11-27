@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createCguBudget} from '../src/cgu-budget.mjs';
+import {createCguBudget,assessCollectionCapacity} from '../src/cgu-budget.mjs';
 import {getCguArray} from '../src/cgu.mjs';
 import {planAdaptiveBackfill} from '../src/backfill-adaptive.mjs';
 test('limite conta chamadas reais, inclusive novas tentativas, e controla intervalo',async()=>{
@@ -69,4 +69,15 @@ test('duas competências sem arquivo ganham vaga antes da fila geral',async()=>{
   {month:'2025-02',date:'01/02/2025'}
  ]);
  assert.equal(new Set(tasks.map(task=>task.date)).size,4);
+});
+
+test('avaliacao de capacidade distingue estabilidade, limites e alteracao real sem autorizar nova agenda',()=>{
+ const limits={requests:240,durationMs:480000};
+ const evaluate=(extra={},response={})=>assessCollectionCapacity({attempted:50,successes:49,changed:30,limits,snapshot:{requests:100,responses:{200:100},elapsedMs:200000,stopReason:null,...response},...extra});
+ assert.equal(evaluate().status,'headroom_observed');assert.equal(evaluate().frequencyIncreaseAuthorized,false);
+ assert.equal(evaluate({changed:0}).status,'no_new_evidence');
+ assert.equal(evaluate({},{responses:{200:99,429:1},stopReason:'http_429'}).status,'restricted');
+ assert.equal(evaluate({},{responses:{200:99,503:1}}).status,'unstable');
+ assert.equal(evaluate({},{requests:240,stopReason:'request_budget'}).status,'limit_reached');
+ assert.equal(evaluate({successes:20}).status,'insufficient_or_failed');
 });
