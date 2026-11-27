@@ -90,3 +90,28 @@ test('soma divergente de itens é motivo próprio antes mesmo de recuperar hist�
  const r=buildCommitmentChronology([a],{today});
  assert.deepEqual(r.pendingReasons,{catalog_amount_mismatch:1});
 });
+
+test('reserva contratual seleciona grupo integral sem prejudicar demais fases',()=>{
+ const a=month([{doc:doc(1),items:[pending(1,100)]},{doc:doc(2),items:[pending(1,100)]},{doc:doc(3),items:[pending(1,100)]}]);
+ const base=[{kind:'payment',id:'ob'},task(1),task(2),task(3)];
+ const {tasks,summary}=planChronologyEnrichment(base,[a],{now,slot:0,maxItemHistories:3,cguContracts:[{refs:[id(3)]}]});
+ assert.equal(tasks.find(t=>t.kind==='itemHistory').id,id(3));
+ assert.equal(summary.contractHistoryTasks,1);
+ assert.equal(tasks.filter(t=>t.kind==='itemHistory').length,3);
+ assert.equal(tasks.filter(t=>t.kind==='payment').length,1);
+});
+test('catalogos com cooldown nao desperdicam vagas quando outras NEs aguardam itens',()=>{
+ const a=month([1,2,3,4].map(n=>({doc:doc(n,{itemsDetailVersion:undefined})})));
+ const records=indexCommitmentChronology([a]).entries;
+ const base=[1,2,3].map(n=>({kind:'items',id:id(n),month:'2026-11'}));
+ const state=Object.fromEntries(records.filter(r=>r.id===id(1)||r.id===id(2)).map(r=>[chronologyAttemptKey(r,classifyChronologyWork(r,{now}).task),today]));
+ const {tasks}=planChronologyEnrichment(base,[a],{now,slot:0,maxItems:3,state});
+ assert.deepEqual(tasks.filter(t=>t.kind==='items').map(t=>t.id).sort(),[id(3),id(4)]);
+});
+test('catalogo com quatro itens pode completar grupo no mesmo lote sem aumentar chamadas planejadas',()=>{
+ const r=record([{doc:doc(1),items:[pending(1,25),pending(2,25),pending(3,25),pending(4,25)]}]);
+ const cat={kind:'items',id:id(1)},ns={kind:'liquidation',id:'ns'};
+ const tasks=[cat,ns,task(2),task(3),task(4),task(5)];
+ assert.equal(promoteCatalogHistories(tasks,0,r,{now}),4);
+ assert.equal(tasks.length,6);assert.ok(tasks.includes(ns));
+});
