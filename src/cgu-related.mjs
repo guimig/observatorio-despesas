@@ -70,11 +70,12 @@ export function planRelatedDocuments(months,{contracts=[],state={},now=new Date(
  const rank=d=>declared.has(d.id)?0:short.has(d.id.slice(-12))&&processParty.has(d.process+'|'+d.partyRef)?1:
   processParty.has(d.process+'|'+d.partyRef)?2:3;
  const pending=[],reverse=[],review=[];
+ const incoming=new Set();for(const {doc:d} of docs.values())for(const id of d.relatedIds||[])if(validRelatedPair(d.id,id))incoming.add(id);
  for(const x of docs.values()){
   const d=x.doc;if(ambiguous.has(d.id)||!due(d))continue;
   if(d.relatedIds!==undefined){review.push(x);continue;}
   if(d.phase===1)pending.push(x);
-  else if(!impacts.has(d.id)||!(d.phase===2?d.liquidationLinksChecked:d.paymentLinksChecked))reverse.push(x);
+  else if(incoming.has(d.id)||!impacts.has(d.id)||!(d.phase===2?d.liquidationLinksChecked:d.paymentLinksChecked))reverse.push(x);
  }
  const slot=Math.floor(now.getTime()/43200000);
  const rotate=items=>{
@@ -84,7 +85,7 @@ export function planRelatedDocuments(months,{contracts=[],state={},now=new Date(
  };
  const priority=[];
  for(let n=0;n<=3;n++)priority.push(...rotate(pending.filter(x=>rank(x.doc)===n)));
- const backwards=rotate(reverse);
+ const backwards=rotate(reverse.filter(x=>incoming.has(x.doc.id))).concat(rotate(reverse.filter(x=>!incoming.has(x.doc.id))));
  // Reserva parte do lote para revisoes, sem consumir toda a fila.
  const reviews=rotate(review),reserve=reviews.length?Math.min(4,Math.floor(limit/5)):0;
  const available=limit-reserve,reverseLimit=backwards.length?Math.min(backwards.length,Math.max(1,Math.floor(available/3))):0;

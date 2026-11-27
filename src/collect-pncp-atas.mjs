@@ -4,6 +4,8 @@ import {readOperationalState,saveOperationalState,PURCHASE_KEY} from './operatio
 import {fileURLToPath} from 'node:url';
 import {scanAtas} from './pncp-atas.mjs';
 import {readAtas,writeAtas} from './pncp-atas-store.mjs';
+import {readProcurement} from './procurement-store.mjs';
+import {parseAtaControl} from '../assets/integrated-trajectory.js';
 export function effectiveAtaChecks(checks,state,now=new Date()){
  const today=now.toISOString().slice(0,10);
  return checks.map(c=>{
@@ -36,6 +38,19 @@ export function planAtas(notices,checks,now=new Date(),limit=12,offset=0){
  const start=offset%eligible.length;
  return Array.from({length:Math.min(limit,eligible.length)},(_,i)=>eligible[(start+i)%eligible.length]);
 }
+/** Prioriza compras que possuem controle de ata ausente, sem extrapolar
+ * o catalogo institucional nem a cota; nao presume adesao. */
+export function prioritizeMissingAtas(plan,notices,atas,contracts,limit,offset=0){
+ const known=new Set(atas.map(a=>a.id)),missing=new Map();
+ for(const c of contracts){const a=parseAtaControl(c.ataControl);if(a&&!known.has(a.id)){
+  if(!missing.has(a.procurementId))missing.set(a.procurementId,new Set());missing.get(a.procurementId).add(a.id);
+ }}
+ const candidates=notices.filter(n=>n.srp===true&&missing.has(n.pncpId)).sort((a,b)=>a.pncpId.localeCompare(b.pncpId));
+ const start=candidates.length?offset%candidates.length:0;
+ const selected=candidates.slice(start).concat(candidates.slice(0,start)).slice(0,Math.max(1,Math.floor(limit/2)));
+ const used=new Set(selected.map(n=>n.pncpId));
+ return {plan:[...selected,...plan.filter(n=>!used.has(n.pncpId))].slice(0,limit),missing};
+}
 async function main(){
  const root=process.cwd();
  const catalog=JSON.parse(await readFile('data/procurement/notices.json','utf8'));
@@ -45,7 +60,10 @@ async function main(){
  const statePath=process.env.ATA_STATE_PATH;
  let state=await readOperationalState(statePath,{keyPattern:PURCHASE_KEY});
  const checks=effectiveAtaChecks(previous.checks,state);
- const plan=planAtas(catalog.notices,checks,new Date(),limit,day*limit);
+ const contracts=(await readProcurement(root))?.contracts||[];
+ const due=planAtas(catalog.notices,checks,new Date(),limit,day*limit);
+ const {plan,missing}=prioritizeMissingAtas(due,catalog.notices,previous.atas,contracts,limit,day);
+ console.log('Compras com ata específica ausente: '+missing.size);
  const before=summarizeAtaCollection({notices:catalog.notices,checks,atas:previous.atas});
  console.log('Cobertura ARP: '+JSON.stringify(before));
  console.log('Atas PNCP: '+plan.length+' compras SRP elegiveis; '+previous.atas.length+' atas catalogadas.');
@@ -54,6 +72,9 @@ async function main(){
  for(const notice of plan){
   try{
    const atas=await scanAtas(notice);
+   const ids=new Set(atas.map(a=>a.id));
+   if(previous.atas.some(a=>a.procurementId===notice.pncpId&&!ids.has(a.id)))throw Error('Consulta omitiu ata anterior');
+   if(missing.has(notice.pncpId)&&![...missing.get(notice.pncpId)].some(id=>ids.has(id)))throw Error('Ata referenciada nao retornada');
    results.push({procurementId:notice.pncpId,atas});
   }catch(error){
    failed++;

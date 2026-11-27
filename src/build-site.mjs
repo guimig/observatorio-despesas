@@ -7,6 +7,8 @@ import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
 import {buildCoverageIndex} from './coverage-index.mjs';
+import {buildRelationshipLocator} from '../assets/integrated-trajectory.js';
+import {assertPublicSafe} from './privacy.mjs';
 import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
 import {validateTenderCatalog} from './collect-pncp-tender-items.mjs';
 
@@ -62,6 +64,10 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   }
   const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
+  const locator=JSON.stringify(assertPublicSafe(buildRelationshipLocator(months)))+'\n';
+  await writeFile(join(output,'data','relationship-index.json'),locator);
+  console.log('Indice de relacionamentos (bytes): '+Buffer.byteLength(locator));
+  console.log('Cobertura de relacionamentos: '+JSON.stringify(index.integrated));
   const {periods,...chronology}=index.commitmentChronology;
   console.log('Cronologia NE (contagens e subtotais parciais do mes corrente): '+JSON.stringify({...chronology,currentMonth:periods[index.asOf.slice(0,7)]||null}));
   for (const month of manifest.months) {

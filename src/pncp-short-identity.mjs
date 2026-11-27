@@ -38,6 +38,7 @@ export function auditShortCommitments(rows,contract,byShort){
   result.numberAndCreditor++;
   const date=typeof row.dataEmissaoEmpenho==='string'?row.dataEmissaoEmpenho.slice(0,10):'';
   const process=typeof contract?.process==='string'&&PROC.test(contract.process)?contract.process:null;
+  // Coincidencia de data da listagem apenas; nao comprova emissao.
   const dated=creditor.filter(d=>date&&d.date===date);
   const processed=creditor.filter(d=>process&&d.process===process);
   if(dated.length)result.numberCreditorDate++;

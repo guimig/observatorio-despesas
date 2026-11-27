@@ -173,10 +173,13 @@
           <input id="trajectory-search" type="search" placeholder="NE, controle PNCP, ata, pagamento…" autocomplete="off"></label>
         <label class="filter"><span>Evidência administrativa</span><select id="trajectory-evidence">
           <option value="all">Todas</option><option value="confirmed">NE integral conferida</option>
-          <option value="indication">Somente indícios</option><option value="none">Sem vínculo identificado</option>
+          <option value="high">Candidatos de alta confiança</option><option value="indication">Somente indícios</option><option value="none">Sem vínculo identificado</option>
         </select></label>
-        <button id="trajectory-load" class="button button-primary" type="button">Consultar histórico</button>
+        <button id="trajectory-load" class="button button-primary" type="button">Consultar</button>
+        <button id="trajectory-full" class="button button-ghost" type="button">Consultar histórico completo</button>
       </div>
+      <details class="integrated-items"><summary class="relation-link">Outros registros relacionados ou sem NE localizada</summary>
+        <label class="filter"><span>Tipo de registro</span><select id="trajectory-catalog-kind"><option value="all">Todos</option><option value="liquidation">Liquidações</option><option value="payment">Pagamentos</option><option value="notice">Licitações</option><option value="ata">Atas</option><option value="instrument">Instrumentos</option></select></label><div id="trajectory-catalog-results" class="relation-item" aria-live="polite"></div></details>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
           <thead><tr><th>Nota de empenho</th><th>Data da listagem CGU</th><th>Processo</th><th>Elemento</th><th class="align-right">Liquidações vinculadas</th><th class="align-right">Pagamentos vinculados</th><th>Detalhes</th></tr></thead>

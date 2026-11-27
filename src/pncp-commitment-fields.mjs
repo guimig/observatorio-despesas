@@ -145,11 +145,11 @@ export function extractContextualCommitments(rows,contract,documents){
   const creditor=typeof row.niCredorFornecedor==='string'?row.niCredorFornecedor.replace(/[./-]/g,''):'';
   if(matches.length!==1||row.tipoPessoa!=='PJ'||creditor!==supplier)continue;
   const d=matches[0], m=metadata(row);
-  if(!m.pi||!m.issueDate||m.totalCents===undefined||m.totalCents<=0||
-    d.partyRef!==supplier||d.process!==process||d.date!==m.issueDate||d.cents!==m.totalCents||
+  if(!m.issueDate||m.totalCents===undefined||m.totalCents<=0||
+    d.partyRef!==supplier||d.process!==process||d.cents!==m.totalCents||
     m.issueDate.slice(0,4)!==d.id.slice(11,15)||
     !Number.isSafeInteger(row.sequencialEmpenho)||row.sequencialEmpenho<1)continue;
-  const result={id:d.id,seq:row.sequencialEmpenho,pi:m.pi,issueDate:m.issueDate,totalCents:m.totalCents,
+  const result={id:d.id,seq:row.sequencialEmpenho,...(m.pi?{pi:m.pi}:{}),issueDate:m.issueDate,totalCents:m.totalCents,
     ...(m.nature?{nature:m.nature}:{}),...(m.amendment?{amendment:m.amendment}:{})};
   if(candidates.has(result.seq)&&JSON.stringify(candidates.get(result.seq))!==JSON.stringify(result))
    throw Error('Indicio PNCP conflitante');
@@ -165,7 +165,7 @@ export function validateContextualCommitments(rows,contract){
  for(const r of rows){
   if(!exactKeys(r,['id','seq','pi','issueDate','totalCents','nature','amendment'])||
    !inScopeNe(r.id)||!Number.isSafeInteger(r.seq)||r.seq<1||
-   typeof r.pi!=='string'||code(r.pi)!==r.pi||
+   (r.pi!==undefined&&(typeof r.pi!=='string'||code(r.pi)!==r.pi))||
    !validDay(r.issueDate)||r.issueDate.slice(0,4)!==r.id.slice(11,15)||
    !Number.isSafeInteger(r.totalCents)||r.totalCents<=0||
    (r.nature!==undefined&&code(r.nature,ND)!==r.nature)||

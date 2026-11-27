@@ -81,12 +81,13 @@ function dayBeforeToday(now){
 export function missingReferencedNe(sources,{scope='interannual'}={}){
  if(!['interannual','same_year','all'].includes(scope))throw Error('Escopo NE invalido');
  if(!Array.isArray(sources))throw Error('Acervo de origem invalido');
- const originals=new Set(),owners=new Map(),relations=[];
+ const originals=new Set(),owners=new Map(),relations=[],identityPairs=[];
  for(const month of sources){
    if(!Array.isArray(month?.documents)||!Array.isArray(month?.relations))
      throw Error('Acervo de origem invalido');
    for(const doc of month.documents){
      if(doc.phase===1&&NOTE.test(doc.id))originals.add(doc.id);
+     if(PARENT.test(doc.id))for(const target of doc.relatedIds||[])if(inScopeNe(target))identityPairs.push({from:doc.id,to:target});
      if(PARENT.test(doc.id)&&PHASE[PARENT.exec(doc.id)[2]]===doc.phase){
        const existing=owners.get(doc.id);
        if(existing&&existing.date!==doc.date)
@@ -97,7 +98,7 @@ export function missingReferencedNe(sources,{scope='interannual'}={}){
    for(const rel of month.relations)relations.push(rel);
  }
  const targets=new Set();
- for(const row of relations){
+ for(const row of [...relations,...identityPairs]){
    const year=NOTE.exec(row?.to||''),from=PARENT.exec(row?.from||'');
    const owner=owners.get(row?.from);
    if(!year||!from||!owner||originals.has(row.to)||!inScopeNe(row.to)||owner.year<FIRST_YEAR)continue;

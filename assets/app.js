@@ -1,4 +1,4 @@
-import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl} from './integrated-trajectory.js';
+import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl,contextualEvidenceMatches} from './integrated-trajectory.js';
 import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters,budgetFacetOptions} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,filterStructuredAta,filterStructuredTenderItem,validRange,validityStatus,matchesCatalogSearch,compareCatalogDates,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
@@ -45,7 +45,7 @@ function contextualPncpCommitmentEvidence(doc){
   return (procurementData.contracts||[]).filter(c=>c.source==='pncp'&&c.commitmentStatus==='complete'&&
     c.supplierCnpj&&c.supplierCnpj===doc.partyRef&&c.process&&c.process===doc.process)
     .flatMap(instrument=>(instrument.commitmentContext||[])
-      .filter(d=>d.id===doc.id&&d.issueDate===doc.date&&d.totalCents===doc.cents)
+      .filter(d=>contextualEvidenceMatches(doc,d,loadedCommitmentObservations(doc.id)))
       .map(detail=>({instrument,detail})));
 }
 let noticesData=null;
@@ -649,10 +649,33 @@ async function loadObservationOwners(months){
  const names=new Set(months.flatMap(m=>(m.commitmentObservations||[]).map(o=>o.ownerDate.slice(0,7))));
  await Promise.allSettled([...names].filter(m=>state.manifest.months.includes(m)).map(fetchMonth));
 }
+let locatorPromise=null;
+async function relationshipLocator(){
+ locatorPromise ||= fetch('./data/relationship-index.json',{cache:'no-store'}).then(async r=>{
+  if(!r.ok)throw Error('Índice indisponível');const x=await r.json();
+  if(x.schema_version!==1||x.unit!=='158459'||!x.owners||!x.neighbors||
+    JSON.stringify(x.months)!==JSON.stringify([...state.manifest.months].sort()))throw Error('Índice incompatível');
+  return x;
+ }).catch(()=>{locatorPromise=null;return null;});
+ return locatorPromise;
+}
+async function loadLinkedCompetencies(id){
+ const x=await relationshipLocator();
+ if(!x)return false;
+ const months=[...new Set([...(x.owners[id]||[]),...(x.neighbors[id]||[])])].filter(m=>state.manifest.months.includes(m));
+ if(!months.length)return false;
+ const results=await Promise.allSettled(months.map(fetchMonth));
+ return results.every(r=>r.status==='fulfilled');
+}
 async function locateLinkedDocument(id) {
   for (const data of cache.values()) {
     const doc = data.documents.find(entry => entry.id === id);
     if (doc) return {doc, data};
+  }
+  const locator=await relationshipLocator();
+  if(locator?.owners[id]?.length){
+    await Promise.allSettled(locator.owners[id].filter(m=>state.manifest.months.includes(m)).map(fetchMonth));
+    for(const data of cache.values()){const doc=data.documents.find(d=>d.id===id);if(doc)return {doc,data};}
   }
   let unavailable = false;
   for (const month of [...state.manifest.months].sort().reverse()) {
@@ -733,15 +756,15 @@ function contractBadge(contract){
   return contractSourceName(contract.source)+' · '+contractScopeName(contract.scope);
 }
 function integratedIndex(){
- const signature=[cache.size,state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data];
- if(integratedMemo&&signature.every((v,i)=>v===integratedMemo.signature[i]))return integratedMemo.index;
+ const signature=[...cache.values(),state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data];
+ if(integratedMemo&&signature.length===integratedMemo.signature.length&&signature.every((v,i)=>v===integratedMemo.signature[i]))return integratedMemo.index;
  const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
   notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
   tender:tenderItemsState.data,totalMonths:state.manifest?.months?.length||0});
  integratedMemo={signature,index};return index;
 }
 const evidenceLabels={confirmed:'NE integral conferida',declared_ne:'NE integral declarada; CGU não localizada',
- contextual_candidate:'Candidato contextual · não confirmado',ne_indication:'NE abreviada / unidade · indício',
+ contextual_candidate:'Candidato contextual · não confirmado',high_confidence:'Correspondência de alta confiança · não confirmada',ne_indication:'NE abreviada / unidade · indício',
  context:'Processo e CNPJ · indício',process:'Mesmo processo · indício'};
 const instrumentTitle=c=>(isFormalContract(c)?'Contrato formal':c.kind||'Instrumento')+' · '+(c.number||c.pncpId||c.id);
 function relationButton(label,action){
@@ -790,6 +813,7 @@ function historyControl(host,index,refresh){
  }
 }
 async function openIntegratedNe(id,button){
+ await loadLinkedCompetencies(id);
  let entry=integratedIndex().byNe.get(id);
  if(!entry?.document){
   button.disabled=true;const label=button.textContent;button.textContent='Localizando NE…';
@@ -832,7 +856,7 @@ function renderItemCrossReferences(host,index,entry,refresh){
  }));
  for(const r of references.slice(0,50)){
   const row=element('div','relation-item');
-  row.append(element('strong','','Item NE '+r.seq+' · item da compra '+r.number));
+  row.append(element('strong','','Item NE '+r.seq+' · item da compra '+r.number),element('span','small-muted',r.evidence==='candidate'?'Vínculo administrativo candidato; não confirmado':'NE integral conferida; item candidato'));
   if(r.tender)row.append(element('span','small-muted','PNCP: '+r.tender.description+' · quantidade licitada informada: '+r.tender.quantity));
   if(r.ataItem){
    row.append(element('span','small-muted','Ata '+(r.ata.number||r.ata.sequence)+' · mesmo item e CNPJ; quantidade homologada do fornecedor: '+(r.ataItem.homologatedSupplier??'não informada')));
@@ -1010,14 +1034,14 @@ function renderCatalogTrajectory(record,kind){
  const cross=scopeItemReferences(index,scope,id);
  const crossBox=element('details','integrated-items');
  crossBox.append(element('summary','relation-link','Vínculos candidatos por item de empenho · '+fmtCount(cross.length)),
-  element('p','helper','NE integral, instrumento único e número de item da compra. Ata exige mesmo controle de compra, item e CNPJ; não rateia liquidação, pagamento ou saldo.'));
+  element('p','helper','Instrumento único confirmado ou candidato de alta confiança e número de item da compra. Candidatos não compõem totais financeiros. Ata exige mesmo controle de compra, item e CNPJ; não rateia liquidação, pagamento ou saldo.'));
  if(!tenderItemsState.data)crossBox.append(relationButton('Carregar catálogo de itens licitados',async()=>{
   await loadTenderItems();if(crossBox.isConnected)refresh();
  }));
  for(const r of cross.slice(0,100)){
   const row=element('div','relation-item');
   row.append(element('strong','','Item da compra '+r.number+(r.tender?.description?' · '+r.tender.description:'')),
-   neButton(r.ne),element('span','small-muted','Item NE '+r.seq));
+   neButton(r.ne),element('span','small-muted','Item NE '+r.seq+(r.evidence==='candidate'?' · vínculo administrativo candidato':' · NE integral conferida')));
   if(r.ata)row.append(relationButton('Ata '+(r.ata.number||r.ata.sequence),()=>showCatalogDetail(r.ata,'ata')));
   const c=index.instruments.get(r.instrumentId);
   if(c&&scope!=='instrument')row.append(relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
@@ -1226,11 +1250,11 @@ function showDocument(doc, monthData = state.data) {
       unique('pi')||'Não recuperado com identidade SIAFI integral');
     const context=contextualPncpCommitmentEvidence(doc);
     if(context.length){
-      appendDetailField(fields,'PI candidato · PNCP (vínculo não confirmado)',
+      appendDetailField(fields,'Evidência candidata PNCP (vínculo não confirmado)',
         context.slice(0,12).map(({instrument,detail:d})=>
-          'PI '+d.pi+' · '+instrument.pncpId+' / registro '+d.seq+
+          (d.pi?'PI '+d.pi+' · ':'')+instrument.pncpId+' / registro '+d.seq+' · emissão declarada PNCP '+localDate(d.issueDate)+
           (d.nature?' · ND '+d.nature:'')+(d.amendment?' · Emenda '+d.amendment:'')).join('\n')+
-        '\nCoincidem número abreviado, processo, CNPJ, data e valor. O PNCP não informou a identidade SIAFI integral. Não utilizado em totais ou classificação oficial.',{long:true});
+        '\nCoincidem número abreviado, processo, CNPJ e valor documental observado. A data de emissão é declarada pelo PNCP e não equiparada à listagem CGU. O PNCP não informou a identidade SIAFI integral. Não utilizado em totais ou classificação oficial.',{long:true});
     }
     if(evidence.length){
       if(unique('nature'))appendDetailField(fields,'ND informada no PNCP',unique('nature'));
@@ -1378,7 +1402,8 @@ async function loadAllTrajectoryMonths(){
   $('trajectory-status').textContent='Carregando competências para reconstruir as trajetórias…';
   const months=[...state.manifest.months].sort();
   const loaded=[];
-  for (const month of months) loaded.push(await fetchMonth(month));
+  for(let i=0;i<months.length;i+=4){const group=await Promise.allSettled(months.slice(i,i+4).map(fetchMonth));for(const x of group)if(x.status==='fulfilled')loaded.push(x.value);}
+  if(loaded.length!==months.length){renderCommitmentTrajectories();throw Error('Competências indisponíveis');}
   commitmentTrajectories=buildCommitmentTrajectories(loaded);
   const audit=auditCommitmentTrajectories(loaded);
   trajectoryReady=true;
@@ -1390,11 +1415,30 @@ async function loadAllTrajectoryMonths(){
     fmtCount(audit.conflictingRelations+audit.conflictingDocuments)+' divergências de duplicidade. '+
     'Relações documentais não equivalem a conciliação contábil.';
 }
+function renderRelationshipCatalog(query,index){
+ const host=$('trajectory-catalog-results');if(!host)return;host.replaceChildren();
+ const kind=$('trajectory-catalog-kind').value;
+ const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const q=norm(query);if(!q){host.append(element('p','small-muted','Pesquise para localizar registros administrativos ou financeiros, inclusive os ainda sem NE vinculada.'));return;}
+ const records=[];
+ const push=(type,record,label,search,action)=>{
+   if(kind!=='all'&&kind!==type)return;
+   if(norm([label,...search].join(' ')).includes(q))records.push({label,action});
+ };
+ for(const d of index.docs.values())if(d.phase!==1)push(d.phase===2?'liquidation':'payment',d,d.id,[d.description,d.process],()=>{const m=cache.get(d.month)||[...cache.values()].find(m=>m.documents.some(x=>x.id===d.id));if(m)showDocument(d,m);});
+ for(const c of index.instruments.values())push('instrument',c,instrumentTitle(c),[c.pncpId,c.object,c.process,c.supplierName,c.supplierCnpj],()=>showCatalogDetail(c,'instrument'));
+ for(const n of index.noticeMap.values())push('notice',n,'Licitação / contratação '+n.number,[n.pncpId,n.process,n.object],()=>showCatalogDetail(n,'notice'));
+ for(const a of index.ataMap.values())push('ata',a,'Ata '+(a.number||a.sequence),[a.id,ataControlFor(a),index.noticeMap.get(a.procurementId)?.object],()=>showCatalogDetail(a,'ata'));
+ host.append(element('p','small-muted',fmtCount(records.length)+' registros correspondentes · competências financeiras carregadas '+fmtCount(cache.size)));
+ for(const row of records.slice(0,40))host.append(relationButton(row.label,row.action));
+ if(records.length>40)host.append(element('p','helper','Exibidos 40 registros; refine a pesquisa.'));
+}
 function renderCommitmentTrajectories(){
   const query=$('trajectory-search').value;
   const index=integratedIndex(),level=$('trajectory-evidence').value;
+  renderRelationshipCatalog(query,index);
   const all=index.entries.filter(entry=>trajectoryMatches(index,entry,query)&&
-    (level==='all'||neEvidenceLevel(index,entry.id)===level));
+    (level==='all'||(level==='high'?(index.neEdges.get(entry.id)||[]).some(e=>['high_confidence','contextual_candidate'].includes(e.level)):neEvidenceLevel(index,entry.id)===level)));
   const pages=Math.max(1,Math.ceil(all.length/25));trajectoryPage=Math.max(0,Math.min(pages-1,trajectoryPage));
   $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
   $('trajectory-page-info').textContent='Página '+fmtCount(trajectoryPage+1)+' de '+fmtCount(pages);
@@ -1508,15 +1552,17 @@ function showCommitmentTrajectory(entry){
 }
 async function initTrajectories(){
   $('trajectory-search').addEventListener('input',()=>{
-    trajectoryPage=0;if (trajectoryReady) renderCommitmentTrajectories();
+    trajectoryPage=0;renderCommitmentTrajectories();
   });
-  $('trajectory-evidence').addEventListener('change',()=>{trajectoryPage=0;if(trajectoryReady)renderCommitmentTrajectories();});
+  $('trajectory-catalog-kind').addEventListener('change',()=>renderRelationshipCatalog($('trajectory-search').value,integratedIndex()));
+  $('trajectory-evidence').addEventListener('change',()=>{trajectoryPage=0;renderCommitmentTrajectories();});
   $('trajectory-prev').addEventListener('click',()=>{trajectoryPage--;renderCommitmentTrajectories();});
   $('trajectory-next').addEventListener('click',()=>{trajectoryPage++;renderCommitmentTrajectories();});
   $('trajectory-search').addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.isComposing) loadTrajectoryView();
   });
   $('trajectory-load').addEventListener('click',loadTrajectoryView);
+  $('trajectory-full').addEventListener('click',async()=>{try{await loadAllTrajectoryMonths();}catch{$('trajectory-status').textContent='Histórico parcial; uma ou mais competências indisponíveis.';}});
   $('document-trajectory').addEventListener('click',()=>{
     $('trajectory-search').value = $('dialog-title').textContent;
     $('trajectory-evidence').value='all';trajectoryPage=0;
@@ -1530,7 +1576,12 @@ async function initTrajectories(){
 async function loadTrajectoryView(){
     if (!state.manifest || $('trajectory-load').disabled || trajectoryReady) return;
     $('trajectory-load').disabled=true;
-    try{await loadAllTrajectoryMonths();}
+    try{
+      const id=$('trajectory-search').value.trim().toUpperCase();
+      if(/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(id)&&await loadLinkedCompetencies(id)){
+        renderCommitmentTrajectories();$('trajectory-status').textContent='Consulta direcionada por índice · '+fmtCount(cache.size)+' competências carregadas. Use Consultar histórico completo para ampliar.';
+      }else await loadAllTrajectoryMonths();
+    }
     catch{$('trajectory-status').textContent='Não foi possível reconstruir as trajetórias. Verifique a disponibilidade dos JSONs mensais.';}
     finally{
       $('trajectory-load').hidden=trajectoryReady;

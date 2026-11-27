@@ -51,11 +51,13 @@ export function planMissingNotices(contracts,notices,{count=18}={}){
   const known=new Set((notices?.notices||[]).map(n=>n.pncpId));
   const pending=new Map();
   for(const c of contracts?.contracts||[]) {
-    const id=c.procurementId;
-    if(typeof id!=='string'||!ID.test(id)||!inScopePurchaseId(id)||known.has(id))continue;
-    const weight=c.process?.startsWith('23349.')?0:1;
-    const prev=pending.get(id);
-    if(!prev||weight<prev.weight)pending.set(id,{id,weight});
+    const origin=typeof c.ataControl==='string'?/^(\d{14}-1-\d{6}\/20\d{2})-\d{6}$/.exec(c.ataControl)?.[1]:null;
+    for(const id of [c.procurementId,origin]){
+      if(typeof id!=='string'||!ID.test(id)||!inScopePurchaseId(id)||known.has(id))continue;
+      const weight=c.process?.startsWith('23349.')?0:1;
+      const prev=pending.get(id);
+      if(!prev||weight<prev.weight)pending.set(id,{id,weight});
+    }
   }
   return [...pending.values()].sort((a,b)=>a.weight-b.weight||
     b.id.slice(-4).localeCompare(a.id.slice(-4))||a.id.localeCompare(b.id))

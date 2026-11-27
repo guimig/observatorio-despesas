@@ -26,7 +26,7 @@ export function buildCommitmentTrajectories(months) {
       if (typeof doc.id !== 'string') continue;
       if (documents.has(doc.id)) {
         const prior=documents.get(doc.id);
-        if (prior.phase !== doc.phase || prior.cents !== doc.cents) issues.push({type:'document_conflict',id:doc.id});
+        if (prior.phase !== doc.phase || prior.cents !== doc.cents || prior.date !== doc.date) issues.push({type:'document_conflict',id:doc.id});
       }
       documents.set(doc.id, { ...doc, month: month.month });
       if (doc.phase === 1 && NE_ID.test(doc.id)) {
