@@ -181,8 +181,8 @@ function element(tag, className, content) {
   if (content !== undefined) node.textContent = String(content);
   return node;
 }
-function appendDetailField(host,label,value,{long=false}={}){
-  const group=element('div',long?'narrative-field':'');
+function appendDetailField(host,label,value,{long=false,emphasis=false}={}){
+  const group=element('div',[long?'narrative-field':'',emphasis?'commitment-value-field':''].filter(Boolean).join(' '));
   group.append(element('dt','',label),element('dd','',value??'Não informado'));
   host.append(group);
 }
@@ -290,6 +290,7 @@ async function renderCommitmentPeriod(month){
    ' · Anulações '+fmtMoney(row.annulmentCents)+' · Operações de NEs de exercícios anteriores (fora do subtotal): reforços '+fmtMoney(row.priorYearReinforcementCents)+
    ', anulações '+fmtMoney(row.priorYearAnnulmentCents)+', cancelamentos '+fmtMoney(row.priorYearCancellationCents)+'.':
    'Sem evidência suficiente para apurar o subtotal. Ausência não significa valor zero.';
+  details.textContent+=' Reconstruções internas sem coincidência documental são consultáveis nas fichas, mas não entram neste subtotal.';
  }catch{
   if(state.month!==month)return;
   amount.textContent='Indisponível';note.textContent='Índice cronológico não disponível';details.textContent='Nenhum valor documental foi utilizado como substituto do fluxo.';
@@ -765,7 +766,7 @@ function contractBadge(contract){
   return contractSourceName(contract.source)+' · '+contractScopeName(contract.scope);
 }
 function integratedIndex(){
- const signature=[...cache.values(),state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data,cguContractEvidence];
+ const signature=[...cache.values(),state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data,cguContractEvidence,todayBrazil()];
  if(integratedMemo&&signature.length===integratedMemo.signature.length&&signature.every((v,i)=>v===integratedMemo.signature[i]))return integratedMemo.index;
  const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
   notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
@@ -1197,12 +1198,12 @@ function appendCommitmentChronologyFields(fields,doc,items){
  const v=loadedCommitmentValues(doc,items);
  appendDetailField(fields,'Data original de emissão','Não comprovada pela listagem diária da CGU');
  const vDate=d=>d?localDate(d):'Não comprovada';
+ appendDetailField(fields,'Valor documental de referência CGU',displayEvidenceMoney(v.referenceCents)+(v.referenceDate?' · listagem de '+localDate(v.referenceDate):''),{emphasis:true});
+ appendDetailField(fields,'Soma dos valores atuais informados dos itens',displayEvidenceMoney(v.catalogCents),{emphasis:true});
+ appendDetailField(fields,'Valor inicial reconstruído dos itens',displayEvidenceMoney(v.initialCents),{emphasis:true});
+ appendDetailField(fields,'Valor atualizado reconstruído dos itens',displayEvidenceMoney(v.updatedCents),{emphasis:true});
  appendDetailField(fields,'Primeira inclusão identificada nos itens',v.originalDate?vDate(v.originalDate)+' · inclusão de item, não prova autônoma de emissão':'Histórico internamente conciliado insuficiente');
  appendDetailField(fields,'Última movimentação reconstruída',vDate(v.lastMovementDate));
- appendDetailField(fields,'Valor documental de referência CGU',displayEvidenceMoney(v.referenceCents)+(v.referenceDate?' · listagem de '+localDate(v.referenceDate):''));
- appendDetailField(fields,'Soma dos valores atuais informados dos itens',displayEvidenceMoney(v.catalogCents));
- appendDetailField(fields,'Valor inicial reconstruído dos itens',displayEvidenceMoney(v.initialCents));
- appendDetailField(fields,'Valor atualizado reconstruído dos itens',displayEvidenceMoney(v.updatedCents));
  appendDetailField(fields,'Conferência independente das grandezas',(itemValueStatusLabels[v.itemsStatus]||itemValueStatusLabels.unavailable)+'. '+describeValueComparison(v)+'. '+(v.chronologyStatus==='reconciled'&&v.itemsStatus==='internally_reconciled'?'Atende à conferência documental e interna no acervo carregado.':'Não amplia a base dos subtotais cronológicos.')+' Os valores reconstruídos não são saldo contábil, a liquidar ou a pagar. A cobertura depende das competências carregadas.',{long:true});
  appendDetailField(fields,'Datas em que a NE consta na listagem carregada',(a.listingDates||[doc.date]).map(localDate).join(' · '));
  if(observations.length)appendDetailField(fields,'Valores observados em outras datas da listagem CGU',observations.map(o=>localDate(o.date)+' · '+fmtMoney(o.cents)).join('; ')+' (não constituem valores de reforço ou anulação)',{long:true});
@@ -1381,7 +1382,11 @@ function showDocument(doc, monthData = state.data) {
       :doc.phase===2?(doc.liquidationLinksChecked?'Concluída nesta base':
         'Aguardando consulta dos empenhos impactados'):'Conforme documentos disponíveis']
   ];
-  for(const [label,value] of entries)appendDetailField(fields,label,value);
+  if(doc.phase===1){
+   for(const [label,value] of entries.slice(0,4))appendDetailField(fields,label,value);
+   appendCommitmentChronologyFields(fields,doc,monthData.itemsByDocument?.[doc.id]);
+   for(const [label,value] of entries.slice(4))appendDetailField(fields,label,value);
+  }else for(const [label,value] of entries)appendDetailField(fields,label,value);
   const references=Object.keys(BUDGET_DIMENSIONS).flatMap(kind=>{
     const bucket=budgetBucket(doc,kind),label=referenceFor(siopCatalog,bucket,kind);
     return label?[BUDGET_DIMENSIONS[kind]+': '+label]:[];
@@ -1473,7 +1478,6 @@ function showDocument(doc, monthData = state.data) {
       list.append(item);
     }
   }
-  if(doc.phase===1)appendCommitmentChronologyFields(fields,doc,monthData.itemsByDocument?.[doc.id]);
   if(doc.phase===1)appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
   if(doc.phase===1)appendDetailField(fields,'Conferência documental do empenho',
@@ -1665,11 +1669,12 @@ function showCommitmentTrajectory(entry){
     ['Itens do empenho',entry.itemsChecked?'Consulta concluída':'Aguardando consulta'],
     ['Documentos relacionados · CGU',Array.isArray(doc?.relatedIds)?'Consulta realizada · '+fmtCount(doc.relatedIds.length)+' identidade(s) compatíveis':'Consulta direta ainda pendente']
   ];
-  for(const [label,value] of entries)appendDetailField(fields,label,value);
+  for(const [label,value] of entries.slice(0,4))appendDetailField(fields,label,value);
+  appendCommitmentChronologyFields(fields,doc,entry.items);
+  for(const [label,value] of entries.slice(4))appendDetailField(fields,label,value);
   appendDetailField(fields,'Descrição / observação da nota de empenho',
     doc?.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
-  appendCommitmentChronologyFields(fields,doc,entry.items);
   appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(entry.items,doc?.date),{long:true});
   appendDetailField(fields,'Conferência documental do empenho',
