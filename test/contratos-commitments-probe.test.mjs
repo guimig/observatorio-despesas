@@ -36,3 +36,8 @@ test('manutencao: consulta ano corrente e interrompe restantes sem confundir com
  assert.deepEqual(ok.map(x=>x.year),[2026,2025,2024]);
  assert.ok(ok.every(x=>x.status==='array_received_completeness_unverified'));
 });
+
+test('interseccao por NE integral com CGU nao afirma igualdade de contratos',()=>{
+ const r=compareSample([{numeroEmpenho:id,contrato_id:928377},{numero:'2026NE000124',contrato_id:1}],{year:2026,documents:docs,cguContracts:[{id:42,refs:[id]}]});
+ assert.equal(r.fullNeWithContractField,1);assert.equal(r.matchedWithCguContractLink,1);assert.equal(r.matchedWithCguContractAndContractField,1);assert.equal(JSON.stringify(r).includes('928377'),false);
+});

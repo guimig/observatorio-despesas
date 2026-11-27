@@ -211,6 +211,63 @@ export function scopeFinancialEvidence(index,kind,id){
  result.liquidation.documents=liqDocs.size;result.payment.documents=payDocs.size;
  return result;
 }
+/** Subtotais documentais exclusivamente para as NEs declaradas pela CGU.
+ * Nao misturar com PNCP, saldo contratual, valor do documento inteiro ou
+ * inferir quitacao de NS. NE concorrente entre contratos CGU nao alocada. */
+export function cguContractExecutionEvidence(index,id){
+ const record=index.cguEvidence.records.get(id);
+ const group=()=>({cents:0,known:0,unknown:0});
+ const fields=['initialCents','reinforcementCents','annulmentCents','cancellationCents','reconstructedCents'];
+ const movements=Object.fromEntries(fields.map(k=>[k,group()]));
+ const result={references:unique(record?.refs||[]).length,located:0,eligible:0,reconciled:0,missing:[],ambiguous:[],conflicts:[],pendingChronology:[],rows:[],movements,
+  liquidation:{...group(),documents:0,neWithoutKnown:0},payment:{...group(),documents:0,neWithoutKnown:0},periods:[]};
+ const liqDocs=new Set(),payDocs=new Set(),periods=new Map();
+ const period=(date,key,cents)=>{
+  if(typeof date!=='string'||!/^20\d{2}-\d{2}-\d{2}$/.test(date)||date<'2024-01-01')return;
+  const month=date.slice(0,7);
+  if(!periods.has(month))periods.set(month,{month,...Object.fromEntries([...fields.slice(0,4),'liquidation','payment'].map(k=>[k,group()]))});
+  safeAdd(periods.get(month)[key],cents);
+ };
+ for(const ne of unique(record?.refs||[])){
+  const entry=index.byNe.get(ne);
+  const row={ne,status:'pending',chronology:null,liquidation:group(),payment:group()};
+  result.rows.push(row);
+  if(entry?.document)result.located++;
+  if(!entry?.document){row.status='missing';result.missing.push(ne);continue;}
+  if(unique((index.cguEvidence.byNe.get(ne)||[]).map(c=>c.id)).length!==1){
+   row.status='ambiguous';result.ambiguous.push(ne);continue;
+  }
+  if(entry.issues?.length||index.owners.get(ne)?.length!==1){
+   row.status='conflict';result.conflicts.push(ne);continue;
+  }
+  result.eligible++;
+  const chronology=commitmentChronologyEvidence(entry.document,entry.items,index.observations.get(ne)||[]);
+  row.chronology=chronology;row.status=chronology.status;
+  if(chronology.status==='reconciled'){
+   result.reconciled++;
+   for(const field of fields)safeAdd(movements[field],chronology[field]);
+   for(const event of (entry.items||[]).flatMap(item=>item.movements||[])){
+    const key={original:'initialCents',reinforcement:'reinforcementCents',annulment:'annulmentCents',cancellation:'cancellationCents'}[event.type];
+    if(key)period(event.date,key,event.cents);
+   }
+  }else{
+   result.pendingChronology.push(ne);
+   for(const field of fields)safeAdd(movements[field],null);
+  }
+  for(const [key,links,docs] of [['liquidation',entry.liquidations,liqDocs],['payment',entry.payments,payDocs]]){
+   for(const link of links){
+    const known=link.document&&index.owners.get(link.id)?.length===1&&link.checked===true&&Number.isSafeInteger(link.cents);
+    const cents=known?link.cents:null;
+    safeAdd(row[key],cents);safeAdd(result[key],cents);
+    if(known){docs.add(link.id);period(link.date,key,cents);}
+   }
+   if(!row[key].known)result[key].neWithoutKnown++;
+  }
+ }
+ result.liquidation.documents=liqDocs.size;result.payment.documents=payDocs.size;
+ result.periods=[...periods.values()].sort((a,b)=>b.month.localeCompare(a.month));
+ return result;
+}
 export function trajectoryMatches(index,entry,query){
  const q=labelText(query);if(!q)return true;
  const fields=[entry.id,entry.document?.process,entry.document?.partyRef,entry.document?.description,
@@ -284,6 +341,7 @@ export function ataFilesUrl(ata,seq=null){
 }
 export function summarizeIntegratedCoverage(index){
  const instruments=[...index.instruments.values()],entries=index.entries.filter(e=>e.document&&inScope(e.id));
+ const cguExecution=[...index.cguEvidence.records.keys()].map(id=>cguContractExecutionEvidence(index,id));
  const confirmed=entries.filter(e=>neEvidenceLevel(index,e.id)==='confirmed');
  const indications=entries.filter(e=>neEvidenceLevel(index,e.id)==='indication');
  const confirmedIds=new Set(confirmed.map(e=>e.id)),liquidations=new Set(),payments=new Set();
@@ -316,6 +374,9 @@ export function summarizeIntegratedCoverage(index){
   cguDirectContracts:index.cguEvidence.records.size,cguDirectNe:index.cguEvidence.byNe.size,
   cguDirectNePresent:[...index.cguEvidence.byNe.keys()].filter(ne=>index.byNe.get(ne)?.document).length,
   cguDirectPairs:[...index.cguEvidence.records.values()].reduce((n,c)=>n+c.refs.length,0),cguPncpCandidates:index.cguEvidence.byPncp.size,
+  cguContractEligibleNe:cguExecution.reduce((n,c)=>n+c.eligible,0),cguContractReconciledNe:cguExecution.reduce((n,c)=>n+c.reconciled,0),
+  cguContractAmbiguousNe:new Set(cguExecution.flatMap(c=>c.ambiguous)).size,
+  cguContractKnownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.known,0),cguContractUnknownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.unknown,0),
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
   neItemCandidates:itemRefs.length,neItemsWithAta:itemRefs.filter(r=>r.ataItem).length,

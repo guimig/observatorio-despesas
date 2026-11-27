@@ -39,3 +39,48 @@ test('relacao CGU direta nao confirma PNCP nem compoe seus totais; candidato exi
  assert.equal(indexCguContractEvidence([row],[contract,{...contract,id:'p2'}]).byPncp.size,0);
  assert.deepEqual(missingReferencedNe([month],{scope:'all',cguContracts:[row]}),[ne2]);
 });
+
+import {planCguIdentityDetails} from '../src/cgu-contract-evidence.mjs';
+import {getCguObject,getCguArray} from '../src/cgu.mjs';
+test('formatos compactos e codigo de pessoa juridica sem confundir CPF ou CNPJ divergente',()=>{
+ const compact=normalizeCguContractIdentity({...raw,numero:'000122026',fornecedor:{codigoFormatado:'12.345.678/0001-90'}});
+ assert.equal(compact.number,'12/2026');assert.equal(compact.supplierCnpj,'12345678000190');
+ assert.equal(normalizeCguContractIdentity({...raw,fornecedor:{codigo:'11122233344'}}).supplierCnpj,undefined);
+ assert.equal(normalizeCguContractIdentity({...raw,fornecedor:{cnpj:'12345678000190',codigo:'22222222000100'}}).supplierCnpj,undefined);
+});
+test('detalhe por id deve ser objeto, usar mesma identidade e preservar referencias',async()=>{
+ const {number,process,supplierCnpj,...partial}=identity;
+ const previous=mergeCguContractEvidence(emptyCguContractEvidence(),partial,[ne]).data;
+ assert.equal(planCguIdentityDetails(previous.contracts,{},now).length,1);
+ const budget={stopped:()=>false,snapshot:()=>({})};
+ const result=await collectCguContractEvidence({previous,now,token:'secret',budget,request:async()=>[],requestDetail:async()=>raw});
+ assert.equal(result.report.identityDetailsImproved,1);
+ assert.equal(result.data.contracts[0].number,'12/2026');assert.deepEqual(result.data.contracts[0].refs,[ne]);
+ const bad=await collectCguContractEvidence({previous,now,token:'secret',budget,request:async()=>[],requestDetail:async()=>({...raw,id:43})});
+ assert.equal(bad.report.identityDetailsImproved,0);assert.deepEqual(bad.data,previous);
+ const fetcher=async()=>new Response(JSON.stringify({id:42}));
+ assert.deepEqual(await getCguObject('https://example.invalid',{token:'secret',fetcher}),{id:42});
+ await assert.rejects(getCguArray('https://example.invalid',{token:'secret',fetcher}));
+ await assert.rejects(getCguObject('https://example.invalid',{token:'secret',fetcher:async()=>new Response('[]')}));
+});
+
+import {cguContractExecutionEvidence} from '../assets/integrated-trajectory.js';
+test('execucao contratual separa movimentos conciliados, impactos por NE e identidades concorrentes',()=>{
+ const ne3='158459000012026NE000003',ob='158459000012026OB000001',ns='158459000012026NS000001';
+ const doc={id:ne,phase:1,date:'2026-10-10',cents:130,itemsDetailVersion:2};
+ const month={unit:'158459',month:'2026-10',documents:[doc,{id:ne2,phase:1,date:'2026-10-10',cents:200},{id:ob,phase:3,date:'2026-10-20',cents:999,paymentLinksChecked:true},{id:ns,phase:2,date:'2026-10-19',cents:999,liquidationLinksChecked:true,relatedIds:[ne]}],relations:[{from:ob,to:ne,cents:80},{from:ob,to:ne2,cents:90}],itemsByDocument:{[ne]:[{seq:1,cents:130,historyChecked:true,movements:[{date:'2026-10-10',type:'original',cents:100},{date:'2026-10-11',type:'reinforcement',cents:50},{date:'2026-10-12',type:'annulment',cents:20}]}]}};
+ const idx=buildIntegratedIndex({months:[month],cguContracts:[{...identity,refs:[ne,ne2,ne3]},{...identity,id:43,refs:[ne2]}]});
+ const e=cguContractExecutionEvidence(idx,42);
+ assert.equal(e.references,3);assert.equal(e.located,2);assert.deepEqual(e.ambiguous,[ne2]);assert.deepEqual(e.missing,[ne3]);assert.equal(e.eligible,1);
+ assert.equal(e.reconciled,1);assert.equal(e.movements.initialCents.cents,100);assert.equal(e.movements.reinforcementCents.cents,50);assert.equal(e.movements.annulmentCents.cents,20);assert.equal(e.movements.reconstructedCents.cents,130);
+ assert.equal(e.payment.cents,80);assert.equal(e.payment.known,1);assert.equal(e.liquidation.known,0);assert.equal(e.liquidation.unknown,1);
+ assert.equal(e.periods[0].payment.cents,80);assert.equal(e.periods[0].initialCents.cents,100);
+ assert.equal(cguContractExecutionEvidence(idx,43).payment.known,0);
+});
+test('historico divergente e impacto sem documento unico nao formam subtotal',()=>{
+ const ob='158459000012026OB000001';
+ const m={unit:'158459',month:'2026-10',documents:[{id:ne,phase:1,date:'2026-10-10',cents:100}],relations:[{from:ob,to:ne,cents:40}]};
+ const i=buildIntegratedIndex({months:[m],cguContracts:[{...identity,refs:[ne]}]});
+ const e=cguContractExecutionEvidence(i,42);
+ assert.equal(e.movements.initialCents.known,0);assert.equal(e.movements.initialCents.unknown,1);assert.equal(e.payment.known,0);assert.equal(e.payment.unknown,1);
+});

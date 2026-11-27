@@ -4,7 +4,7 @@
 import {readFile,writeFile,mkdir,rename,unlink} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {getCguArray} from './cgu.mjs';
+import {getCguArray,getCguObject} from './cgu.mjs';
 import {createCguBudget} from './cgu-budget.mjs';
 import {inScopeNe,scopeMonths,inScopeDate} from './collection-scope.mjs';
 import {monthBounds} from './procurement.mjs';
@@ -26,15 +26,16 @@ function day(v){
 }
 function processNumber(v){
  if(typeof v!=='string')return null;
- if(P.test(v))return v;
- const m=/^(\d{5})(\d{6})(20\d{2})(\d{2})$/.exec(v);
+ const s=v.trim();
+ if(P.test(s))return s;
+ const m=/^(\d{5})(\d{6})(20\d{2})(\d{2})$/.exec(s);
  return m?m[1]+'.'+m[2]+'/'+m[3]+'-'+m[4]:null;
 }
 function number(v){
- const m=typeof v==='string'&&NUM.exec(v.trim());
- if(!m)return null;
- const [n,y]=m[0].split('/');
- return Number(n)+'/'+y;
+ if(typeof v!=='string')return null;
+ const s=v.trim(),m=/^(\d{1,6})\/(20\d{2})$/.exec(s)||/^(\d{1,6})(20\d{2})$/.exec(s);
+ if(!m||Number(m[1])<1)return null;
+ return Number(m[1])+'/'+m[2];
 }
 export function normalizeCguContractIdentity(raw){
  const id=parseId(raw?.id),unitCode=unit(raw?.unidadeGestora),buyingUnit=unit(raw?.unidadeGestoraCompras);
@@ -46,8 +47,8 @@ export function normalizeCguContractIdentity(raw){
  if(buyingUnit)result.buyingUnit=buyingUnit;
  const n=number(raw.numero),p=processNumber(raw.numeroProcesso);
  if(n)result.number=n;if(p)result.process=p;if(signed)result.signed=signed;
- const vendor=raw.fornecedor?.cnpj;
- if(typeof vendor==='string'&&/^[\d./-]+$/.test(vendor)&&CNPJ.test(vendor.replace(/[./-]/g,'')))result.supplierCnpj=vendor.replace(/[./-]/g,'');
+ const vendors=uniq([raw.fornecedor?.cnpj,raw.fornecedor?.codigoFormatado,raw.fornecedor?.codigo].filter(v=>typeof v==='string'&&/^[\d./-]+$/.test(v.trim())).map(v=>v.trim().replace(/[./-]/g,'')).filter(v=>CNPJ.test(v)&&!/^0+$/.test(v)));
+ if(vendors.length===1)result.supplierCnpj=vendors[0];
  return result;
 }
 export function extractCguContractRefs(rows){
@@ -99,6 +100,11 @@ export function mergeCguContractEvidence(previous,identity,refs){
 const pageKey=(month,page)=>stateKey(['cgu-contract-discovery-v1',month,page]);
 const emptyKey=(month,page)=>stateKey(['cgu-contract-empty-v1',month,page]);
 const contractKey=id=>stateKey(['cgu-contract-related-v1',id]);
+const detailKey=id=>stateKey(['cgu-contract-identity-detail-v1',id]);
+const incomplete=c=>!c.number||!c.process||!c.supplierCnpj;
+export function planCguIdentityDetails(contracts,state,now,limit=4){
+ return contracts.filter(c=>incomplete(c)&&!fresh(state[detailKey(c.id)],now)).sort((a,b)=>String(state[detailKey(a.id)]||'').localeCompare(String(state[detailKey(b.id)]||''))||a.id-b.id).slice(0,limit);
+}
 const fresh=(stamp,now,days=30)=>validDay(stamp)&&stamp<=now.toISOString().slice(0,10)&&now.getTime()-Date.parse(stamp+'T00:00:00Z')<days*86400000;
 export function planCguContractDiscovery({state={},now=new Date(),limit=3}={}){
  if(!Number.isSafeInteger(limit)||limit<1||limit>4)throw Error('Limite de janelas CGU invalido');
@@ -112,18 +118,41 @@ export function planCguContractDiscovery({state={},now=new Date(),limit=3}={}){
   }
  }
  candidates.sort((a,b)=>a.priority-b.priority||String(state[pageKey(a.month,a.page)]||'').localeCompare(String(state[pageKey(b.month,b.page)]||''))||b.month.localeCompare(a.month));
- return candidates.slice(0,limit).map(({month,page})=>({month,page}));
+ // Apos a primeira rodada, intercalar paginas seguintes e mes corrente.
+ const current=scopeMonths(now).at(-1),today=now.toISOString().slice(0,10);
+ const open=current&&!fresh(state[pageKey(current,1)],now,7)&&Object.keys(state).length?{month:current,page:1}:null;
+ const later=candidates.find(x=>x.page>1);
+ const chosen=[...(open?[open]:[]),...(later&&limit>1?[later]:[])];
+ return [...chosen,...candidates.filter(x=>!chosen.some(y=>y.month===x.month&&y.page===x.page))].slice(0,limit).map(({month,page})=>({month,page}));
 }
 const br=d=>d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4);
-export async function collectCguContractEvidence({previous=emptyCguContractEvidence(),state={},now=new Date(),token,request=getCguArray,budget=createCguBudget({requests:40,durationMs:180000}),limit=3,dryRun=false}={}){
+export async function collectCguContractEvidence({previous=emptyCguContractEvidence(),state={},now=new Date(),token,request=getCguArray,requestDetail=getCguObject,budget=createCguBudget({requests:40,durationMs:180000}),limit=3,dryRun=false}={}){
  validateCguContractEvidence(previous);
  const plan=planCguContractDiscovery({state,now,limit}),nextState={...state},today=now.toISOString().slice(0,10);
  let data=previous;
- const report={plannedWindows:plan.length,windows:0,contractsDiscovered:0,contractsQueried:0,positiveContracts:0,references:0,changes:0,failures:{}};
+ const report={plannedWindows:plan.length,windows:0,contractsDiscovered:0,contractsQueried:0,positiveContracts:0,references:0,changes:0,identityDetails:0,identityDetailsImproved:0,identityDetailFailures:{},failures:{}};
  const fail=e=>{const k=Number.isInteger(e?.status)?'http_'+e.status:'invalid_or_unavailable';report.failures[k]=(report.failures[k]||0)+1};
  const call=(path,query)=>request(BASE+path+'?'+new URLSearchParams(query),{token,budget});
  if(dryRun)return {data,state:nextState,report};
  if(!token)throw Error('CGU_API_KEY ausente');
+ // A consulta por ID e objeto, ao contrario da listagem. Confirmar ID e
+ // escopo; enriquecimento de identidade nunca apaga a relacao ja observada.
+ const enrich=async row=>{
+  if(budget.stopped())return;
+  report.identityDetails++;
+  try{
+   const raw=await requestDetail(BASE+'contratos/id?'+new URLSearchParams({id:String(row.id)}),{token,budget});
+   const identity=normalizeCguContractIdentity(raw);
+   if(!identity||identity.id!==row.id)throw Error('Identidade de detalhe divergente');
+   const merged=mergeCguContractEvidence(data,identity,row.refs);data=merged.data;
+   if(merged.changed){report.identityDetailsImproved++;report.changes++;}
+   nextState[detailKey(row.id)]=today;
+  }catch(e){
+   const k=Number.isInteger(e?.status)?'http_'+e.status:'invalid_or_unavailable';
+   report.identityDetailFailures[k]=(report.identityDetailFailures[k]||0)+1;
+  }
+ };
+ for(const row of planCguIdentityDetails(previous.contracts,nextState,now))await enrich(row);
  for(const {month,page} of plan){
   if(budget.stopped())break;
   try{
@@ -148,6 +177,8 @@ export async function collectCguContractEvidence({previous=emptyCguContractEvide
    if(complete){nextState[pageKey(month,page)]=today;if(!rows.length)nextState[emptyKey(month,page)]=today;}
   }catch(e){fail(e);}
  }
+ // Detalhar positivos novos no proximo ciclo; nao consumir o teto de descoberta.
+ report.identityCoverage={contracts:data.contracts.length,number:data.contracts.filter(c=>c.number).length,process:data.contracts.filter(c=>c.process).length,supplierCnpj:data.contracts.filter(c=>c.supplierCnpj).length,completeIdentity:data.contracts.filter(c=>!incomplete(c)).length};
  return {data,state:nextState,report:{...report,telemetry:budget.snapshot()}};
 }
 async function main(){

@@ -2,6 +2,8 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import {createCguBudget,collectionLimits} from './cgu-budget.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
+import {validRelatedPair} from '../assets/trajectory.js';
 import {inScopeMonth,inScopeNe} from './collection-scope.mjs';
 import {stateKey,validDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
@@ -158,13 +160,14 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
 }
 /** Usa evidencias de identidade CGU para completar impactos ainda sem valor.
  * Substitui no maximo 40% das vagas de cada fase; preserva cotas e rodizio. */
-export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Date()}={}){
- const docs=new Map(),pairs=new Set(),wanted=new Map();
+export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Date(),cguContracts=[]}={}){
+ const docs=new Map(),pairs=new Set(),wanted=new Map(),contractNe=new Set(cguContracts.flatMap(c=>c.refs||[]).filter(inScopeNe));
  for(const m of months){for(const d of m.documents){if(!docs.has(d.id))docs.set(d.id,[]);docs.get(d.id).push({doc:d,month:m});}
   for(const r of m.relations)pairs.add(r.from+'>'+r.to);}
  for(const [id,rows] of docs)if(rows.length===1){
   const d=rows[0].doc;
   for(const other of d.relatedIds||[]){
+   if(!validRelatedPair(id,other))continue;
    const ne=d.phase===1?id:other,from=d.phase===1?other:id;
    if(!/^158459\d{5}20\d{2}NE\d{6}$/.test(ne)||!inScopeNe(ne)||pairs.has(from+'>'+ne))continue;
    const found=docs.get(from);if(found?.length!==1||![2,3].includes(found[0].doc.phase))continue;
@@ -172,13 +175,22 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
    const recheck=doc.phase===2?doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true;
    const last=state[detailKey(month,from,kind)];
    if(validDay(last)&&Date.parse(now.toISOString().slice(0,10))-Date.parse(last)<7*86400000)continue;
-   wanted.set(from,{kind,id:from,month:month.month,recheck});
+   if(!wanted.has(from))wanted.set(from,{kind,id:from,month:month.month,recheck,missing:new Set(),contract:false});
+   const task=wanted.get(from);task.missing.add(ne);task.contract ||= contractNe.has(ne);
   }
  }
  const queue=[...base],selected=[];
  for(const kind of ['payment','liquidation']){
-  const targets=rotatePending([...wanted.values()].filter(t=>t.kind===kind).sort((a,b)=>a.id.localeCompare(b.id)),wanted.size,slot);
-  const quota=Math.min(targets.length,Math.floor(base.filter(t=>t.kind===kind).length*.4));
+  const candidates=[...wanted.values()].filter(t=>t.kind===kind);
+  const quota=Math.min(candidates.length,Math.floor(base.filter(t=>t.kind===kind).length*.4));
+  if(!quota)continue;
+  const ordered=xs=>xs.sort((a,b)=>b.missing.size-a.missing.size||a.id.localeCompare(b.id));
+  const strong=ordered(candidates.filter(t=>t.contract)),other=ordered(candidates.filter(t=>!t.contract));
+  // Metade da reserva documental atende contratos CGU; o restante continua
+  // no rodizio geral. Offset usa a cota, nao o tamanho integral do grupo.
+  const rotate=xs=>{if(!xs.length)return [];const offset=slot%xs.length;return xs.slice(offset).concat(xs.slice(0,offset));};
+  const high=rotate(strong),general=rotate(other),first=high.slice(0,Math.ceil(quota/2));
+  const targets=[...first,...general,...high.slice(first.length)];
   for(const t of targets.slice(0,quota)){
    let at=queue.findIndex(x=>x.kind===kind&&x.id===t.id);
    if(at<0)at=queue.findLastIndex(x=>x.kind===kind&&!targets.some(y=>y.id===x.id));
@@ -187,7 +199,7 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
   }
  }
  // Mantem tipos intercalados e tamanho total inalterado.
- return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected,...queue].filter(t=>t.kind===k)),base.length),selected:selected.length};
+ return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected.map(({missing,contract,...t})=>t),...queue].filter(t=>t.kind===k)),base.length),selected:selected.length,contractPriority:selected.filter(t=>t.contract).length,paymentPriority:selected.filter(t=>t.kind==='payment').length};
 }
 export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
@@ -248,9 +260,10 @@ async function main(){
   const now=new Date(),today=currentDateInBrazil(now);
   const beforeChronology=buildCommitmentChronology(months,{today});
   const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
-  const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now});
+  const cguContracts=(await readCguContractEvidence(root)).contracts;
+  const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
   const base=impactPlan.tasks;
-  console.log('Impactos priorizados por relação CGU: '+impactPlan.selected);
+  console.log('Impactos priorizados por relação CGU: '+impactPlan.selected+'; em contratos CGU: '+impactPlan.contractPriority+'; pagamentos: '+impactPlan.paymentPriority);
   const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
     slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
     maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks
