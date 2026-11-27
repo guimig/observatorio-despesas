@@ -39,38 +39,66 @@ function strongContext(doc,c,observations){
 const instrumentKey=c=>c.id||c.pncpId;
 /** Correspondencias entre fontes sao candidatas, nunca identidade oficial.
  * A referencia CGU -> NE integral e uma aresta independente. */
-export function indexCguContractEvidence(rows,contracts){
- const byNe=new Map(),byPncp=new Map(),records=new Map(),byIdentity=new Map();
- const key=c=>{
-  // PNCP normalmente publica numero sem ano; usar ano da assinatura
-  // apenas para candidato, nunca o ano do controle/publicacao.
-  const raw=String(c.number||'');
-  const m=/^(\d{1,6})\/(20\d{2})$/.exec(raw)||
-   (c.source==='pncp'&&/^\d{1,6}$/.test(raw)&&/^20\d{2}-\d{2}-\d{2}$/.test(c.signed||'')?[raw,raw,c.signed.slice(0,4)]:null);
-  if(!m||!PROC.test(c.process||'')||!/^\d{14}$/.test(c.supplierCnpj||'')||
-   !/^20\d{2}-\d{2}-\d{2}$/.test(c.signed||'')||!['158459','158125'].includes(c.unitCode))return null;
-  return [Number(m[1]),m[2],c.process,c.supplierCnpj,c.signed,c.unitCode].join('|');
+export function indexCguContractEvidence(rows,contracts,{byNeDocument=new Map(),owners=new Map()}={}){
+ const byNe=new Map(),byPncp=new Map(),byCgu=new Map(),records=new Map(),bySignature=new Map(),pncpRefs=new Map();
+ const number=c=>{
+  const m=/^(\d{1,6})(?:\/(20\d{2}))?$/.exec(String(c.number||''));
+  return m&&Number(m[1])>0?{seq:Number(m[1]),year:m[2]||null}:null;
  };
- for(const c of contracts)if(c.source==='pncp'&&isFormalContract(c)&&key(c))add(byIdentity,key(c),c);
- const keys=new Map();
+ const signature=c=>{
+  const n=number(c);
+  return n&&/^20\d{2}-\d{2}-\d{2}$/.test(c.signed||'')&&['158459','158125'].includes(c.unitCode)?[n.seq,c.signed,c.unitCode].join('|'):null;
+ };
+ const conflict=(a,b)=>{
+  const n=number(a),m=number(b);
+  return Boolean(n&&m&&(n.seq!==m.seq||n.year&&m.year&&n.year!==m.year)||
+   ['process','supplierCnpj','signed','unitCode'].some(k=>a[k]&&b[k]&&a[k]!==b[k]));
+ };
+ const formal=contracts.filter(c=>c.source==='pncp'&&isFormalContract(c)&&instrumentKey(c));
+ for(const c of formal){
+  if(signature(c))add(bySignature,signature(c),c);
+  for(const ne of unique((c.commitmentRefs||[]).map(r=>extractAraquariNeEvidence(r)).filter(e=>e?.kind==='full'&&inScope(e.ne)).map(e=>e.ne)))add(pncpRefs,ne,c);
+ }
  for(const row of rows||[]){
-  if(!Number.isSafeInteger(row.id)||row.id<=0||!Array.isArray(row.refs)||!row.refs.length||!row.refs.every(inScope))continue;
+  if(!Number.isSafeInteger(row.id)||row.id<=0||!Array.isArray(row.refs)||!row.refs.length||!row.refs.every(inScope)||records.has(row.id))continue;
   records.set(row.id,row);
   for(const ne of unique(row.refs))add(byNe,ne,row);
-  if(key(row))add(keys,key(row),row);
  }
- for(const [k,group] of keys){
-  const matches=byIdentity.get(k)||[];
-  if(group.length===1&&matches.length===1)add(byPncp,instrumentKey(matches[0]),group[0]);
+ const possible=new Map(),reverse=new Map();
+ for(const row of records.values()){
+  const found=new Map();
+  for(const ne of unique(row.refs)){
+   const matches=pncpRefs.get(ne)||[];
+   if(byNe.get(ne)?.length!==1||matches.length!==1||conflict(row,matches[0]))continue;
+   found.set(instrumentKey(matches[0]),{instrumentId:instrumentKey(matches[0]),basis:'shared_ne',reason:'NE integral declarada por ambas as fontes, sem concorrente ou conflito conhecido; identidade contratual ainda não confirmada.'});
+  }
+  const contexts=row.refs.filter(ne=>byNe.get(ne)?.length===1&&owners.get(ne)?.length===1)
+   .map(ne=>byNeDocument.get(ne)).filter(Boolean);
+  for(const c of bySignature.get(signature(row))||[]){
+   if(conflict(row,c)||!PROC.test(c.process||'')||!/^\d{14}$/.test(c.supplierCnpj||''))continue;
+   const id=instrumentKey(c);if(found.has(id))continue;
+   const direct=row.process===c.process&&row.supplierCnpj===c.supplierCnpj;
+   const contextual=contexts.some(d=>d.process===c.process&&d.partyRef===c.supplierCnpj)&&
+    contexts.every(d=>(!PROC.test(d.process||'')||d.process===c.process)&&(!/^\d{14}$/.test(d.partyRef||'')||d.partyRef===c.supplierCnpj));
+   if(direct||contextual)found.set(id,{instrumentId:id,basis:direct?'administrative_identity':'ne_context',reason:direct?
+    'Número compatível, processo, CNPJ, assinatura e unidade coincidentes nas fontes; candidato, não confirmação.':
+    'Número compatível, assinatura e unidade coincidentes; processo e CNPJ corroborados por NE integral CGU sem divergência observada. Candidato contextual, não confirmação.'});
+  }
+  possible.set(row.id,[...found.values()]);
+  for(const id of found.keys())add(reverse,id,row.id);
  }
- return {byNe,byPncp,records};
+ for(const [id,matches] of possible){
+  if(matches.length!==1||reverse.get(matches[0].instrumentId)?.length!==1)continue;
+  const match=matches[0];byCgu.set(id,match);add(byPncp,match.instrumentId,records.get(id));
+ }
+ return {byNe,byPncp,byCgu,records};
 }
 export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],arpDetails=[],tender=null,cguContracts=[],totalMonths=months.length}={}){
  const entries=buildCommitmentTrajectories(months);
- const cguEvidence=indexCguContractEvidence(cguContracts,contracts);
  const byNe=new Map(entries.map(e=>[e.id,e])),docs=new Map(),originsByDoc=new Map(),observations=new Map(),owners=new Map();
  for(const m of months){for(const o of m.commitmentObservations||[])add(observations,o.id,o);for(const d of m.documents)add(owners,d.id,m.month);}
  for(const m of months)for(const d of m.documents)docs.set(d.id,d);
+ const cguEvidence=indexCguContractEvidence(cguContracts,contracts,{byNeDocument:docs,owners});
  for(const entry of entries)for(const link of entry.links){
   add(originsByDoc,link.id,{entry,link});
  }
@@ -234,7 +262,7 @@ export function cguContractExecutionEvidence(index,id){
  };
  for(const ne of unique(record?.refs||[])){
   const entry=index.byNe.get(ne);
-  const row={ne,status:'pending',chronology:null,liquidation:group(),payment:group()};
+  const row={ne,status:'pending',chronology:null,liquidation:group(),payment:group(),liquidationLinks:[],paymentLinks:[]};
   result.rows.push(row);
   if(entry?.document)result.located++;
   if(!entry?.document){row.status='missing';result.missing.push(ne);continue;}
@@ -262,6 +290,7 @@ export function cguContractExecutionEvidence(index,id){
    for(const link of links){
     const known=link.document&&index.owners.get(link.id)?.length===1&&link.checked===true&&Number.isSafeInteger(link.cents);
     const cents=known?link.cents:null;
+    row[key+'Links'].push({...link,cents});
     safeAdd(row[key],cents);safeAdd(result[key],cents);
     if(known){docs.add(link.id);period(link.date,key,cents);}
    }
@@ -381,6 +410,8 @@ export function summarizeIntegratedCoverage(index){
   cguContractEligibleNe:cguExecution.reduce((n,c)=>n+c.eligible,0),cguContractReconciledNe:cguExecution.reduce((n,c)=>n+c.reconciled,0),
   cguContractAmbiguousNe:new Set(cguExecution.flatMap(c=>c.ambiguous)).size,
   cguContractKnownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.known,0),cguContractUnknownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.unknown,0),
+  cguContractKnownLiquidationPairs:cguExecution.reduce((n,c)=>n+c.liquidation.known,0),cguContractUnknownLiquidationPairs:cguExecution.reduce((n,c)=>n+c.liquidation.unknown,0),
+  cguCandidatesByBasis:Object.fromEntries(['shared_ne','administrative_identity','ne_context'].map(b=>[b,[...index.cguEvidence.byCgu.values()].filter(x=>x.basis===b).length])),
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
   neItemCandidates:itemRefs.length,neItemsWithAta:itemRefs.filter(r=>r.ataItem).length,

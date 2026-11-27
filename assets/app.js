@@ -881,7 +881,15 @@ function renderCguContractExecution(host,row){
   const block=element('div','relation-item');
   block.append(neButton(item.ne),element('span','small-muted',statuses[item.status]||'Histórico pendente'));
   if(item.chronology?.status==='reconciled')block.append(element('span','small-muted','Primeira inclusão de item: '+localDate(item.chronology.originalDate)+' · última movimentação: '+localDate(item.chronology.lastMovementDate)+' · valor reconstituído: '+fmtMoney(item.chronology.reconstructedCents)));
-  if(item.chronology)block.append(element('span','small-muted','Impactos recuperados: liquidação '+cguGroupMoney(item.liquidation)+' · pagamento '+cguGroupMoney(item.payment)));
+  if(item.chronology){
+   block.append(element('span','small-muted','Impactos recuperados: liquidação '+cguGroupMoney(item.liquidation)+' · pagamento '+cguGroupMoney(item.payment)));
+   for(const [label,links] of [['Liquidações',item.liquidationLinks],['Pagamentos',item.paymentLinks]]){
+    if(!links.length)continue;
+    const list=element('details','integrated-items'),body=element('div');
+    list.append(element('summary','relation-link',label+' · '+fmtCount(links.length)),body);
+    renderTrajectoryLinks(body,links,'Nenhum documento localizado');block.append(list);
+   }
+  }
   detail.append(block);
  }
  host.append(detail);
@@ -894,9 +902,15 @@ function renderCguContractExecution(host,row){
    timeline.append(block);
   }host.append(timeline);
  }
- for(const [id,rows] of index.cguEvidence.byPncp)if(rows.some(c=>c.id===row.id)){
-  const c=index.instruments.get(id);if(c)host.append(element('p','small-muted','Correspondência candidata entre fontes (não confirmada):'),relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
- }
+ const candidate=index.cguEvidence.byCgu.get(row.id);
+ if(candidate){
+  const c=index.instruments.get(candidate.instrumentId);
+  if(c){
+   const block=element('div','relation-item integrated-edge');
+   block.append(element('strong','','Correspondência candidata PNCP'),relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')),element('span','small-muted',candidate.reason));
+   renderOriginButtons(block,index,candidate.instrumentId);host.append(block);
+  }
+ }else host.append(element('p','helper','Nenhuma correspondência PNCP única com evidência suficiente no acervo carregado.'));
  if(!index.complete){
   const control=relationButton('Carregar competências relacionadas',async()=>{
    control.disabled=true;control.textContent='Carregando competências…';
@@ -1079,7 +1093,7 @@ function renderCatalogTrajectory(record,kind){
  const scope=kind==='notice'||kind==='ata'?kind:'instrument';
  if(scope==='instrument'){
   renderOriginButtons(host,index,id);
-  for(const row of index.cguEvidence.byPncp.get(id)||[]){const block=element('div','relation-item');block.append(element('strong','','Possível contrato correspondente na CGU'),relationButton(cguContractTitle(row),()=>showCguContractEvidence(row)),element('span','small-muted','Número, processo, CNPJ, assinatura e unidade coincidentes; candidato entre fontes, excluído dos totais PNCP.'));host.append(block);}
+  for(const row of index.cguEvidence.byPncp.get(id)||[]){const block=element('div','relation-item');block.append(element('strong','','Possível contrato correspondente na CGU'),relationButton(cguContractTitle(row),()=>showCguContractEvidence(row)),element('span','small-muted',index.cguEvidence.byCgu.get(row.id)?.reason+' Excluído dos totais PNCP.'));host.append(block);}
  }
  if(scope==='ata'){
   const notice=index.noticeMap.get(record.procurementId);
@@ -1098,6 +1112,7 @@ function renderCatalogTrajectory(record,kind){
    const c=index.instruments.get(e.instrumentId);if(!c)continue;
    const row=element('div','relation-item');row.append(relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
    if(scope==='notice')row.append(element('span','small-muted',e.sources.map(s=>s==='origem_da_ata'?'Via ata de origem':'Contratação informada no instrumento').join(' + ')));
+   for(const candidate of index.cguEvidence.byPncp.get(e.instrumentId)||[])row.append(relationButton('Candidato CGU · '+(candidate.number||candidate.id),()=>showCguContractEvidence(candidate)),element('span','small-muted','Correspondência não confirmada; execução CGU independente da ficha PNCP.'));
    details.append(row);
   }
   host.append(details);

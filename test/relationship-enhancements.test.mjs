@@ -78,5 +78,7 @@ test('recuperacao dirigida usa apenas uma rodada em quatro e respeita cobertura 
  assert.equal(directed.month,'2024-11');assert.deepEqual(directed.pending,['pncp']);
  assert.equal(planContractRecovery([],cguContracts,{now,slot:1}).reason,undefined);
  const complete=[{source:'pncp',month:'2024-11',status:'complete',closedMonth:true}];
- assert.equal(planContractRecovery(complete,cguContracts,{now,slot:0}).reason,undefined);
+ assert.equal(planContractRecovery(complete,cguContracts,{now,slot:0}).month,'2024-12');
+ const all=[...complete,...['2024-12','2025-01'].map(month=>({source:'pncp',month,status:'complete',closedMonth:true}))];
+ assert.equal(planContractRecovery(all,cguContracts,{now,slot:0}).reason,undefined);
 });
