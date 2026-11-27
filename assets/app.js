@@ -285,7 +285,7 @@ async function renderCommitmentPeriod(month){
   note.textContent=(row?fmtCount(row.identities)+' NEs · '+fmtCount(row.movements)+' operações no período':'Nenhuma operação conciliada no período')+
    ' · '+fmtCount(summary.reconciled)+'/'+fmtCount(summary.identities)+' NEs do acervo conciliadas';
   details.textContent=row&&row.netCents!==null?
-   'Inclusões originais '+fmtMoney(row.initialCents)+' · Reforços '+fmtMoney(row.reinforcementCents)+
+   'Inclusões de itens '+fmtMoney(row.initialCents)+' · Reforços '+fmtMoney(row.reinforcementCents)+
    ' · Anulações '+fmtMoney(row.annulmentCents)+' · Operações de NEs de exercícios anteriores (fora do subtotal): reforços '+fmtMoney(row.priorYearReinforcementCents)+
    ', anulações '+fmtMoney(row.priorYearAnnulmentCents)+', cancelamentos '+fmtMoney(row.priorYearCancellationCents)+'.':
    'Sem evidência suficiente para apurar o subtotal. Ausência não significa valor zero.';
@@ -1075,7 +1075,7 @@ function explainSiafiReconciliation(items,doc){
 }
 function explainSiafiMovementAudit(items,doc){
  const a=auditSiafiItemMovements(items,{issueDate:doc?.date,
-   documentCents:doc?.cents});
+   documentCents:doc?commitmentChronologyEvidence(doc,items,loadedCommitmentObservations(doc.id)).referenceCents:null});
  if(a.status==='unavailable')return 'Itens ainda não consultados; sem condições de conferir os movimentos.';
  const coverage='Históricos de itens consultados: '+a.checked+'/'+a.totalItems+'. ';
  const amount=a.documentAmountMatch===true?
@@ -1089,7 +1089,7 @@ function explainSiafiMovementAudit(items,doc){
  if(a.status==='no_movement_evidence')return coverage+amount+
    'A CGU não retornou operações para pelo menos um item; ausência de movimento não comprovada.';
  if(a.status==='original_only_consistent')return coverage+amount+
-   'Todos os itens consultados apresentam somente uma inclusão na data de emissão, com valores coincidentes. Isso é conferência documental, não conciliação de saldo contábil.';
+   'Todos os itens consultados apresentam somente uma inclusão na data da listagem, com valores coincidentes. Isso não comprova a emissão documental. Isso é conferência documental, não conciliação de saldo contábil.';
  return coverage+amount+
    'Movimentações classificadas: inclusões '+a.counts.original+
    ', reforços '+a.counts.reinforcement+', anulações '+a.counts.annulment+

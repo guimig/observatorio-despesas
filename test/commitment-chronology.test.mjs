@@ -28,7 +28,7 @@ test('NE reaparece em outro mes sem duplicar identidade nem valor; cobertura pre
 });
 const doc={id,phase:1,date:'2026-11-10',cents:100,itemsDetailVersion:2};
 const observations=[{id,date:'2026-11-25',ownerDate:doc.date,cents:150}];
-const items=[{seq:1,cents:150,historyChecked:true,movements:[
+const items=[{seq:1,cents:150,historyChecked:true,historyCheckedAt:'2026-11-26',movements:[
  {date:'2026-10-01',type:'original',cents:100},
  {date:'2026-11-10',type:'reinforcement',cents:20},
  {date:'2026-11-25',type:'reinforcement',cents:40},
@@ -58,7 +58,12 @@ test('cancelamentos de NEs anteriores nao entram na execucao do exercicio corren
 });
 test('prioridade de historicos de reaparições nao amplia a fila',()=>{
  const tasks=[{kind:'itemHistory',id:other,month:'2026-11',seq:1}];
- const m={month:'2026-11',documents:[doc],commitmentObservations:observations,itemsByDocument:{[id]:items}};
+ const m={month:'2026-11',documents:[doc],commitmentObservations:observations,itemsByDocument:{[id]:[{...items[0],historyCheckedAt:'2026-11-24'}]}};
  const r=prioritizeObservedCommitments(tasks,[m]);
  assert.equal(r.length,1);assert.equal(r[0].id,id);
+});
+
+test('historico anterior a ultima reaparição nao autoriza conciliar mesmo com valores iguais',()=>{
+ const stale=[{...items[0],historyCheckedAt:'2026-11-24'}];
+ assert.equal(commitmentChronologyEvidence(doc,stale,observations).reason,'history_older_than_listing');
 });

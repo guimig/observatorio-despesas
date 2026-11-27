@@ -193,8 +193,12 @@ export function prioritizeObservedCommitments(tasks,months,{slot=0}={}){
  for(const t of selected){
    let at=queue.findIndex(x=>key(x)===key(t));
    if(at<0){for(let i=queue.length-1;i>=0;i--)if(queue[i].kind===t.kind){at=i;break}}
-   if(at<0)continue;
-   queue.splice(at,1);front.push(t);
+   // Se a classe estava vazia, usar vaga da fila existente ou reservar uma
+   // tarefa dentro das seis vagas, sem aumentar o orcamento HTTP.
+   if(at<0&&queue.length)at=queue.length-1;
+   if(at>=0)queue.splice(at,1);
+   else if(tasks.length)continue;
+   front.push(t);
  }
  return front.concat(queue);
 }

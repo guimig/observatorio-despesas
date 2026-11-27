@@ -110,6 +110,8 @@ export function commitmentChronologyEvidence(doc,items,observations=[]){
  const base={referenceDate:reference.date,referenceCents:reference.cents,listingDates:[...new Set(refs.map(r=>r.date))]};
  if(doc.itemsDetailVersion!==2||!Number.isSafeInteger(reference.cents))
    return {...base,status:'pending',reason:'item_catalog_or_reference_pending'};
+ if(observations.length&&Array.isArray(items)&&items.some(item=>!date(item.historyCheckedAt)||item.historyCheckedAt<reference.date))
+   return {...base,status:'pending',reason:'history_older_than_listing'};
  const result=reconcileSiafiCommitment(items,{listingDate:doc.date,documentCents:reference.cents,commitmentYear:doc.id.slice(11,15)});
  return {...result,...base};
 }
