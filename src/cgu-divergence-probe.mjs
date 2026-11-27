@@ -7,6 +7,7 @@ import {fetchCguOriginal,summarizeOriginalIssueFields} from './recover-cgu-origi
 import {resolveItems} from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
 import {stateKey,validDay} from './operational-state.mjs';
+import {reconstructValueMeasures,classifyValueMeaning,readFreshListingValue,classifySourceAgreement} from './cgu-value-semantics.mjs';
 
 const DAY=86400000,MAX_NOTES=2,MAX_ITEMS=8;
 const increment=(map,key)=>{map[key]=(map[key]||0)+1};
@@ -127,12 +128,14 @@ function detailRelation(detail,ref,catalog){
 /** Retorna somente classes e contagens. Nem mesmo o codigo da NE e retornado. */
 export async function inspectDivergentRecord(record,{token,budget,now=new Date(),
  today=now.toISOString().slice(0,10),slot=0,maxItems=MAX_ITEMS,
- requestDetail=fetchCguOriginal,requestItems=resolveItems,requestHistory=resolveItemMovements}={}){
+ requestDetail=fetchCguOriginal,requestItems=resolveItems,requestHistory=resolveItemMovements,requestDay}={}){
  if(!divergent(record)||!Number.isSafeInteger(maxItems)||maxItems<1||maxItems>MAX_ITEMS||
     !Number.isSafeInteger(slot)||slot<0||!validDay(today))throw Error('Sondagem invalida');
  const result={detail:'not_checked',detailDate:'not_checked',detailRelation:'not_comparable',
   catalog:'not_checked',history:'not_checked',timeline:'not_comparable',pattern:'unresolved',
-  items:0,historiesChecked:0,historiesSampled:0,fullyQueried:false};
+  items:0,historiesChecked:0,historiesSampled:0,fullyQueried:false,
+  semanticStatus:'not_comparable',storedMeaning:'not_comparable',detailMeaning:'not_comparable',
+  listingMeaning:'not_comparable',listingStatus:'not_checked',sourceAgreement:'not_comparable'};
  let detail={status:'unavailable',cents:null,dateClass:'unavailable'};
  try{detail=classifyDetail(record,await requestDetail(record.id,{token,budget}),now)}catch{}
  result.detail=detail.status;result.detailDate=detail.dateClass;
@@ -159,6 +162,18 @@ export async function inspectDivergentRecord(record,{token,budget,now=new Date()
   movements:bySeq.get(i.seq)||[]}));
  const timeline=compareDivergentTimeline(record,evidence,{today});
  Object.assign(result,timeline);
+ const reconstruction=reconstructValueMeasures(record,evidence,{today});
+ result.semanticStatus=reconstruction.status;
+ result.storedMeaning=classifyValueMeaning(ref,reconstruction);
+ result.detailMeaning=classifyValueMeaning(detail.status==='verified'?detail.cents:null,reconstruction);
+ // A listagem e complementar, realizada so quando ainda houver vaga no suborcamento.
+ // Nos testes com adaptadores simulados, somente consultar o adaptador de listagem injetado.
+ if(!budget?.stopped()&&(requestDay||requestDetail===fetchCguOriginal)){
+  const listing=await readFreshListingValue(record,{token,budget,now,today,requestDay});
+  result.listingStatus=listing.status;
+  result.listingMeaning=classifyValueMeaning(listing.status==='verified'?listing.cents:null,reconstruction);
+  result.sourceAgreement=classifySourceAgreement(ref,detail,listing);
+ }
  result.fullyQueried=detail.status==='verified'&&result.historiesChecked===result.items;
  if(result.detailRelation==='matches_both'&&result.history==='reconciled_to_catalog')result.pattern='current_sources_match_reference';
  else if(result.detailRelation==='matches_fresh_catalog_only'&&result.timeline==='reference_matches_reconstruction_at_listing')
@@ -170,9 +185,10 @@ export async function inspectDivergentRecord(record,{token,budget,now=new Date()
 /** Executado antes do enriquecimento regular, limitado a 10% das requisicoes
  * e 15% do tempo (no maximo 24 requisicoes / 90s), sem nova agenda. */
 export async function runDivergenceProbes(plan,{token,parent,limits,state={},now=new Date(),
- today=now.toISOString().slice(0,10),slot=0,requestDetail,requestItems,requestHistory,clock}={}){
+ today=now.toISOString().slice(0,10),slot=0,requestDetail,requestItems,requestHistory,requestDay,clock}={}){
  const report={planned:plan.selected.length,attempted:0,fullyQueried:0,items:0,historiesChecked:0,
-  historiesSampled:0,detail:{},detailDate:{},detailRelation:{},catalog:{},history:{},timeline:{},pattern:{},byYear:{}};
+  historiesSampled:0,detail:{},detailDate:{},detailRelation:{},catalog:{},history:{},timeline:{},pattern:{},byYear:{},
+  semanticStatus:{},storedMeaning:{},detailMeaning:{},listingMeaning:{},listingStatus:{},sourceAgreement:{}};
  if(!plan.selected.length)return {...report,requests:0,elapsedMs:0,stopReason:null,parentStopped:null};
  const budget=createDivergenceProbeBudget(parent,{requests:Math.min(24,Math.max(1,Math.floor(limits.requests*.1))),
   durationMs:Math.min(90000,Math.max(1,Math.floor(limits.durationMs*.15))),clock});
@@ -180,11 +196,11 @@ export async function runDivergenceProbes(plan,{token,parent,limits,state={},now
  for(const row of plan.selected){
   if(budget.stopped())break;
   const before=budget.snapshot().requests;
-  const result=await inspectDivergentRecord(row.record,{token,budget,now,today,slot,requestDetail,requestItems,requestHistory});
+  const result=await inspectDivergentRecord(row.record,{token,budget,now,today,slot,requestDetail,requestItems,requestHistory,requestDay});
   if(budget.snapshot().requests===before)continue;
   report.attempted++;
   increment(report.byYear,row.record.id.slice(11,15));
-  for(const k of ['detail','detailDate','detailRelation','catalog','history','timeline','pattern'])increment(report[k],result[k]);
+  for(const k of ['detail','detailDate','detailRelation','catalog','history','timeline','pattern','semanticStatus','storedMeaning','detailMeaning','listingMeaning','listingStatus','sourceAgreement'])increment(report[k],result[k]);
   for(const k of ['items','historiesChecked','historiesSampled'])report[k]+=result[k];
   if(result.fullyQueried)report.fullyQueried++;
   // Restricoes da fonte nao sao falha individual: nao bloquear o documento.
