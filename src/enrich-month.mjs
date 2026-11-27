@@ -1,7 +1,7 @@
 /** Enriquecimento independente dos documentos, com checkpoint no próprio JSON mensal. */
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import {createCguBudget,collectionLimits} from './cgu-budget.mjs';
+import {createCguBudget,collectionLimits,assessCollectionCapacity} from './cgu-budget.mjs';
 import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 import {validRelatedPair} from '../assets/trajectory.js';
 import {buildIntegratedIndex,cguContractExecutionEvidence} from '../assets/integrated-trajectory.js';
@@ -14,7 +14,7 @@ import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './en
 import {resolveItemMovements} from './item-movements.mjs';
 import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
-import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories} from './chronology-enrichment.mjs';
+import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences} from './chronology-enrichment.mjs';
 
 function bounded(value,fallback,max){
   const n=Number(value||fallback);
@@ -304,6 +304,8 @@ async function main(){
   const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
   const cguContracts=(await readCguContractEvidence(root)).contracts;
   const beforeContracts=summarizeContractProgress(months,cguContracts);
+  const beforeDivergences=summarizeCatalogDivergences(months,cguContracts);
+  console.log('Divergencias de catalogo antes da rodada (somente contagens): '+JSON.stringify(beforeDivergences));
   console.log('Cobertura contratual antes da rodada: '+JSON.stringify(beforeContracts));
   const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
   const base=impactPlan.tasks;
@@ -367,7 +369,8 @@ async function main(){
           result.kind='liquidationValue';result.cents=Number(total);
         }
       }
-      await persistEnrichment(root,month,id,result,new Date());
+      const changed=await persistEnrichment(root,month,id,result,new Date());
+      if(changed)phase.changed=(phase.changed||0)+1;
       const after=await readMonth(root,month);
       const updated=after.documents.find(d=>d.id===id);
       if(currentRecord?.owners.length===1){
@@ -395,11 +398,15 @@ async function main(){
     successes++;phase.successes++;if(recheck)completedReviews++;
     links+=outcome.links?.length||0;items+=outcome.items?.length||0;
   }
-  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,followupsPromoted,phaseResults,limits,...budget.snapshot()}));
+  const snapshot=budget.snapshot();
+  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,followupsPromoted,phaseResults,limits,...snapshot}));
+  console.log('Avaliacao de capacidade CGU: '+JSON.stringify(assessCollectionCapacity({attempted,successes,changed:Object.values(phaseResults).reduce((n,p)=>n+(p.changed||0),0),limits,snapshot})));
   const validated=await validatePublishedData(root);
   const comparedMonths=selected?validated.months.filter(m=>m.month===selected):validated.months;
   const afterChronology=buildCommitmentChronology(comparedMonths,{today});
   const afterContracts=summarizeContractProgress(comparedMonths,cguContracts);
+  const afterDivergences=summarizeCatalogDivergences(comparedMonths,cguContracts);
+  console.log('Divergencias de catalogo depois da rodada (somente contagens): '+JSON.stringify({before:beforeDivergences,after:afterDivergences,delta:afterDivergences.total-beforeDivergences.total}));
   console.log('Resultado de cobertura contratual (somente contagens): '+JSON.stringify({before:beforeContracts,after:afterContracts,delta:Object.fromEntries(Object.keys(afterContracts).map(k=>[k,afterContracts[k]-beforeContracts[k]]))}));
   console.log('Resultado de conciliacao NE (somente contagens): '+JSON.stringify({
     before:beforeChronology.reconciled,after:afterChronology.reconciled,
