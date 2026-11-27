@@ -93,3 +93,43 @@ test('numero PNCP sem ano e contextualizado somente pela assinatura, nunca pela 
  assert.equal(indexCguContractEvidence([row],[{...contract,signed:undefined}]).byPncp.size,0);
  assert.equal(indexCguContractEvidence([row],[contract,{...contract,id:'p2'}]).byPncp.size,0);
 });
+
+test('NE integral comum permite candidato entre fontes apenas sem concorrencia ou conflito',()=>{
+ const row={...identity,refs:[ne]};
+ const p={id:'p',source:'pncp',kind:'Contrato',commitmentRefs:[ne]};
+ const i=indexCguContractEvidence([row],[p]);
+ assert.equal(i.byCgu.get(42).basis,'shared_ne');
+ assert.equal(indexCguContractEvidence([row],[p,{...p,id:'p2'}]).byCgu.size,0);
+ assert.equal(indexCguContractEvidence([row,{...row,id:43}],[p]).byCgu.size,0);
+ assert.equal(indexCguContractEvidence([row],[{...p,process:'23349.000002/2026-01'}]).byCgu.size,0);
+ assert.equal(indexCguContractEvidence([row],[{...p,kind:'Nota de empenho'}]).byCgu.size,0);
+});
+test('NE integral corrobora contexto sem preencher identidade CGU nem agregar valores PNCP',()=>{
+ const {process,supplierCnpj,...partial}=identity;
+ const row={...partial,refs:[ne]};
+ const p={id:'p',source:'pncp',kind:'Contrato',number:'00012',signed:row.signed,unitCode:row.unitCode,process,supplierCnpj};
+ const doc={id:ne,phase:1,date:'2026-10-10',cents:100,process,partyRef:supplierCnpj};
+ const month={unit:'158459',month:'2026-10',documents:[doc],relations:[]};
+ const i=buildIntegratedIndex({months:[month],contracts:[p],cguContracts:[row]});
+ assert.equal(i.cguEvidence.byCgu.get(42).basis,'ne_context');
+ assert.equal(i.cguEvidence.records.get(42).process,undefined);
+ assert.equal(scopeFinancialEvidence(i,'instrument','p').commitment.known,0);
+ assert.equal(buildIntegratedIndex({months:[month],contracts:[p,{...p,id:'p2'}],cguContracts:[row]}).cguEvidence.byCgu.size,0);
+ const contradictory={...month,documents:[doc,{...doc,id:ne2,process:'23349.000002/2026-01'}]};
+ assert.equal(buildIntegratedIndex({months:[contradictory],contracts:[p],cguContracts:[{...row,refs:[ne,ne2]}]}).cguEvidence.byCgu.size,0);
+});
+test('numero PNCP sem ano nao exige que ano do numero CGU coincida com assinatura',()=>{
+ const row={...identity,number:'12/2027',refs:[ne]};
+ const p={id:'p',source:'pncp',kind:'Contrato',number:'00012',process:row.process,supplierCnpj:row.supplierCnpj,signed:row.signed,unitCode:row.unitCode};
+ assert.equal(indexCguContractEvidence([row],[p]).byCgu.get(42).basis,'administrative_identity');
+ assert.equal(indexCguContractEvidence([row],[{...p,number:'12/2026'}]).byCgu.size,0);
+});
+test('navegacao contratual nao divulga impacto sem checkpoint validado',()=>{
+ const ob='158459000012026OB000001';
+ const m={unit:'158459',month:'2026-10',documents:[{id:ne,phase:1,date:'2026-10-10',cents:100},{id:ob,phase:3,date:'2026-10-20',cents:999}],relations:[{from:ob,to:ne,cents:80}]};
+ const i=buildIntegratedIndex({months:[m],cguContracts:[{...identity,refs:[ne]}]});
+ const e=cguContractExecutionEvidence(i,42);
+ assert.equal(e.rows[0].paymentLinks[0].id,ob);
+ assert.equal(e.rows[0].paymentLinks[0].cents,null);
+ assert.equal(e.payment.known,0);
+});
