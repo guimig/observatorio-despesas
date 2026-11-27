@@ -42,3 +42,12 @@ test('ata específica e compra de origem da ata entram na recuperação dirigida
  const other='10635424000186-1-000002/2026';
  assert.deepEqual(planMissingNotices({contracts:[{...contract,procurementId:other}]},{notices:[{pncpId:other}]}),[purchase]);
 });
+
+test('reserva de pagamentos privilegia NEs contratuais CGU sem aumentar cotas',()=>{
+ const p1='158459000012026OB000021',p2='158459000012026OB000022',p3='158459000012026OB000023';
+ const m=[{...months[0],documents:[{...doc,relatedIds:[p1,p2,p3]},...([p1,p2,p3].map(id=>({...payment,id})))],relations:[]}];
+ const base=Array.from({length:5},(_,i)=>({kind:'payment',id:'other'+i,month:'2026-11'}));
+ const a=prioritizeRelatedImpacts(base,m,{slot:0,now:new Date('2026-11-27'),cguContracts:[{refs:[ne]}]});
+ const b=prioritizeRelatedImpacts(base,m,{slot:1,now:new Date('2026-11-27'),cguContracts:[{refs:[ne]}]});
+ assert.equal(a.selected,2);assert.equal(a.contractPriority,2);assert.equal(a.paymentPriority,2);assert.equal(a.tasks.length,5);assert.notEqual(a.tasks[0].id,b.tasks[0].id);
+});

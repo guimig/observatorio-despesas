@@ -1,4 +1,4 @@
-import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl,contextualEvidenceMatches} from './integrated-trajectory.js';
+import {buildIntegratedIndex,neEvidenceLevel,instrumentAssociations,scopeFinancialEvidence,trajectoryMatches,itemReferenceCandidates,ataControlFor,scopeItemReferences,noticeAtaItemReferences,ataFilesUrl,contextualEvidenceMatches,cguContractExecutionEvidence} from './integrated-trajectory.js';
 import {BUDGET_DIMENSIONS,SIOP_DIMENSIONS,budgetBucket,referenceFor,summarizeBudget,matchesBudgetFilters,budgetFacetOptions} from './budget-classification.js';
 import {filterStructuredNotice,filterStructuredContract,filterStructuredAta,filterStructuredTenderItem,validRange,validityStatus,matchesCatalogSearch,compareCatalogDates,parseReaisFilter,isIfcAdhesion,isAraquariAdhesion} from './procurement-structured-filters.js';
 import { matchDocumentContract, assessContractAttribution, assessNoticeAttribution } from './procurement-links.js';
@@ -660,6 +660,14 @@ async function relationshipLocator(){
  }).catch(()=>{locatorPromise=null;return null;});
  return locatorPromise;
 }
+async function loadContractCompetencies(refs){
+ if(!state.manifest)return false;
+ const x=await relationshipLocator();if(!x)return false;
+ const months=[...new Set(refs.flatMap(id=>[...(x.owners[id]||[]),...(x.neighbors[id]||[])]))].filter(m=>state.manifest.months.includes(m));
+ let ok=months.length>0;
+ for(let i=0;i<months.length;i+=4){const results=await Promise.allSettled(months.slice(i,i+4).map(fetchMonth));if(results.some(r=>r.status!=='fulfilled'))ok=false;}
+ return ok;
+}
 async function loadLinkedCompetencies(id){
  const x=await relationshipLocator();
  if(!x)return false;
@@ -848,19 +856,66 @@ function cguContractLink(row){
  const a=element('a','inline-link','Consultar contrato na CGU');a.href='https://portaldatransparencia.gov.br/contratos/'+row.id;a.target='_blank';a.rel='noopener noreferrer';return a;
 }
 function cguContractTitle(row){return 'Contrato CGU · '+(row.number?row.number+' · ':'')+'ID '+row.id;}
+const cguGroupMoney=g=>g.known?fmtMoney(g.cents):'Indisponível';
+function renderCguContractExecution(host,row){
+ host.replaceChildren();
+ const index=integratedIndex(),e=cguContractExecutionEvidence(index,row.id);
+ const summary=element('div','relation-item integrated-edge');
+ summary.append(element('strong','','Execução documental vinculada · UG 158459'),
+  element('p','helper',fmtCount(e.located)+' de '+fmtCount(e.references)+' NEs localizadas · '+fmtCount(e.reconciled)+' de '+fmtCount(e.eligible)+' NEs elegíveis com histórico conciliado · '+fmtCount(index.loadedMonths)+' de '+fmtCount(index.totalMonths)+' competências carregadas. Subtotais parciais, não saldos do contrato.'));
+ const movementLabels={initialCents:'Inclusões originais dos itens',reinforcementCents:'Reforços',annulmentCents:'Anulações',cancellationCents:'Cancelamentos de RAP',reconstructedCents:'Valor reconstituído dos itens conciliados'};
+ for(const [key,label] of Object.entries(movementLabels)){
+  const group=e.movements[key];
+  summary.append(element('p','small-muted',label+': '+cguGroupMoney(group)+' · '+fmtCount(group.known)+' NE(s) conciliadas'+(group.unknown?' · '+fmtCount(group.unknown)+' pendentes':'')));
+ }
+ for(const [key,label] of [['liquidation','Impactos de liquidação'],['payment','Impactos de pagamento']]){
+  const group=e[key];
+  financialMetric(summary,label,group,' · '+fmtCount(group.documents)+' documentos distintos · '+fmtCount(group.neWithoutKnown)+' NE(s) elegíveis sem impacto monetário disponível');
+ }
+ if(e.missing.length||e.ambiguous.length||e.conflicts.length)summary.append(element('p','helper',fmtCount(e.missing.length)+' NE(s) ainda não localizadas · '+fmtCount(e.ambiguous.length)+' compartilhadas entre contratos CGU · '+fmtCount(e.conflicts.length)+' com conflito documental. Excluídas dos subtotais.'));
+ summary.append(element('p','helper','A associação CGU–NE não comprova equivalência com PNCP. Movimentações de itens somente após conciliação integral; impactos somente por NE, sem ratear documentos inteiros. Ausência de valor não significa zero.'));
+ host.append(summary);
+ const detail=element('details','integrated-items');detail.open=true;detail.append(element('summary','relation-link','Notas de empenho declaradas pela CGU · '+fmtCount(e.references)));
+ const statuses={missing:'NE ainda não localizada',ambiguous:'NE compartilhada; não alocada',conflict:'Conflito documental; não alocada',reconciled:'Histórico conciliado',pending:'Histórico pendente',partial:'Histórico parcial',divergent:'Histórico divergente',unavailable:'Histórico indisponível'};
+ for(const item of e.rows){
+  const block=element('div','relation-item');
+  block.append(neButton(item.ne),element('span','small-muted',statuses[item.status]||'Histórico pendente'));
+  if(item.chronology?.status==='reconciled')block.append(element('span','small-muted','Primeira inclusão de item: '+localDate(item.chronology.originalDate)+' · última movimentação: '+localDate(item.chronology.lastMovementDate)+' · valor reconstituído: '+fmtMoney(item.chronology.reconstructedCents)));
+  if(item.chronology)block.append(element('span','small-muted','Impactos recuperados: liquidação '+cguGroupMoney(item.liquidation)+' · pagamento '+cguGroupMoney(item.payment)));
+  detail.append(block);
+ }
+ host.append(detail);
+ if(e.periods.length){
+  const timeline=element('details','integrated-items');timeline.append(element('summary','relation-link','Movimentações por competência · '+fmtCount(e.periods.length)));
+  timeline.append(element('p','helper','Movimentos de itens pela data do evento. Liquidações e pagamentos pela data documental de referência da CGU; não são datas de baixa ou saldo.'));
+  for(const p of e.periods){
+   const block=element('div','relation-item');block.append(element('strong','',monthName(p.month)));
+   for(const [k,label] of [...Object.entries(movementLabels).filter(([k])=>k!=='reconstructedCents'),['liquidation','Liquidação (impactos)'],['payment','Pagamento (impactos)']])if(p[k]?.known)block.append(element('span','small-muted',label+': '+cguGroupMoney(p[k])));
+   timeline.append(block);
+  }host.append(timeline);
+ }
+ for(const [id,rows] of index.cguEvidence.byPncp)if(rows.some(c=>c.id===row.id)){
+  const c=index.instruments.get(id);if(c)host.append(element('p','small-muted','Correspondência candidata entre fontes (não confirmada):'),relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
+ }
+ if(!index.complete){
+  const control=relationButton('Carregar competências relacionadas',async()=>{
+   control.disabled=true;control.textContent='Carregando competências…';
+   const ok=await loadContractCompetencies(row.refs).catch(()=>false);
+   if(host.dataset.cguContract!==String(row.id)||!$('record-dialog').open||!control.isConnected)return;
+   renderCguContractExecution(host,row);
+   if(!ok)host.append(element('p','helper','Índice indisponível ou acervo parcial. Consulte o histórico completo na aba Trajetória.'));
+   else host.append(element('p','helper','Competências localizadas pelo índice carregadas. A cobertura da fonte continua parcial.'));
+  });
+  host.append(control);
+ }
+}
 function showCguContractEvidence(row){
  if($('document-dialog').open)$('document-dialog').close();
  $('record-title').textContent=cguContractTitle(row);$('record-eyebrow').textContent='CONTRATO · PORTAL DA TRANSPARÊNCIA';
  const fields=$('record-fields');fields.replaceChildren();
  for(const [label,value] of [['Identificador CGU',String(row.id)],['Número do contrato',row.number],['Processo administrativo',row.process],['UG administrativa',row.unitCode],['Unidade gestora de compras',row.buyingUnit],['Assinatura',row.signed?localDate(row.signed):null],['Referência temporal da fonte',localDate(row.reference)]])appendDetailField(fields,label,value);
  $('record-evidence-section').hidden=true;
- const host=$('record-trajectory');host.replaceChildren();
- host.append(element('p','helper','Vínculo documental declarado diretamente no endpoint de documentos relacionados a contratos da CGU. Não comprova equivalência com registro PNCP, completude da relação, saldo ou valor de execução.'),element('strong','',fmtCount(row.refs.length)+' NEs integrais da UG 158459'));
- for(const ne of row.refs)host.append(neButton(ne));
- const index=integratedIndex();
- for(const [id,rows] of index.cguEvidence.byPncp)if(rows.some(c=>c.id===row.id)){
-  const c=index.instruments.get(id);if(c)host.append(element('p','small-muted','Correspondência candidata entre fontes (não confirmada):'),relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
- }
+ const host=$('record-trajectory');host.dataset.cguContract=String(row.id);renderCguContractExecution(host,row);
  const link=$('record-official-link');link.hidden=false;link.href='https://portaldatransparencia.gov.br/contratos/'+row.id;link.textContent='Consultar registro oficial CGU';
  showDialogFromTop($('record-dialog'));
 }
@@ -1018,7 +1073,7 @@ function renderCatalogEvidence(record,kind){
  }
 }
 function renderCatalogTrajectory(record,kind){
- const host=$('record-trajectory');host.replaceChildren();
+ const host=$('record-trajectory');delete host.dataset.cguContract;host.replaceChildren();
  const index=integratedIndex(),refresh=()=>renderCatalogTrajectory(record,kind);
  const id=kind==='notice'?record.pncpId:kind==='ata'?record.id:record.id||record.pncpId;
  const scope=kind==='notice'||kind==='ata'?kind:'instrument';
