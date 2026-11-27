@@ -451,7 +451,13 @@ export function mergeMonth(existing, month, patches, now = new Date(), {commitme
  * Nao apaga outros documentos da fase, itens, relacoes ou fornecedores.
  */
 export function applyTargetedOriginal(existing,document,now=new Date()){
-  if(!document||document.phase!==1||!NE_RE.test(document.id)||
+  if(document?.phase!==1||!NE_RE.test(document.id))throw Error('NE individual sem identidade e data verificadas');
+  return applyTargetedDocument(existing,document,now);
+}
+/** Consulta individual por identidade; nao comprova cobertura diaria ou impacto por NE. */
+export function applyTargetedDocument(existing,document,now=new Date()){
+  const expected={NE:1,NS:2,OB:3,DF:3}[document?.id?.slice(15,17)];
+  if(!document||!inScopeRelatedDocument(document.id)||document.phase!==expected||
      !DATE_RE.test(document.date)||document.id.slice(11,15)!==document.date.slice(0,4)||
      !(now instanceof Date)||!Number.isFinite(now.getTime()))
     throw Error('NE individual sem identidade e data verificadas');
@@ -460,13 +466,13 @@ export function applyTargetedOriginal(existing,document,now=new Date()){
   if(original.month!==month)throw Error('Competencia individual divergente');
   const old=original.documents.find(d=>d.id===document.id);
   if(old){
-    if(old.date!==document.date||old.phase!==1)
-      throw Error('NE individual com data ou fase divergente');
+    if(old.date!==document.date||old.phase!==document.phase)
+      throw Error('Documento individual com data ou fase divergente');
     return {changed:false,data:original};
   }
   const next=structuredClone(original);
-  const coverage=next.coverage.find(c=>c.date===document.date&&c.phase===1);
-  // Se a fonte ja afirma cobertura integral do dia e a NE nao consta,
+  const coverage=next.coverage.find(c=>c.date===document.date&&c.phase===document.phase);
+  // Se a fonte ja afirma cobertura integral do dia e o documento nao consta,
   // existe conflito real de origem; nunca sobrescrever o dia validado.
   if(coverage?.complete===true)
     throw Error('Dia CGU ja completo sem NE individual: revisar fonte');
@@ -491,7 +497,7 @@ export function applyTargetedOriginal(existing,document,now=new Date()){
     if(doc.cents===null)coverage.invalid++;
     coverage.reason ||= 'consulta_individual';
   }else{
-    next.coverage.push({date:doc.date,phase:1,complete:false,count:1,
+    next.coverage.push({date:doc.date,phase:doc.phase,complete:false,count:1,
       invalid:doc.cents===null?1:0,reason:'consulta_individual'});
     next.coverage.sort((a,b)=>a.date.localeCompare(b.date)||a.phase-b.phase);
   }
@@ -627,6 +633,10 @@ async function atomicWrite(path, data) {
 
 /** Arquivo mensal + manifesto canonico, sem marcar cobertura integral. */
 export async function persistTargetedOriginal(root,document,now=new Date()){
+  if(document?.phase!==1||!NE_RE.test(document.id))throw Error('NE individual invalida');
+  return persistTargetedDocument(root,document,now);
+}
+export async function persistTargetedDocument(root,document,now=new Date()){
   if(!document||typeof document.date!=='string')
     throw Error('NE individual invalida');
   const month=document.date.slice(0,7);
@@ -636,7 +646,7 @@ export async function persistTargetedOriginal(root,document,now=new Date()){
   const manifest=validateManifest(await readJson(manifestPath,emptyManifest()));
   const path=join(folder,month+'.json');
   const existing=await readJson(path,null);
-  const outcome=applyTargetedOriginal(existing,document,now);
+  const outcome=applyTargetedDocument(existing,document,now);
   if(!outcome.changed)return {changed:false,month};
   const months=[...new Set([...manifest.months,month])].sort();
   const nextManifest={schema_version:VERSION,unit:UG,status:'dados_publicados',
