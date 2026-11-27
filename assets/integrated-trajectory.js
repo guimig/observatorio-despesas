@@ -279,6 +279,7 @@ export function summarizeIntegratedCoverage(index){
   highConfidenceCandidates:high.length, paymentDocuments:paymentsInIndex.length,paymentDocumentsWithImpact:paymentsInIndex.filter(d=>impact.has(d.id)).length,
   liquidationDocuments:liquidationsInIndex.length,liquidationDocumentsWithImpact:liquidationsInIndex.filter(d=>impact.has(d.id)).length,
   missingPurchases:new Set(instruments.filter(c=>PURCHASE.test(c.procurementId||'')&&!index.noticeMap.has(c.procurementId)).map(c=>c.procurementId)).size,
+  missingReverseInstruments:new Set([...index.details.values()].flatMap(d=>(d.instruments||[]).map(i=>i.pncpId)).filter(id=>![...index.instruments.values()].some(c=>c.pncpId===id))).size,
   missingSpecificAtas:new Set([...index.ataEdges.values()].flat().filter(e=>!e.ata).map(e=>e.ataId)).size,
   candidateItemRefs:itemRefs.filter(r=>r.evidence==='candidate').length,
   relatedDocumentsChecked:checked.length,relatedNeChecked:checked.filter(d=>d.phase===1).length,
@@ -301,7 +302,7 @@ export function summarizeIntegratedCoverage(index){
 
 /** Indice derivado, apenas identidades publicas e meses; nunca replica valores,
  * textos, favorecidos ou documentos. Mantem multiplos donos para auditoria. */
-export function buildRelationshipLocator(months){
+export function buildRelationshipLocator(months,{manifestWrite=null}={}){
  const owners=new Map(),neighbors=new Map();
  const addMonth=(map,id,month)=>{if(!map.has(id))map.set(id,new Set());map.get(id).add(month);};
  const valid=id=>typeof id==='string'&&/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(id);
@@ -320,5 +321,5 @@ export function buildRelationshipLocator(months){
   for(const month of owners.get(b)||[])addMonth(neighbors,a,month);
  }
  const encode=m=>Object.fromEntries([...m].sort(([a],[b])=>a.localeCompare(b)).map(([id,s])=>[id,[...s].sort()]));
- return {schema_version:1,unit:'158459',months:months.map(m=>m.month).sort(),owners:encode(owners),neighbors:encode(neighbors)};
+ return {schema_version:1,unit:'158459',manifestWrite,months:months.map(m=>m.month).sort(),owners:encode(owners),neighbors:encode(neighbors)};
 }

@@ -4,8 +4,14 @@ import {readProcurement} from './procurement-store.mjs';
 import {HttpFailure} from './procurement.mjs';
 import {readNotices,writeDirectNotice} from './pncp-notices-store.mjs';
 import {planMissingNotices,fetchNoticeDetailWithRetry} from './pncp-notices-detail.mjs';
+import {recoverLinkedInstruments} from './recover-pncp-linked-instruments.mjs';
 
 async function main(){
+  const total=Number(process.env.PNCP_NOTICES_DETAIL_BATCH||30),dryRun=process.argv.includes('--dry-run');
+  if(!Number.isSafeInteger(total)||total<1||total>35)throw Error('Lote PNCP inválido');
+  const reverse=await recoverLinkedInstruments({limit:Math.floor(total/4),dryRun});
+  console.log('Instrumentos IFC referenciados por atas (somente contagens): '+JSON.stringify(reverse));
+  const remaining=Math.max(1,total-(dryRun?reverse.planned:reverse.attempted));
   const [contracts,notices]=await Promise.all([
     readProcurement(process.cwd()),readNotices(process.cwd())
   ]);
@@ -14,14 +20,15 @@ async function main(){
     return;
   }
   const selected=planMissingNotices(contracts,notices,{
-    count:process.env.PNCP_NOTICES_DETAIL_BATCH||30,slot:Math.floor(Date.now()/86400000)
+    count:remaining,slot:Math.floor(Date.now()/86400000)
   });
   console.log('Recuperação histórica por ID PNCP: '+selected.length+
     ' contratação(ões) ausentes do catálogo de editais.');
-  if(process.argv.includes('--dry-run')){
+  if(dryRun){
     console.log('Simulação sem acesso externo ou gravação.');
     return;
   }
+  if(Object.keys(reverse.failures||{}).some(k=>['http_401','http_403','http_429'].includes(k))){console.log('Consultas restantes adiadas por bloqueio da fonte.');return;}
   let recovered=0,unavailable=0;
   const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const failures={};

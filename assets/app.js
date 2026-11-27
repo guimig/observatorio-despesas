@@ -654,7 +654,7 @@ let locatorPromise=null;
 async function relationshipLocator(){
  locatorPromise ||= fetch('./data/relationship-index.json',{cache:'no-store'}).then(async r=>{
   if(!r.ok)throw Error('Índice indisponível');const x=await r.json();
-  if(x.schema_version!==1||x.unit!=='158459'||!x.owners||!x.neighbors||
+  if(x.schema_version!==1||x.unit!=='158459'||!x.owners||!x.neighbors||x.manifestWrite!==(state.manifest.updated_at||null)||
     JSON.stringify(x.months)!==JSON.stringify([...state.manifest.months].sort()))throw Error('Índice incompatível');
   return x;
  }).catch(()=>{locatorPromise=null;return null;});
