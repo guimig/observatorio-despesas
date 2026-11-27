@@ -5,7 +5,7 @@ import {indexCommitmentChronology,commitmentChronologyEvidence,reconcileSiafiIte
 import {stateKey,validDay} from './operational-state.mjs';
 
 const DAY=86400000;
-const MAX_GROUP=6,MAX_FOLLOWUP=2,MAX_REPAIRS=2;
+const MAX_GROUP=6,MAX_FOLLOWUP=4,MAX_REPAIRS=2;
 const isNeTask=t=>t.kind==='items'||t.kind==='itemHistory';
 const key=t=>[t.kind,t.id,t.seq||0].join('/');
 const rotate=(rows,slot)=>rows.length?rows.slice(slot%rows.length).concat(rows.slice(0,slot%rows.length)):[];
@@ -35,7 +35,7 @@ export function chronologyAttemptKey(record,task){
 }
 function recentlyAttempted(record,task,state,now,days){
  const k=chronologyAttemptKey(record,task),last=k&&state[k];
- return validDay(last)&&Date.parse(todayOf(now)+'T00:00:00Z')-Date.parse(last+'T00:00:00Z')<days*DAY;
+ return validDay(last)&&last<=todayOf(now)&&Date.parse(todayOf(now)+'T00:00:00Z')-Date.parse(last+'T00:00:00Z')<days*DAY;
 }
 export function requiresCanonicalHistoryCheckpoint(record,item){
  if(!record||record.owners.length!==1||!record.observations.length)return false;
@@ -102,7 +102,7 @@ const priorityTask=(t,tag)=>({...t,chronologyPriority:tag});
  * Reconsultas de casos sem conciliacao ficam limitadas a duas por tipo.
  * Os tetos de tarefas e o orcamento HTTP existente continuam soberanos. */
 export function planChronologyEnrichment(base,months,{
- slot=0,state={},now=new Date(),maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,review=false
+ slot=0,state={},now=new Date(),maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,review=false,cguContracts=[]
 }={}){
  maxItems=Number(maxItems);maxItemHistories=Number(maxItemHistories);maxHistoryRechecks=Number(maxHistoryRechecks);
  if(!Number.isSafeInteger(slot)||slot<0||
@@ -111,12 +111,15 @@ export function planChronologyEnrichment(base,months,{
     !Number.isSafeInteger(maxHistoryRechecks)||maxHistoryRechecks<1||maxHistoryRechecks>8)
    throw Error('Cotas de conciliacao invalidas');
  const records=indexCommitmentChronology(months).entries,byId=new Map(records.map(r=>[r.id,r]));
- const catalogs=[],groups=[],repairs=[];
+ const contractCounts=new Map();
+ for(const c of cguContracts)for(const id of new Set(c.refs||[]))contractCounts.set(id,(contractCounts.get(id)||0)+1);
+ const contractual=id=>contractCounts.get(id)===1;
+ const catalogs=[],groups=[],largeGroups=[],repairs=[];
  for(const record of records){
    const work=classifyChronologyWork(record,{state,now});
    const tagged={...work,id:record.id,year:record.id.slice(11,15)};
    if(work.kind==='catalog')catalogs.push(tagged);
-   else if(work.kind==='history'&&work.tasks.length<=MAX_GROUP)groups.push(tagged);
+   else if(work.kind==='history')(work.tasks.length<=MAX_GROUP?groups:largeGroups).push(tagged);
    else if(work.kind==='repair')repairs.push(tagged);
  }
  const orderCatalog=rows=>rotate(rows.sort((a,b)=>a.id.localeCompare(b.id)),slot);
@@ -125,18 +128,26 @@ export function planChronologyEnrichment(base,months,{
    .concat(orderCatalog(catalogs.filter(x=>x.recheck&&!x.observed)));
  const newCatalogs=orderCatalog(catalogs.filter(x=>!x.recheck&&x.observed))
    .concat(orderCatalog(catalogs.filter(x=>!x.recheck&&!x.observed)));
- const chosenCatalogs=[...reviewCatalogs.slice(0,Math.min(MAX_REPAIRS,catalogQuota)),
-   ...newCatalogs].slice(0,catalogQuota);
+ const reserve=Math.max(1,Math.floor(catalogQuota/3));
+ const contractCatalogs=[...reviewCatalogs.filter(x=>contractual(x.id)).slice(0,Math.min(MAX_REPAIRS,reserve)),...newCatalogs.filter(x=>contractual(x.id))].slice(0,reserve);
+ const reservedIds=new Set(contractCatalogs.map(x=>x.id));
+ const remainingReviews=reviewCatalogs.filter(x=>!reservedIds.has(x.id)).slice(0,Math.max(0,MAX_REPAIRS-contractCatalogs.filter(x=>x.recheck).length));
+ const chosenCatalogs=[...contractCatalogs,...remainingReviews,...newCatalogs.filter(x=>!reservedIds.has(x.id))].slice(0,catalogQuota);
  const priorityItems=chosenCatalogs.map(x=>priorityTask(x.task,x.recheck?'catalog_review':'catalog_pending'));
  const catalogIds=new Set(priorityItems.map(t=>t.id));
  const historyQuota=Math.max(1,Math.floor(maxItemHistories*0.6));
  const ordered=orderGroups(groups.filter(g=>g.observed),slot).concat(orderGroups(groups.filter(g=>!g.observed),slot));
  const priorityHistory=[];
  let groupsSelected=0;
- for(const group of ordered){
-   if(catalogIds.has(group.id)||group.tasks.length>historyQuota-priorityHistory.length)continue;
-   priorityHistory.push(...group.tasks.map(t=>priorityTask(t,'finish_group')));groupsSelected++;
- }
+ const selectedGroups=new Set();
+ const addGroup=(group,limit)=>{
+   if(catalogIds.has(group.id)||selectedGroups.has(group.id)||group.tasks.length>limit-priorityHistory.length)return;
+   priorityHistory.push(...group.tasks.map(t=>priorityTask(t,'finish_group')));groupsSelected++;selectedGroups.add(group.id);
+ };
+ // Reserva pequena para contratos univocos; o restante segue rodizio geral.
+ const contractHistoryQuota=Math.max(1,Math.floor(historyQuota/3));
+ for(const group of ordered.filter(g=>contractual(g.id)))addGroup(group,contractHistoryQuota);
+ for(const group of ordered)addGroup(group,historyQuota);
  const groupTasks=priorityHistory.length;
  const repairLimit=Math.min(MAX_REPAIRS,maxHistoryRechecks,maxItemHistories-groupTasks);
  const repairTasks=orderGroups(repairs,slot).flatMap(g=>g.tasks.slice(0,1)).slice(0,repairLimit);
@@ -154,13 +165,19 @@ export function planChronologyEnrichment(base,months,{
  // mesmas cotas de itens/historicos (mais as duas revisoes ja existentes).
  const itemLimit=Math.min(maxItems+(review?2:0),Math.max(baseItems.length,priorityItems.length));
  const historyLimit=Math.min(maxItemHistories+maxHistoryRechecks,Math.max(baseHistory.length,priorityHistory.length));
- const items=unique([...priorityItems,...baseItems.filter(eligible)]).slice(0,itemLimit);
- const histories=unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!catalogIds.has(t.id))]).slice(0,historyLimit);
+ // Preencher vagas perdidas por cooldown com trabalho pendente real, sem ampliar cotas.
+ const items=unique([...priorityItems,...baseItems.filter(eligible),...newCatalogs.map(x=>priorityTask(x.task,'catalog_pending'))]).slice(0,itemLimit);
+ const itemIds=new Set(items.map(t=>t.id));
+ const availableHistories=ordered.concat(orderGroups(largeGroups,slot)).filter(g=>!itemIds.has(g.id)).flatMap(g=>g.tasks);
+ const histories=unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id)),...availableHistories]).slice(0,historyLimit);
  const other=base.filter(t=>!isNeTask(t));
- const tasks=interleave([items,histories,other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
+ const tasks=interleave([[...items],[...histories],other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
    other.filter(t=>!['liquidation','payment'].includes(t.kind))]);
  return {tasks,summary:{groupsSelected,groupTasks,catalogTasks:priorityItems.length,repairTasks:repairTasks.length,
-   eligibleSmallGroups:groups.length,eligibleCatalogs:catalogs.length,eligibleHistoryReviews:repairs.length}};
+   eligibleSmallGroups:groups.length,eligibleCatalogs:catalogs.length,eligibleHistoryReviews:repairs.length,
+   contractCatalogTasks:items.filter(t=>contractual(t.id)).length,contractHistoryTasks:histories.filter(t=>contractual(t.id)).length,
+   filledCatalogSlots:Math.max(0,items.length-unique([...priorityItems,...baseItems.filter(eligible)]).length),
+   filledHistorySlots:Math.max(0,histories.length-unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id))]).length)}};
 }
 
 /** Apos concluir um catalogo pequeno, recuperar seus historicos na mesma

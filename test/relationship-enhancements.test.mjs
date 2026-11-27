@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildIntegratedIndex,scopeFinancialEvidence,itemReferenceCandidates,buildRelationshipLocator,contextualEvidenceMatches} from '../assets/integrated-trajectory.js';
-import {prioritizeRelatedImpacts,impactAttemptKey} from '../src/enrich-month.mjs';
+import {prioritizeRelatedImpacts,impactAttemptKey,recentImpactAttempt,summarizeContractProgress} from '../src/enrich-month.mjs';
 import {prioritizeMissingAtas} from '../src/collect-pncp-atas.mjs';
 import {planMissingNotices} from '../src/pncp-notices-detail.mjs';
 import {missingReferencedNe} from '../src/recover-cgu-originals.mjs';
@@ -81,4 +81,23 @@ test('recuperacao dirigida usa apenas uma rodada em quatro e respeita cobertura 
  assert.equal(planContractRecovery(complete,cguContracts,{now,slot:0}).month,'2024-12');
  const all=[...complete,...['2024-12','2025-01'].map(month=>({source:'pncp',month,status:'complete',closedMonth:true}))];
  assert.equal(planContractRecovery(all,cguContracts,{now,slot:0}).reason,undefined);
+});
+
+test('cooldown abrange fila regular mesmo sem identidade relacionada e libera quando evidencia muda',()=>{
+ const m={...months[0],documents:[doc,payment]};
+ const now=new Date('2026-11-27'),key=impactAttemptKey(m,ob,'payment');
+ const state={[key]:'2026-11-26'},base=[{kind:'payment',id:ob,month:m.month}];
+ assert.equal(recentImpactAttempt(m,ob,'payment',state,now),true);
+ assert.equal(prioritizeRelatedImpacts(base,[m],{state,now}).tasks.length,0);
+ const changed={...m,documents:[doc,{...payment,cents:101}]};
+ assert.equal(prioritizeRelatedImpacts(base,[changed],{state,now}).tasks.length,1);
+});
+test('progresso contratual mede pares por NE sem valores nem identificadores',()=>{
+ const cguContracts=[{id:42,refs:[ne]}];
+ const m={...months[0],documents:[{...doc,relatedIds:[ob]},payment]};
+ const before=summarizeContractProgress([m],cguContracts);
+ const after=summarizeContractProgress([{...m,documents:[m.documents[0],{...payment,paymentLinksChecked:true}],relations:[{from:ob,to:ne,cents:30}]}],cguContracts);
+ assert.equal(before.unknownPaymentPairs,1);assert.equal(before.knownPaymentPairs,0);
+ assert.equal(after.unknownPaymentPairs,0);assert.equal(after.knownPaymentPairs,1);
+ assert.equal(after.eligible,1);assert.ok(!JSON.stringify(after).includes(ne));
 });

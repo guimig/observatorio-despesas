@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {createCguBudget,collectionLimits} from './cgu-budget.mjs';
 import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 import {validRelatedPair} from '../assets/trajectory.js';
+import {buildIntegratedIndex,cguContractExecutionEvidence} from '../assets/integrated-trajectory.js';
 import {inScopeMonth,inScopeNe} from './collection-scope.mjs';
 import {stateKey,validDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
@@ -36,12 +37,13 @@ export function historyCheckpoint(doc,item,state,today){
 }
 export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems=7,maxItemHistories=10,maxHistoryRechecks=2,now=new Date(),slot=0,historyState={}}={}){
   validateMonth(month);
+  const available=(doc,kind)=>!recentImpactAttempt(month,doc.id,kind,historyState,now);
   const liquidations=month.documents.filter(doc=>doc.phase===2&&
-    doc.liquidationLinksChecked!==true)
+    doc.liquidationLinksChecked!==true&&available(doc,'liquidation'))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
   const selectedLiquidations=rotatePending(liquidations,bounded(maxLiquidations,12,40),slot);
-  const payments=month.documents.filter(doc=>doc.phase===3&&doc.paymentLinksChecked!==true)
+  const payments=month.documents.filter(doc=>doc.phase===3&&doc.paymentLinksChecked!==true&&available(doc,'payment'))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
   const selectedPayments=rotatePending(payments,bounded(maxPayments,15,50),slot);
@@ -146,6 +148,7 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
    doc.phase===2&&doc.liquidationLinksChecked===true?'liquidation':
    doc.phase===3&&doc.paymentLinksChecked===true?'payment':null;
   if(!kind)continue;
+  if(kind!=='items'&&recentImpactAttempt(month,doc.id,kind,state,now))continue;
   const last=state[detailKey(month,doc.id,kind)];
   if(validDay(last)&&last>cutoff&&last<=today)continue;
   lists[kind].push({month:month.month,id:doc.id,kind,recheck:true,last:validDay(last)&&last<=today?last:''});
@@ -164,10 +167,28 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
 export function impactAttemptKey(month,id,kind){
  return stateKey(['cgu-impact-attempt-v1',detailKey(month,id,kind)]);
 }
+export function recentImpactAttempt(month,id,kind,state={},now=new Date()){
+ const today=now.toISOString().slice(0,10),stamp=state[impactAttemptKey(month,id,kind)];
+ return validDay(stamp)&&stamp<=today&&Date.parse(today)-Date.parse(stamp)<2*86400000;
+}
+/** Diagnostico comparavel por contrato; nao agrega valores financeiros. */
+export function summarizeContractProgress(months,cguContracts){
+ const index=buildIntegratedIndex({months,cguContracts,totalMonths:months.length});
+ const out={contracts:cguContracts.length,eligible:0,reconciled:0,knownLiquidationPairs:0,unknownLiquidationPairs:0,knownPaymentPairs:0,unknownPaymentPairs:0};
+ for(const c of cguContracts){
+  const e=cguContractExecutionEvidence(index,c.id);
+  out.eligible+=e.eligible;out.reconciled+=e.reconciled;
+  out.knownLiquidationPairs+=e.liquidation.known;out.unknownLiquidationPairs+=e.liquidation.unknown;
+  out.knownPaymentPairs+=e.payment.known;out.unknownPaymentPairs+=e.payment.unknown;
+ }
+ return out;
+}
 export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Date(),cguContracts=[]}={}){
  const today=now.toISOString().slice(0,10);
  const recent=(stamp,days)=>validDay(stamp)&&stamp<=today&&Date.parse(today)-Date.parse(stamp)<days*86400000;
- const docs=new Map(),pairs=new Set(),wanted=new Map(),contractNe=new Set(cguContracts.flatMap(c=>c.refs||[]).filter(inScopeNe));
+ const docs=new Map(),pairs=new Set(),wanted=new Map(),refCounts=new Map();
+ for(const c of cguContracts)for(const ne of new Set((c.refs||[]).filter(inScopeNe)))refCounts.set(ne,(refCounts.get(ne)||0)+1);
+ const contractNe=new Set([...refCounts].filter(([,n])=>n===1).map(([id])=>id));
  for(const m of months){for(const d of m.documents){if(!docs.has(d.id))docs.set(d.id,[]);docs.get(d.id).push({doc:d,month:m});}
  }
  for(const m of months)for(const r of m.relations){
@@ -185,25 +206,29 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
    const {doc,month}=found[0],kind=doc.phase===2?'liquidation':'payment';
    const recheck=doc.phase===2?doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true;
    const last=state[detailKey(month,from,kind)];
-   if(recent(last,7)||recent(state[impactAttemptKey(month,from,kind)],2))continue;
+   if(recent(last,7)||recentImpactAttempt(month,from,kind,state,now))continue;
    if(!wanted.has(from))wanted.set(from,{kind,id:from,month:month.month,recheck,missing:new Set(),contract:false});
    const task=wanted.get(from);task.missing.add(ne);task.contract ||= contractNe.has(ne);
   }
  }
- const queue=[...base],selected=[];
+ const queue=base.filter(t=>{
+  if(!['payment','liquidation'].includes(t.kind))return true;
+  const rows=docs.get(t.id);
+  return !rows||rows.length===1&&!recentImpactAttempt(rows[0].month,t.id,t.kind,state,now);
+ }),selected=[];
  for(const kind of ['payment','liquidation']){
   const candidates=[...wanted.values()].filter(t=>t.kind===kind);
-  const regularSlots=base.filter(t=>t.kind===kind).length;
+  const regularSlots=queue.filter(t=>t.kind===kind).length;
   // A ausencia de documentos novos nao encerra a fila de impactos.
   // Usar uma vaga ociosa da fase ou reservar uma quando o lote e pequeno.
   const quota=Math.min(candidates.length,Math.max(1,Math.floor(regularSlots*.4)));
   if(!quota)continue;
   const ordered=xs=>xs.sort((a,b)=>b.missing.size-a.missing.size||a.id.localeCompare(b.id));
   const strong=ordered(candidates.filter(t=>t.contract)),other=ordered(candidates.filter(t=>!t.contract));
-  // Metade da reserva documental atende contratos CGU; o restante continua
+  // Ate dois tercos da reserva documental atendem contratos CGU; o restante continua
   // no rodizio geral. Offset usa a cota, nao o tamanho integral do grupo.
   const rotate=xs=>{if(!xs.length)return [];const offset=slot%xs.length;return xs.slice(offset).concat(xs.slice(0,offset));};
-  const high=rotate(strong),general=rotate(other),first=high.slice(0,Math.ceil(quota/2));
+  const high=rotate(strong),general=rotate(other),first=high.slice(0,Math.ceil(quota*2/3));
   const targets=[...first,...general,...high.slice(first.length)];
   const chosen=targets.slice(0,quota);
   for(const t of chosen){
@@ -258,7 +283,8 @@ async function main(){
   const slot=Math.floor(Date.now()/14400000);
   const statePath=process.env.CGU_HISTORY_STATE_PATH;
   const historyState=await readOperationalState(statePath);
-  const args={slot,historyState,
+  const now=new Date();
+  const args={slot,historyState,now,
     maxLiquidations:process.env.ENRICH_LIQUIDATIONS||12,
     maxPayments:process.env.ENRICH_PAYMENTS||15,
     maxItems:process.env.ENRICH_ITEMS||7,
@@ -273,16 +299,18 @@ async function main(){
   const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot:monthSlot});
   const months=[];
   for(const monthName of alternatives)if(inScopeMonth(monthName))months.push(await readMonth(root,monthName));
-  const now=new Date(),today=currentDateInBrazil(now);
+  const today=currentDateInBrazil(now);
   const beforeChronology=buildCommitmentChronology(months,{today});
   const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
   const cguContracts=(await readCguContractEvidence(root)).contracts;
+  const beforeContracts=summarizeContractProgress(months,cguContracts);
+  console.log('Cobertura contratual antes da rodada: '+JSON.stringify(beforeContracts));
   const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
   const base=impactPlan.tasks;
   console.log('Impactos priorizados por relação CGU: '+JSON.stringify({selected:impactPlan.selected,contractPriority:impactPlan.contractPriority,paymentPriority:impactPlan.paymentPriority,contractPendingDocuments:impactPlan.contractPendingDocuments,contractPendingPaymentPairs:impactPlan.contractPendingPaymentPairs}));
   const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
     slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
-    maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks
+    maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks,cguContracts
   });
   console.log('Plano de conciliacao NE (somente contagens): '+JSON.stringify({
     identities:beforeChronology.identities,beforeCutoffIdentities:beforeChronology.beforeCutoffIdentities,reconciled:beforeChronology.reconciled,
@@ -304,7 +332,7 @@ async function main(){
   const limits=collectionLimits({intensive:process.env.ENRICH_INTENSIVE==='true',backlog:tasks.length,threshold:50});
   const budget=createCguBudget(limits);
   let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0,followupsPromoted=0;
-  const failures=[];
+  const failures=[],phaseResults={};
   for(let taskIndex=0;taskIndex<tasks.length;taskIndex++){
     const task=tasks[taskIndex];
     if(budget.stopped())break;
@@ -317,13 +345,14 @@ async function main(){
     const currentRecord=record?.owners.length===1?{...record,owners:[{doc,month,items:before.itemsByDocument?.[id]}]}:record;
     const attemptKey=chronologyAttemptKey(currentRecord,task);
     attempted++;
+    const phase=phaseResults[kind]||=( {attempted:0,successes:0,errors:0} );phase.attempted++;
     const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget}):
       kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
       kind==='items'?await resolveItems(id,{token,budget}):await resolveItemMovements(id,seq,{token,budget});
     if(attemptKey&&(outcome.ok||!budget.stopped()))historyState[attemptKey]=new Date().toISOString().slice(0,10);
     if(!outcome.ok){
       if(statePath&&!budget.stopped()&&['payment','liquidation'].includes(kind))historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
-      failures.push(outcome.reason||'outro');errors++;continue;
+      failures.push(outcome.reason||'outro');errors++;phase.errors++;continue;
     }
     const result=kind==='items'?{kind,items:outcome.items,recheck}:
       kind==='itemHistory'?{kind,seq,movements:outcome.movements,checkedAt:new Date().toISOString().slice(0,10)}:
@@ -359,13 +388,19 @@ async function main(){
         delete historyState[previousKey];
         historyState[currentKey]=new Date().toISOString().slice(0,10);
       }
-    }catch{failures.push('persistencia_invalida');errors++;continue;}
-    successes++;if(recheck)completedReviews++;
+    }catch{
+      if(statePath&&!budget.stopped()&&['payment','liquidation'].includes(kind))historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
+      failures.push('persistencia_invalida');errors++;phase.errors++;continue;
+    }
+    successes++;phase.successes++;if(recheck)completedReviews++;
     links+=outcome.links?.length||0;items+=outcome.items?.length||0;
   }
-  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,followupsPromoted,limits,...budget.snapshot()}));
+  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,followupsPromoted,phaseResults,limits,...budget.snapshot()}));
   const validated=await validatePublishedData(root);
-  const afterChronology=buildCommitmentChronology(selected?validated.months.filter(m=>m.month===selected):validated.months,{today});
+  const comparedMonths=selected?validated.months.filter(m=>m.month===selected):validated.months;
+  const afterChronology=buildCommitmentChronology(comparedMonths,{today});
+  const afterContracts=summarizeContractProgress(comparedMonths,cguContracts);
+  console.log('Resultado de cobertura contratual (somente contagens): '+JSON.stringify({before:beforeContracts,after:afterContracts,delta:Object.fromEntries(Object.keys(afterContracts).map(k=>[k,afterContracts[k]-beforeContracts[k]]))}));
   console.log('Resultado de conciliacao NE (somente contagens): '+JSON.stringify({
     before:beforeChronology.reconciled,after:afterChronology.reconciled,
     netChange:afterChronology.reconciled-beforeChronology.reconciled,
