@@ -78,7 +78,7 @@
           <p class="small-muted">Marque uma ou mais classificações. Dimensões diferentes são combinadas (E); opções da mesma dimensão são alternativas (OU). As opções mostram o exercício e quantos documentos são compatíveis com os outros filtros. Campos não recuperados pela CGU não são inferidos.</p>
           <p class="small-muted" id="budget-coverage" role="status"></p>
           <details class="budget-analysis"><summary>Análise documental da dimensão escolhida</summary>
-          <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental conhecido (uma fase)</option></select></label>
+          <label class="filter"><span>Gráfico</span><select id="budget-metric"><option value="count">Quantidade de documentos</option><option value="value">Valor documental de referência (uma fase, não fluxo)</option></select></label>
           <div class="budget-bars" id="budget-bars"></div>
           <p class="small-muted">Agrupamento dos documentos consultados, por exercício. Valores documentais de uma fase, não saldo orçamentário nem execução líquida do período. Documentos com múltiplas classificações ficam separados, sem rateio. PI candidato não integra filtros ou gráficos.</p>
           </details>
@@ -116,7 +116,7 @@
         </div>
         <div class="table-scroll" tabindex="0" role="region" aria-label="Tabela de documentos">
           <table class="document-table">
-            <thead><tr><th scope="col">Documento</th><th scope="col" class="document-mobile-hidden">Data</th><th scope="col" class="document-mobile-hidden">Fase</th><th scope="col" class="document-secondary">Favorecido</th><th scope="col" class="document-secondary">Processo</th><th scope="col" class="align-right" title="Valor documental">Valor</th><th scope="col">Detalhes</th></tr></thead>
+            <thead><tr><th scope="col">Documento</th><th scope="col" class="document-mobile-hidden">Data da listagem CGU</th><th scope="col" class="document-mobile-hidden">Fase</th><th scope="col" class="document-secondary">Favorecido</th><th scope="col" class="document-secondary">Processo</th><th scope="col" class="align-right" title="Valor documental">Valor</th><th scope="col">Detalhes</th></tr></thead>
             <tbody id="doc-rows"></tbody>
           </table>
         </div>
@@ -136,11 +136,11 @@
       <section id="resumo-despesas" class="summary-view" data-view="summary" hidden aria-labelledby="summary-title">
       <h2 id="summary-title" tabindex="-1" class="phase-heading">Valores documentais por fase</h2>
       <p class="small-muted" id="summary-month"></p>
-      <p class="small-muted phase-helper">Subtotais da competência por data de emissão, em dias encerrados com consulta completa, valores disponíveis e sem sobreposição entre fases. Selecione uma fase para consultar seus documentos.</p>
-      <p class="small-muted phase-helper">Em Empenhos, a soma usa o valor documental das notas emitidas nas datas incluídas. Os reforços e as anulações são movimentos do empenho e não são apurados por data neste resumo.</p>
+      <p class="small-muted phase-helper">Liquidações e pagamentos: subtotais documentais por data da listagem CGU, em dias encerrados com consulta completa, valores disponíveis e sem sobreposição entre fases.</p>
+      <p class="small-muted phase-helper">Empenhos: subtotal parcial das inclusões, reforços e anulações de NEs do próprio exercício, pela data da operação dos itens, somente quando o histórico integral concilia com os valores disponíveis. Não é total oficial nem saldo. Operações de exercícios anteriores são separadas.</p>
       <div class="stats" aria-label="Indicadores das fases">
         <button class="stat-card" type="button" aria-pressed="false" data-phase="1" aria-label="Filtrar empenhos">
-          <span class="stat-top"><span class="stat-label">Empenhos</span><span class="stat-icon">NE</span></span>
+          <span class="stat-top"><span class="stat-label">Movimentos de empenho conciliados</span><span class="stat-icon">NE</span></span>
           <span class="stat-value" id="amount-1">—</span>
           <span class="stat-foot" id="count-1">Aguardando</span>
         </button>
@@ -156,6 +156,7 @@
         </button>
       </div>
 
+        <p class="small-muted phase-helper" id="commitment-period-details" aria-live="polite"></p>
         <a class="button button-secondary" href="#despesas">Voltar à busca de documentos</a>
       </section>
     <section id="trajectory-section" class="panel explorer" data-view="trajectory" hidden aria-labelledby="trajectory-title">
@@ -178,7 +179,7 @@
       </div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Resultados da consulta">
         <table class="contracts-table">
-          <thead><tr><th>Nota de empenho</th><th>Emissão</th><th>Processo</th><th>Elemento</th><th class="align-right">Liquidações vinculadas</th><th class="align-right">Pagamentos vinculados</th><th>Detalhes</th></tr></thead>
+          <thead><tr><th>Nota de empenho</th><th>Data da listagem CGU</th><th>Processo</th><th>Elemento</th><th class="align-right">Liquidações vinculadas</th><th class="align-right">Pagamentos vinculados</th><th>Detalhes</th></tr></thead>
           <tbody id="trajectory-rows"><tr><td colspan="7">Digite o número do empenho ou consulte o histórico.</td></tr></tbody>
         </table>
       </div>

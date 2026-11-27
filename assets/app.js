@@ -11,7 +11,7 @@ import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } f
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import {showDialogFromTop} from './dialog-scroll.js';
 import {auditSiafiItemMovements} from './siafi-movement-audit.js';
-import {reconcileSiafiCommitment} from './siafi-movement-reconciliation.js';
+import {reconcileSiafiCommitment,commitmentChronologyEvidence} from './siafi-movement-reconciliation.js';
 import { auditMonth, summarizeDocumentPhases } from './quality.js?v=3';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
 /** Visualização local de JSONs públicos. Não consulta APIs autenticadas. */
@@ -266,9 +266,39 @@ function monthName(month) {
   const date = new Date(month + '-15T12:00:00Z');
   return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
 }
+let chronologyIndexPromise=null;
+function loadedCommitmentObservations(id){
+ return [...cache.values()].flatMap(m=>(m.commitmentObservations||[]).filter(o=>o.id===id));
+}
+async function renderCommitmentPeriod(month){
+ const amount=$('amount-1'),note=$('count-1'),details=$('commitment-period-details');
+ amount.textContent='Consultando movimentos…';note.textContent='Somente operações conciliadas';details.textContent='';
+ try{
+  chronologyIndexPromise ||= fetch('./data/coverage-index.json',{cache:'no-store'}).then(r=>{
+   if(!r.ok)throw Error('Indice indisponivel');return r.json();
+  }).catch(e=>{chronologyIndexPromise=null;throw e;});
+  const summary=(await chronologyIndexPromise).commitmentChronology;
+  if(state.month!==month)return;
+  if(!summary)throw Error('Cronologia indisponivel');
+  const row=summary.periods[month];
+  amount.textContent=row&&row.netCents!==null?fmtMoney(row.netCents):'Sem subtotal conciliado';
+  note.textContent=(row?fmtCount(row.identities)+' NEs · '+fmtCount(row.movements)+' operações no período':'Nenhuma operação conciliada no período')+
+   ' · '+fmtCount(summary.reconciled)+'/'+fmtCount(summary.identities)+' NEs do acervo conciliadas';
+  details.textContent=row&&row.netCents!==null?
+   'Inclusões originais '+fmtMoney(row.initialCents)+' · Reforços '+fmtMoney(row.reinforcementCents)+
+   ' · Anulações '+fmtMoney(row.annulmentCents)+' · Operações de NEs de exercícios anteriores (fora do subtotal): reforços '+fmtMoney(row.priorYearReinforcementCents)+
+   ', anulações '+fmtMoney(row.priorYearAnnulmentCents)+', cancelamentos '+fmtMoney(row.priorYearCancellationCents)+'.':
+   'Sem evidência suficiente para apurar o subtotal. Ausência não significa valor zero.';
+ }catch{
+  if(state.month!==month)return;
+  amount.textContent='Indisponível';note.textContent='Índice cronológico não disponível';details.textContent='Nenhum valor documental foi utilizado como substituto do fluxo.';
+ }
+}
 function renderStats() {
   $('summary-month').textContent = monthName(state.month) + ' · CGU · UG 158459';
+  renderCommitmentPeriod(state.month);
   for (const stat of summarizeDocumentPhases(state.data)) {
+    if(stat.phase===1)continue;
     $('amount-' + stat.phase).textContent = stat.cents === null ? 'Sem subtotal verificável' : fmtMoney(stat.cents);
     const notes = [fmtCount(stat.days) + ' de ' + fmtCount(stat.expectedDays) + ' dias encerrados no subtotal'];
     if (stat.missing) notes.push(fmtCount(stat.missing) + ' sem consulta concluída');
@@ -345,23 +375,30 @@ function filteredDocuments({ignoreBudget=false}={}) {
   for (const data of months) {
     const observed = new Set((data.phaseObservations || [])
       .filter(item => String(item.phase) === state.phase).map(item => item.id));
-    for (const doc of data.documents) {
+    const candidates=data.documents.map(doc=>({doc,ownerData:data,listingDate:doc.date,observation:null}));
+    for(const observation of data.commitmentObservations||[]){
+      const ownerData=cache.get(observation.ownerDate.slice(0,7));
+      const doc=ownerData?.documents.find(d=>d.id===observation.id&&d.phase===1&&d.date===observation.ownerDate);
+      if(doc)candidates.push({doc,ownerData,listingDate:observation.date,observation});
+    }
+    for (const {doc,ownerData,listingDate,observation} of candidates) {
       if (state.phase !== 'all' && String(doc.phase) !== state.phase && !observed.has(doc.id)) continue;
-      if (state.day !== 'all' && doc.date !== state.day) continue;
+      if (state.day !== 'all' && listingDate !== state.day) continue;
       if(!ignoreBudget&&!budgetMatches(doc))continue;
       const codes = [doc.id, doc.process, doc.partyRef].filter(Boolean).map(compactCode);
       const fields = [doc.id, doc.process, doc.cpfMasked, doc.partyRef,
-        doc.partyRef && data.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {}),
+        doc.partyRef && ownerData.beneficiaries?.[doc.partyRef], ...Object.values(doc.nature || {}),
         ...pncpCommitmentEvidence(doc).flatMap(({detail:d})=>[d.pi,d.nature,d.amendment,d.amendmentInfo?.author])];
       const exactCode = code && codes.includes(code);
       if (!query || exactCode || searchText(fields.filter(Boolean).join(' ')).includes(query) ||
           (code && codes.some(value => value.includes(code)))) {
-        matches.push({doc, data});
+        matches.push({doc,data:ownerData,listingDate,observation});
       }
     }
   }
-  return matches.sort((a, b) => b.doc.date.localeCompare(a.doc.date) ||
-    b.doc.id.localeCompare(a.doc.id));
+  const seen=new Set();
+  return matches.sort((a,b)=>b.listingDate.localeCompare(a.listingDate)||b.doc.id.localeCompare(a.doc.id))
+    .filter(({doc})=>{if(seen.has(doc.id))return false;seen.add(doc.id);return true;});
 }
 function renderActiveFilters() {
   const root = $('active-filters');
@@ -487,6 +524,7 @@ function renderBudgetPanel(base){
    if(p.unknown)amount.textContent+=' · '+fmtCount(p.unknown)+' sem valor';
    if(p.count!==g.count)amount.textContent+=' · '+fmtCount(g.count-p.count)+' de outra fase original';
    if(!byValue)amount.textContent=fmtCount(g.count)+' doc. · '+amount.textContent;
+   if(state.phase==='1')amount.title='Valores documentais de referência; não representam movimentação por data';
   }
   const track=element('progress','budget-bar-progress');track.max=max;track.value=metric(g);
   track.setAttribute('aria-label',g.label+' · '+amount.textContent);
@@ -557,11 +595,13 @@ function renderTable() {
     row.append(td); body.append(row);
     return;
   }
-  shown.forEach(({doc, data}) => {
+  shown.forEach(({doc, data,listingDate,observation}) => {
     const row = element('tr');
     const id = element('td', 'doc-code', doc.id);
-    id.append(element('span', 'mobile-document-meta', localDate(doc.date) + ' · ' + (phaseNames[doc.phase] || 'Outro')));
-    const date = element('td', 'document-mobile-hidden', localDate(doc.date));
+    id.append(element('span', 'mobile-document-meta', localDate(listingDate) + ' · ' + (phaseNames[doc.phase] || 'Outro')));
+    const date = element('td', 'document-mobile-hidden', localDate(listingDate));
+    if(observation)date.append(element('span','small-muted integrated-table-note','Reaparição CGU'));
+    if(doc.phase===1)date.title='Data de listagem CGU, não necessariamente emissão';
     const phase = element('td', 'document-mobile-hidden');
     phase.append(element('span', 'phase-label', phaseNames[doc.phase] || 'Outro'));
     const others=(data.phaseObservations||[]).filter(item=>item.id===doc.id);
@@ -570,6 +610,8 @@ function renderTable() {
     const beneficiary = element('td', 'beneficiary-cell document-secondary', beneficiaryLabel(doc,data));
     const process = element('td', 'doc-code document-secondary', doc.process || '—');
     const amount = element('td', 'align-right', fmtMoney(doc.cents));
+    if(observation)amount.append(element('span','small-muted integrated-table-note','Reconsulta: '+fmtMoney(observation.cents)));
+    if(doc.phase===1)amount.title='Valor documental de referência, não fluxo do período';
     const details = element('td');
     const button = element('button', 'details-button');
     button.append(element('span', 'document-mobile-hidden', 'Ver detalhes'), element('span', 'mobile-document-meta', 'Abrir'));
@@ -602,6 +644,10 @@ async function fetchMonth(month) {
     pendingMonths.set(month, request);
   }
   return pendingMonths.get(month);
+}
+async function loadObservationOwners(months){
+ const names=new Set(months.flatMap(m=>(m.commitmentObservations||[]).map(o=>o.ownerDate.slice(0,7))));
+ await Promise.allSettled([...names].filter(m=>state.manifest.months.includes(m)).map(fetchMonth));
 }
 async function locateLinkedDocument(id) {
   for (const data of cache.values()) {
@@ -983,9 +1029,20 @@ function renderCatalogTrajectory(record,kind){
  historyControl(host,index,refresh);
 }
 function uniqueReasons(edges){return [...new Set(edges.map(e=>(evidenceLabels[e.level]||e.level)+' · '+e.reason))].join(' | ');}
+function appendCommitmentChronologyFields(fields,doc,items){
+ if(!doc)return;
+ const observations=loadedCommitmentObservations(doc.id);
+ const a=commitmentChronologyEvidence(doc,items,observations);
+ appendDetailField(fields,'Data original de emissão','Não comprovada pela listagem diária da CGU');
+ appendDetailField(fields,'Primeira inclusão identificada nos itens',a.status==='reconciled'&&a.originalDate?localDate(a.originalDate)+' · inclusão de item, não prova autônoma de emissão':'Histórico conciliado insuficiente');
+ appendDetailField(fields,'Última movimentação conciliada',a.status==='reconciled'?localDate(a.lastMovementDate):'Não comprovada');
+ appendDetailField(fields,'Valor atual dos itens conciliado',a.status==='reconciled'?fmtMoney(a.reportedCents):'Não comprovado');
+ appendDetailField(fields,'Datas em que a NE consta na listagem carregada',(a.listingDates||[doc.date]).map(localDate).join(' · '));
+ if(observations.length)appendDetailField(fields,'Valores observados em outras datas da listagem CGU',observations.map(o=>localDate(o.date)+' · '+fmtMoney(o.cents)).join('; ')+' (não constituem valores de reforço ou anulação)',{long:true});
+}
 function explainSiafiReconciliation(items,doc){
  const a=reconcileSiafiCommitment(items,{listingDate:doc?.date,
-   documentCents:doc?.cents,commitmentYear:doc?.id?.slice(11,15)});
+   documentCents:doc?commitmentChronologyEvidence(doc,items,loadedCommitmentObservations(doc.id)).referenceCents:null,commitmentYear:doc?.id?.slice(11,15)});
  if(a.status==='partial')return 'Reconstrução ainda pendente: apenas '+
    a.checked+'/'+a.total+' itens com histórico completo. Nenhum saldo inferido.';
  if(a.status==='unavailable')return 'Reconstrução não disponível ('+({
@@ -1054,7 +1111,7 @@ function summarizeItemOperations(items,issueDate){
    others.slice(0,12).map(x=>'seq. '+String(x.seq).padStart(3,'0')+
      ' · '+localDate(x.date)+' · '+x.operation).join('; ')+
    (others.length>12?' e mais '+(others.length-12)+' operação(ões) nos itens.':'')+
-   '. A data de emissão do empenho permanece independente dessas operações.';
+   '. A data da listagem não comprova a emissão original do empenho.';
 }
 function renderSiafiItems(target,items){
  target.replaceChildren();
@@ -1248,6 +1305,7 @@ function showDocument(doc, monthData = state.data) {
       list.append(item);
     }
   }
+  if(doc.phase===1)appendCommitmentChronologyFields(fields,doc,monthData.itemsByDocument?.[doc.id]);
   if(doc.phase===1)appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(monthData.itemsByDocument?.[doc.id],doc.date),{long:true});
   if(doc.phase===1)appendDetailField(fields,'Conferência documental do empenho',
@@ -1422,6 +1480,7 @@ function showCommitmentTrajectory(entry){
   appendDetailField(fields,'Descrição / observação da nota de empenho',
     doc?.description||'Texto não disponibilizado ou não publicável na fonte consultada',
     {long:true});
+  appendCommitmentChronologyFields(fields,doc,entry.items);
   appendDetailField(fields,'Alterações observadas no histórico dos itens',
     summarizeItemOperations(entry.items,doc?.date),{long:true});
   appendDetailField(fields,'Conferência documental do empenho',
@@ -1488,6 +1547,7 @@ async function loadMonth(month) {
   status('Carregando documentos da competência…');
   try {
     state.data = await fetchMonth(month);
+    await loadObservationOwners([state.data]);
     state.month = month;
     state.historyYear = null;
     state.page = 0;
@@ -1534,6 +1594,7 @@ async function searchHistory(year) {
       try { await fetchMonth(month); } catch { /* A nova tentativa aproveita os meses carregados. */ }
       updateScope();
     }
+    await loadObservationOwners(availableMonths(year).map(m=>cache.get(m)).filter(Boolean));
   } finally {
     state.loadingHistory = false;
     setPeriodBusy(false);
@@ -1551,10 +1612,11 @@ function csvCell(value) {
 }
 function exportCsv() {
   const rows = filteredDocuments();
-  const data = ['documento,data_emissao,fase,valor_centavos,favorecido,processo'];
-  for (const {doc:row, data:monthData} of rows) {
-    data.push([row.id, row.date, phaseNames[row.phase],
-      row.cents === null ? '' : row.cents,
+  const data = ['documento,data_listagem_cgu,data_referencia_documental,data_primeira_inclusao_item,fase,valor_documental_centavos,valor_reconsulta_centavos,favorecido,processo'];
+  for (const {doc:row, data:monthData,listingDate,observation} of rows) {
+    const chronology=row.phase===1?commitmentChronologyEvidence(row,monthData.itemsByDocument?.[row.id],loadedCommitmentObservations(row.id)):null;
+    data.push([row.id,listingDate,row.date,chronology?.status==='reconciled'?chronology.originalDate:'',phaseNames[row.phase],
+      row.cents === null ? '' : row.cents,observation?.cents??'',
       beneficiaryLabel(row,monthData), row.process || ''].map(csvCell).join(','));
   }
   const blob = new Blob(['\uFEFF' + data.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });

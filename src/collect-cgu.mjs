@@ -2,7 +2,7 @@ import { appendFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { collectWindow } from './cgu.mjs';
-import { persistWindow, validatePublishedData, mergeMonth } from './store.mjs';
+import { persistWindow, validatePublishedData, mergeMonth, indexCommitmentOwners } from './store.mjs';
 import { safeFailureCategory } from './historical-collector.mjs';
 
 // Only known local validation failures are isolated. Unexpected code or I/O
@@ -16,7 +16,7 @@ const ISOLATABLE=new Set([
   'cpf_mask_validation','money_validation','privacy_validation',
   'targeted_original_missing','referenced_origin_missing','appearance_validation',
   'appearance_coverage_missing','item_validation','classification_validation',
-  'narrative_validation','monetary_provenance','month_schema_validation'
+  'narrative_validation','monetary_provenance','month_schema_validation','ne_listing_changed'
 ]);
 const safePhaseFailure=value=>typeof value==='string'&&
   /^(http_[45][0-9]{2}|CGU_TIMEOUT|CGU_TRANSPORT|CGU_INVALID_JSON|CGU_INVALID_SHAPE|invalid_response)$/.test(value)
@@ -28,7 +28,7 @@ export function planIncrementalPatches(months,patches,now=new Date()){
   for(const patch of patches){
     const month=patch.coverage.date.slice(0,7);
     try{
-      const next=mergeMonth(working.get(month)||null,month,[patch],now);
+      const next=mergeMonth(working.get(month)||null,month,[patch],now,{commitmentOwners:indexCommitmentOwners([...working.values()])});
       working.set(month,next.data);
       accepted.push(patch);
     }catch(error){
