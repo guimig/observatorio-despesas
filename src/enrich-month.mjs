@@ -14,6 +14,7 @@ import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './en
 import {resolveItemMovements} from './item-movements.mjs';
 import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
+import {planDivergenceProbes,runDivergenceProbes} from './cgu-divergence-probe.mjs';
 import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences} from './chronology-enrichment.mjs';
 
 function bounded(value,fallback,max){
@@ -318,7 +319,10 @@ async function main(){
     identities:beforeChronology.identities,beforeCutoffIdentities:beforeChronology.beforeCutoffIdentities,reconciled:beforeChronology.reconciled,
     pending:beforeChronology.pending,pendingReasons:beforeChronology.pendingReasons,...chronologyPlan
   }));
-  if(!tasks.length){
+  const probePlan=planDivergenceProbes(months,{cguContracts,state:historyState,now,today,slot,
+    excludeIds:tasks.filter(t=>['items','itemHistory'].includes(t.kind)).map(t=>t.id)});
+  console.log('Plano de sondagem de divergencias (somente contagens): '+JSON.stringify(probePlan.summary));
+  if(!tasks.length&&!probePlan.selected.length){
     console.log('Acervo sem documentos pendentes de enriquecimento.');
     return;
   }
@@ -333,6 +337,8 @@ async function main(){
   if(!token)throw Error('CGU_API_KEY não disponível');
   const limits=collectionLimits({intensive:process.env.ENRICH_INTENSIVE==='true',backlog:tasks.length,threshold:50});
   const budget=createCguBudget(limits);
+  const probeReport=await runDivergenceProbes(probePlan,{token,parent:budget,limits,state:historyState,now,today,slot});
+  console.log('Sondagem CGU de divergencias (somente contagens): '+JSON.stringify(probeReport));
   let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0,followupsPromoted=0;
   const failures=[],phaseResults={};
   for(let taskIndex=0;taskIndex<tasks.length;taskIndex++){
@@ -421,7 +427,7 @@ async function main(){
     errors+' sem conclusão; '+links+' vínculo(s) de liquidação/pagamento e '+
     items+' item(ns) de empenho. Historicos de itens sao processados separadamente. '+
     'Respostas brutas e dados pessoais não persistidos.');
-  if(!successes&&errors)throw Error('Não foi possível completar nenhuma consulta');
+  if(!successes&&(errors||['http_401','http_403','http_429','source_unstable'].includes(probeReport.parentStopped)))throw Error('Não foi possível completar nenhuma consulta regular; verificar disponibilidade da CGU');
 }
 if(process.argv[1] && import.meta.url===new URL('file://'+resolve(process.argv[1])).href){
   main().catch(()=>{
