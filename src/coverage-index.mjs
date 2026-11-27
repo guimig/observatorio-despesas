@@ -4,7 +4,7 @@ import {isIfcAdhesion} from '../assets/procurement-structured-filters.js';
 import {scopeMonths,brazilMonth,FIRST_DATE,inScopeNe,closedCatalogCoverage} from './collection-scope.mjs';
 import {currentDateInBrazil} from './backfill.mjs';
 import {auditMonth,closedDaysInMonth} from '../assets/quality.js';
-import {buildCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
+import {buildCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
 import {MODALITIES} from '../assets/pncp-modalities.js';
 const ratio=(n,d)=>d?Number((100*n/d).toFixed(2)):null;
 const latest=values=>values.filter(Boolean).sort().at(-1)||null;
@@ -98,7 +98,8 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    arpByYear,
    lastAtaCheck:latest((atas?.checks||[]).map(c=>c.checkedAt)),lastParticipationCheck:latest((participants?.checks||[]).map(c=>c.checkedAt)),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
-  integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,cguContracts,totalMonths:manifest?.months?.length??months.length})),
+  integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,cguContracts,totalMonths:manifest?.months?.length??months.length,today:currentDateInBrazil(now)})),
   commitmentChronology:buildCommitmentChronology(months,{today:currentDateInBrazil(now)}),
+  commitmentValues:summarizeCommitmentValues(months,{today:currentDateInBrazil(now)}),
   years:byYear,months:rows};
 }
