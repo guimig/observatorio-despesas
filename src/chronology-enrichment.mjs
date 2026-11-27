@@ -134,6 +134,17 @@ export function catalogPageLimit(record,state={},now=new Date()){
  const k=catalogPaginationKey(record),stamp=k&&state[k];
  return validDay(stamp)&&stamp<=todayOf(now)&&Date.parse(todayOf(now))-Date.parse(stamp)<30*DAY?20:8;
 }
+/** Uma paginacao incompleta nunca e persistida como historico integral.
+ * Somente a proxima tentativa da mesma evidencia ganha limite maior. */
+export function historyPaginationKey(record,task){
+ if(task?.kind!=='itemHistory'||!hasValidHistoryCatalog(record)||
+    !record.owners[0].items.some(i=>i.seq===task.seq))return null;
+ return stateKey(['cgu-history-pagination-v1',chronologyAttemptKey(record,task)]);
+}
+export function historyPageLimit(record,task,state={},now=new Date()){
+ const k=historyPaginationKey(record,task),stamp=k&&state[k];
+ return validDay(stamp)&&stamp<=todayOf(now)&&Date.parse(todayOf(now))-Date.parse(stamp)<30*DAY?20:8;
+}
 export function chronologyAttemptKey(record,task){
  if(!record||record.owners.length!==1||!isNeTask(task))return null;
  const {doc,items}=record.owners[0],reference=latestReference(doc,record.observations);
