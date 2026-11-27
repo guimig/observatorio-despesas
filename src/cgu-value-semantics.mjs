@@ -3,50 +3,16 @@
  * API: https://api.portaldatransparencia.gov.br/swagger-ui/index.html
  * O dicionario do CSV nao prova a semantica de valor na API.
  * Somente classes/contagens podem sair para logs; nenhum dado canonico e alterado. */
-import {indexCommitmentChronology,commitmentChronologyEvidence,reconcileSiafiItem} from '../assets/siafi-movement-reconciliation.js';
+import {indexCommitmentChronology,commitmentChronologyEvidence,reconstructValueMeasures,classifyValueMeaning} from '../assets/siafi-movement-reconciliation.js';
 import {validDay} from './operational-state.mjs';
 import {parseMoneyCents,requestDocuments} from './cgu.mjs';
 import {summarizeOriginalIssueFields} from './recover-cgu-originals.mjs';
 
-export const MEASURES=Object.freeze(['initial','issue_year_net','net_before_cancellations','updated']);
+export {MEASURES,reconstructValueMeasures,classifyValueMeaning} from '../assets/siafi-movement-reconciliation.js';
 const increment=(map,key)=>{map[key]=(map[key]||0)+1};
 const validAmount=x=>Number.isSafeInteger(x)&&x>=0;
 const reference=record=>[{date:record.owners[0].doc.date,cents:record.owners[0].doc.cents},
  ...record.observations].sort((a,b)=>a.date.localeCompare(b.date)).at(-1);
-const signed=m=>(m.type==='original'||m.type==='reinforcement'?1n:-1n)*BigInt(m.cents);
-
-/** Todos os itens precisam ser conhecidos, unicos e conciliados com o valorAtual.
- * As medidas sao reconstrucoes aritmeticas, nao saldos contabilisticos. */
-export function reconstructValueMeasures(record,items,{today}={}){
- if(!record||record.owners?.length!==1||!validDay(today)||
-    !Array.isArray(items)||!items.length)return {status:'unavailable',measures:null};
- if(items.some(i=>!Number.isSafeInteger(i.seq)||i.seq<1||!validAmount(i.cents))||
-    new Set(items.map(i=>i.seq)).size!==items.length)return {status:'invalid_catalog',measures:null};
- const year=record.id.slice(11,15);
- if(!/^20\d{2}$/.test(year)||year<'2024'||year>today.slice(0,4))return {status:'outside_window',measures:null};
- if(items.some(i=>i.historyChecked!==true))return {status:'partial',measures:null};
- const details=items.map(i=>reconcileSiafiItem(i,{commitmentYear:year}));
- if(details.some(d=>d.status!=='reconciled'))return {status:'history_unreconciled',measures:null};
- const events=items.flatMap(i=>i.movements);
- if(events.some(m=>!validDay(m.date)||m.date<'2024-01-01'||m.date>today))
-  return {status:'outside_window',measures:null};
- const initial=events.filter(m=>m.type==='original').reduce((n,m)=>n+BigInt(m.cents),0n);
- const issue_year_net=events.filter(m=>m.date.slice(0,4)===year).reduce((n,m)=>n+signed(m),0n);
- const net_before_cancellations=events.filter(m=>m.type!=='cancellation').reduce((n,m)=>n+signed(m),0n);
- const updated=events.reduce((n,m)=>n+signed(m),0n);
- const catalog=items.reduce((n,i)=>n+BigInt(i.cents),0n);
- const values={initial,issue_year_net,net_before_cancellations,updated};
- if(updated!==catalog||Object.values(values).some(v=>v<0n||v>BigInt(Number.MAX_SAFE_INTEGER)))
-  return {status:'aggregate_invalid',measures:null};
- return {status:'comparable',measures:Object.fromEntries(MEASURES.map(k=>[k,Number(values[k])]))};
-}
-/** A assinatura retém TODAS as coincidências. Se duas medidas têm o mesmo
- * valor, a coincidência não permite distingui-las. */
-export function classifyValueMeaning(cents,reconstruction){
- if(!validAmount(cents)||reconstruction?.status!=='comparable')return 'not_comparable';
- const matches=MEASURES.filter(k=>reconstruction.measures[k]===cents);
- return matches.length?matches.join('+'):'matches_none';
-}
 function classificationBucket(){
  return {total:0,eligible:0,discriminating:0,history:{},storedValue:{},
   byYear:{},changedWithinIssueYear:0,changedAfterIssueYear:0};
