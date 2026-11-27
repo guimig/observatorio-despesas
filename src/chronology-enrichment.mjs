@@ -91,6 +91,14 @@ function currentTask(kind,record,item){
    {kind,month,id:doc.id,seq:item.seq,recheck:item.historyChecked===true};
 }
 /** Hash depende da evidencia, nao da data de gravacao nem de IDs publicados no cache. */
+export function catalogPaginationKey(record){
+ if(!record||record.owners.length!==1||!needsInitialCatalog(record))return null;
+ return stateKey(['cgu-catalog-pagination-v1',chronologyAttemptKey(record,currentTask('items',record))]);
+}
+export function catalogPageLimit(record,state={},now=new Date()){
+ const k=catalogPaginationKey(record),stamp=k&&state[k];
+ return validDay(stamp)&&stamp<=todayOf(now)&&Date.parse(todayOf(now))-Date.parse(stamp)<30*DAY?20:8;
+}
 export function chronologyAttemptKey(record,task){
  if(!record||record.owners.length!==1||!isNeTask(task))return null;
  const {doc,items}=record.owners[0],reference=latestReference(doc,record.observations);
@@ -235,13 +243,17 @@ export function planChronologyEnrichment(base,months,{
  const availableHistories=ordered.concat(orderGroups(largeGroups,slot)).filter(g=>!itemIds.has(g.id)).flatMap(g=>g.tasks);
  const histories=unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id)),...availableHistories]).slice(0,historyLimit);
  const other=base.filter(t=>!isNeTask(t));
- const tasks=interleave([[...items],[...histories],other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
-   other.filter(t=>!['liquidation','payment'].includes(t.kind))]);
+ // Duas vagas de catalogo novo por ciclo enquanto houver passivo, sem
+ // retirar tarefas das demais fases. Revisoes seguem depois das recuperacoes.
+ const first=items.filter(t=>t.initialCatalog),reviews=items.filter(t=>!t.initialCatalog);
+ const tasks=interleave([first.filter((_,i)=>i%2===0),first.filter((_,i)=>i%2===1),
+   [...histories],other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
+   other.filter(t=>!['liquidation','payment'].includes(t.kind)),reviews]);
  return {tasks,summary:{groupsSelected,groupTasks,catalogTasks:priorityItems.length,repairTasks:repairTasks.length,
    eligibleSmallGroups:groups.length,eligibleCatalogs:catalogs.length,eligibleHistoryReviews:repairs.length,
    initialCatalogEligible:missing.length,initialCatalogSelected:initialTasks.length,initialCatalogByYear:Object.fromEntries([...new Set(initial.map(x=>x.year))].map(y=>[y,initial.filter(x=>x.year===y).length])),
    contractCatalogTasks:items.filter(t=>contractual(t.id)).length,contractHistoryTasks:histories.filter(t=>contractual(t.id)).length,
-   filledCatalogSlots:Math.max(0,items.length-unique([...priorityItems,...baseItems.filter(eligible)]).length),
+   filledCatalogSlots:items.filter(t=>!baseItems.some(b=>key(b)===key(t))).length,
    filledHistorySlots:Math.max(0,histories.length-unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id))]).length)}};
 }
 
