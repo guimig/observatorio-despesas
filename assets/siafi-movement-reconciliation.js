@@ -1,6 +1,7 @@
 /** Reconstrucao aritmetica condicionada a evidencia completa da CGU.
  * Nao calcula empenho a liquidar, restos a pagar ou qualquer saldo contábil.
  */
+import {inScopeRelatedDocument} from './trajectory.js';
 const ACCEPTED=new Set(['original','reinforcement','annulment','cancellation']);
 const integer=n=>Number.isSafeInteger(n);
 const date=value=>typeof value==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(value)&&
@@ -104,41 +105,62 @@ export function reconcileSiafiCommitment(items,{listingDate=null,documentCents=n
 export function commitmentChronologyEvidence(doc,items,observations=[]){
  if(!doc||doc.phase!==1||!/^158459\d{5}20\d{2}NE\d{6}$/.test(doc.id))
   return {status:'unavailable',reason:'not_commitment',referenceDate:null,referenceCents:null};
+ if(!inScopeRelatedDocument(doc.id))return {status:'unavailable',reason:'before_cutoff',referenceDate:doc.date,referenceCents:doc.cents,listingDates:[doc.date]};
  const refs=[{date:doc.date,cents:doc.cents},...observations.filter(o=>o.id===doc.id)];
  refs.sort((a,b)=>a.date.localeCompare(b.date));
  const reference=refs.at(-1);
  const base={referenceDate:reference.date,referenceCents:reference.cents,listingDates:[...new Set(refs.map(r=>r.date))]};
- if(doc.itemsDetailVersion!==2||!Number.isSafeInteger(reference.cents))
-   return {...base,status:'pending',reason:'item_catalog_or_reference_pending'};
+ if(!Number.isSafeInteger(reference.cents))return {...base,status:'pending',reason:'reference_amount_pending'};
+ if(doc.itemsDetailVersion!==2||!Array.isArray(items))return {...base,status:'pending',reason:'items_not_collected'};
+ if(!items.length)return {...base,status:'unavailable',reason:'empty_item_catalog'};
+ if(items.some(item=>!integer(item.cents)||item.cents<0))return {...base,status:'unavailable',reason:'item_amount_invalid'};
+ const catalogCents=items.reduce((sum,item)=>sum+BigInt(item.cents),0n);
+ if(catalogCents!==BigInt(reference.cents))return {...base,status:'divergent',reason:'catalog_amount_mismatch'};
  if(observations.length&&Array.isArray(items)&&items.some(item=>!date(item.historyCheckedAt)||item.historyCheckedAt<reference.date))
    return {...base,status:'pending',reason:'history_older_than_listing'};
  const result=reconcileSiafiCommitment(items,{listingDate:doc.date,documentCents:reference.cents,commitmentYear:doc.id.slice(11,15)});
  return {...result,...base};
 }
-export function buildCommitmentChronology(months,{today}={}){
- const docs=new Map(),observations=new Map(),periods={};
+/** Indice efemero por identidade, compartilhado pelo planejador e pelo build. */
+export function indexCommitmentChronology(months){
+ const docs=new Map(),observations=new Map(),beforeCutoff=new Set();
  for(const month of months){
    for(const doc of month.documents||[]){
      if(doc.phase!==1||!/^158459\d{5}20\d{2}NE\d{6}$/.test(doc.id))continue;
+     if(!inScopeRelatedDocument(doc.id)){beforeCutoff.add(doc.id);continue;}
      if(!docs.has(doc.id))docs.set(doc.id,[]);
-     docs.get(doc.id).push({doc,items:month.itemsByDocument?.[doc.id]});
+     docs.get(doc.id).push({doc,month:month.month||doc.date.slice(0,7),items:month.itemsByDocument?.[doc.id]});
    }
    for(const o of month.commitmentObservations||[]){
      if(!observations.has(o.id))observations.set(o.id,[]);
      observations.get(o.id).push(o);
    }
  }
- const summary={identities:docs.size,reconciled:0,pending:0,duplicateIdentities:0,dateObservations:[...observations.values()].reduce((n,x)=>n+x.length,0),periods};
- for(const [id,owners] of docs){
-   if(owners.length!==1){summary.duplicateIdentities++;summary.pending++;continue;}
+ return {entries:[...docs].map(([id,owners])=>({id,owners,observations:observations.get(id)||[]})),
+   beforeCutoffIdentities:beforeCutoff.size,
+   dateObservations:[...observations.entries()].filter(([id])=>docs.has(id)).reduce((n,[,x])=>n+x.length,0)};
+}
+export function buildCommitmentChronology(months,{today}={}){
+ const {entries,dateObservations,beforeCutoffIdentities}=indexCommitmentChronology(months),periods={};
+ const summary={identities:entries.length,reconciled:0,pending:0,duplicateIdentities:0,dateObservations,beforeCutoffIdentities,pendingReasons:{},byYear:[],periods};
+ const years=new Map();
+ for(const {id,owners,observations} of entries){
+   const year=id.slice(11,15);
+   if(!years.has(year))years.set(year,{year,identities:0,reconciled:0,pending:0});
+   const y=years.get(year);y.identities++;
+   const pending=reason=>{
+     summary.pending++;y.pending++;
+     summary.pendingReasons[reason]=(summary.pendingReasons[reason]||0)+1;
+   };
+   if(owners.length!==1){summary.duplicateIdentities++;pending('duplicate_identity');continue;}
    const {doc,items}=owners[0];
-   const result=commitmentChronologyEvidence(doc,items,observations.get(id)||[]);
-   if(result.status!=='reconciled'){summary.pending++;continue;}
+   const result=commitmentChronologyEvidence(doc,items,observations);
+   if(result.status!=='reconciled'){pending(result.reason);continue;}
    // Uma data de inclusao futura, anterior ao recorte ou inconsistencias
    // aritmeticas tornam o conjunto inapto para totalizacao.
    const movements=items.flatMap(item=>item.movements||[]);
-   if(movements.some(m=>m.date<'2024-01-01'||(today&&m.date>today))){summary.pending++;continue;}
-   summary.reconciled++;
+   if(movements.some(m=>m.date<'2024-01-01'||(today&&m.date>today))){pending('movement_outside_window');continue;}
+   summary.reconciled++;y.reconciled++;
    const exercise=id.slice(11,15);
    for(const m of movements){
      if(today&&m.date>=today)continue; // apenas dias encerrados
@@ -159,5 +181,6 @@ export function buildCommitmentChronology(months,{today}={}){
      for(const key of Object.keys(row))if(key.endsWith('Cents'))row[key]=null;
    }
  }
+ summary.byYear=[...years.values()].sort((a,b)=>a.year.localeCompare(b.year));
  return summary;
 }

@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {persistWindow,validatePublishedData,validateMonth} from '../src/store.mjs';
 import {auditMonth} from '../assets/quality.js';
 import {buildCommitmentChronology,commitmentChronologyEvidence} from '../assets/siafi-movement-reconciliation.js';
-import {prioritizeObservedCommitments} from '../src/enrich-month.mjs';
+import {planChronologyEnrichment} from '../src/chronology-enrichment.mjs';
 const id='158459000012026NE000001',other='158459000012026NE000002';
 const now=new Date('2026-11-27T17:00:00Z');
 const patch=(date,ids,cents=150)=>({documents:ids.map(id=>({id,date,phase:1,cents})),links:[],coverage:{date,phase:1,count:ids.length,invalid:0,complete:true}});
@@ -59,7 +59,7 @@ test('cancelamentos de NEs anteriores nao entram na execucao do exercicio corren
 test('prioridade de historicos de reaparições nao amplia a fila',()=>{
  const tasks=[{kind:'itemHistory',id:other,month:'2026-11',seq:1}];
  const m={month:'2026-11',documents:[doc],commitmentObservations:observations,itemsByDocument:{[id]:[{...items[0],historyCheckedAt:'2026-11-24'}]}};
- const r=prioritizeObservedCommitments(tasks,[m]);
+ const {tasks:r}=planChronologyEnrichment(tasks,[m],{now,maxItemHistories:1});
  assert.equal(r.length,1);assert.equal(r[0].id,id);
 });
 
