@@ -7,6 +7,7 @@ import {resolve} from 'node:path';
 import {FIRST_YEAR,brazilMonth,inScopeNe} from './collection-scope.mjs';
 import {validatePublishedData} from './store.mjs';
 import {readProcurement} from './procurement-store.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 const HOST='https://contratos.comprasnet.gov.br',MAX_BYTES=4*1024*1024,MAX_ROWS=10000;
 const ALIASES=Object.freeze({
  ne:['numeroEmpenho','numero_empenho','empenho','numero','codigoEmpenho','codigo_empenho','ne'],
@@ -41,7 +42,7 @@ export function annualUrl(year,now=new Date()){
  if(!Number.isInteger(year)||year<FIRST_YEAR||year>current)throw Error('Exercicio fora do recorte');
  return HOST+'/api/v1/empenho/ano/'+year+'/ug/158459';
 }
-export function compareSample(payload,{year,documents=[],catalog=null}={}){
+export function compareSample(payload,{year,documents=[],catalog=null,cguContracts=[]}={}){
  const rows=Array.isArray(payload)?payload:Array.isArray(payload?.data)?payload.data:
   Array.isArray(payload?.dados)?payload.dados:null;
  if(!rows||rows.length>MAX_ROWS||rows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))
@@ -52,8 +53,8 @@ export function compareSample(payload,{year,documents=[],catalog=null}={}){
  const fields=Object.fromEntries(Object.keys(ALIASES).map(k=>[k,0]));
  const candidates=Object.fromEntries(Object.keys(ALIASES).map(k=>[k,[]]));
  const local=new Set(documents.filter(d=>d.phase===1&&inScopeNe(d.id)&&Number(d.id.slice(11,15))===year).map(d=>d.id));
- const linked=knownFormal(catalog);
- const matched=new Set(),ids=new Set(),withPi=new Set();let shortOnly=0,fullRows=0;
+ const linked=knownFormal(catalog),cguLinked=new Set(cguContracts.flatMap(c=>c.refs||[]).filter(inScopeNe));
+ const matched=new Set(),ids=new Set(),withPi=new Set(),withContract=new Set();let shortOnly=0,fullRows=0;
  for(const row of rows){
   for(const [k,keys] of Object.entries(ALIASES)){
    if(countValues(row,keys))fields[k]++;
@@ -61,15 +62,17 @@ export function compareSample(payload,{year,documents=[],catalog=null}={}){
   }
   const id=fullNe(row,year);
   if(!id){if(ALIASES.ne.some(k=>/^20\d{2}NE\d{6}$/.test(normalized(row[k]))))shortOnly++;continue;}
-  fullRows++;ids.add(id);
+  fullRows++;ids.add(id);if(countValues(row,ALIASES.contract))withContract.add(id);
   if(local.has(id)){matched.add(id);if(countValues(row,ALIASES.pi))withPi.add(id);}
  }
  return {status,rows:rows.length,fields,candidates,localNe:local.size,fullRows,
   distinctFullNe:ids.size,shortOnly,matchedLocal:matched.size,matchedWithPi:withPi.size,
   matchedWithKnownPncpLink:[...matched].filter(id=>linked.has(id)).length,
-  matchedWithoutKnownPncpLink:[...matched].filter(id=>!linked.has(id)).length};
+  matchedWithoutKnownPncpLink:[...matched].filter(id=>!linked.has(id)).length,
+  fullNeWithContractField:withContract.size,matchedWithCguContractLink:[...matched].filter(id=>cguLinked.has(id)).length,
+  matchedWithCguContractAndContractField:[...matched].filter(id=>cguLinked.has(id)&&withContract.has(id)).length};
 }
-export async function probeAnnual(year,{now=new Date(),fetchFn=fetch,documents=[],catalog=null}={}){
+export async function probeAnnual(year,{now=new Date(),fetchFn=fetch,documents=[],catalog=null,cguContracts=[]}={}){
  const url=annualUrl(year,now);let response;
  try{response=await fetchFn(url,{headers:{Accept:'application/json'},redirect:'error',
   signal:AbortSignal.timeout(20000)});}
@@ -81,7 +84,7 @@ export async function probeAnnual(year,{now=new Date(),fetchFn=fetch,documents=[
   while(true){const {done,value}=await reader.read();if(done)break;
    size+=value.length;if(size>MAX_BYTES){await reader.cancel();return {year,status:'oversized_body'};}
    chunks.push(value);}
-  return {year,...compareSample(JSON.parse(Buffer.concat(chunks).toString('utf8')),{year,documents,catalog})};
+  return {year,...compareSample(JSON.parse(Buffer.concat(chunks).toString('utf8')),{year,documents,catalog,cguContracts})};
  }catch{return {year,status:'invalid_json_or_body'};}finally{reader.releaseLock();}
 }
 export function isAccessBlocked(status){
@@ -89,10 +92,10 @@ export function isAccessBlocked(status){
 }
 /** No maximo uma tentativa por ano; parar quando o servico esta inacessivel.
  * Priorizar o ano corrente para detectar retorno; exercicios antigos depois. */
-export async function probeAnnualSeries({now=new Date(),fetchFn=fetch,documents=[],catalog=null}={}){
+export async function probeAnnualSeries({now=new Date(),fetchFn=fetch,documents=[],catalog=null,cguContracts=[]}={}){
  const current=Number(brazilMonth(now).slice(0,4)),out=[];
  for(let year=current;year>=FIRST_YEAR;year--){
-  const result=await probeAnnual(year,{now,fetchFn,documents,catalog});
+  const result=await probeAnnual(year,{now,fetchFn,documents,catalog,cguContracts});
   out.push(result);
   if(isAccessBlocked(result.status)){
    for(let older=year-1;older>=FIRST_YEAR;older--)out.push({year:older,status:'deferred_source_unavailable'});
@@ -104,7 +107,8 @@ export async function probeAnnualSeries({now=new Date(),fetchFn=fetch,documents=
 async function main(){
  const {months}=await validatePublishedData(process.cwd());
  const documents=months.flatMap(m=>m.documents),catalog=await readProcurement(process.cwd());
- for(const result of await probeAnnualSeries({documents,catalog})){
+ const cguContracts=(await readCguContractEvidence(process.cwd())).contracts;
+ for(const result of await probeAnnualSeries({documents,catalog,cguContracts})){
   console.log('Contratos.gov empenhos por UG: '+JSON.stringify(result));
  }
  console.log('Ausencia de vinculo PNCP conhecido nao comprova ausencia de contrato. Nenhum ID, PI, valor ou corpo foi salvo.');

@@ -98,7 +98,7 @@ export function retryDelay(attempt,{retryAfter=null,now=Date.now()}={}){
   return Number.isFinite(requested)?Math.min(30000,Math.max(exponential,requested)):exponential;
 }
 
-export async function getCguArray(url, { token, fetcher = fetch, wait = pause, budget } = {}) {
+async function getCguJson(url, { token, fetcher = fetch, wait = pause, budget, object=false } = {}) {
   if (!token || typeof token !== 'string') throw Error('CGU_API_KEY ausente');
   for (let attempt = 0; attempt < 4; attempt++) {
     if(budget)await budget.beforeRequest();
@@ -137,8 +137,8 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause, b
       error.code='CGU_INVALID_JSON';
       throw error;
     }
-    if (!Array.isArray(body)) {
-      const error=Error('CGU retornou formato diferente de lista');
+    if (object?(!body||typeof body!=='object'||Array.isArray(body)):!Array.isArray(body)) {
+      const error=Error(object?'CGU retornou formato diferente de objeto':'CGU retornou formato diferente de lista');
       error.code='CGU_INVALID_SHAPE';
       throw error;
     }
@@ -146,6 +146,9 @@ export async function getCguArray(url, { token, fetcher = fetch, wait = pause, b
   }
   throw Error('CGU indisponível');
 }
+
+export function getCguArray(url,options={}){return getCguJson(url,{...options,object:false});}
+export function getCguObject(url,options={}){return getCguJson(url,{...options,object:true});}
 
 export function requestDocuments(date, phase, page, options) {
   return getCguArray(documentUrl(date, phase, page), options);

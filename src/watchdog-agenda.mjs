@@ -10,7 +10,9 @@ export const WATCHED=Object.freeze([
  {file:'atualizar-contratos-pncp.yml',hours:26,inputs:{}},
  {file:'recuperar-origens-cgu.yml',hours:15,inputs:{limit:'15'}},
  {file:'coletar-itens-pncp.yml',hours:15,inputs:{}},
- {file:'coleta-contratos.yml',hours:12,retryHours:4,inputs:{}}
+ {file:'coleta-contratos.yml',hours:12,retryHours:4,inputs:{}},
+ {file:'coletar-vinculos-contratuais-cgu.yml',hours:15,retryHours:4,inputs:{}},
+ {file:'recuperar-licitacoes-vinculadas.yml',hours:26,retryHours:4,inputs:{}}
 ]);
 export function overdueStatus(runs,hours,now=new Date(),{retryHours=hours}={}){
  if(!Array.isArray(runs)||!Number.isFinite(now.getTime())||!Number.isFinite(hours)||hours<=0||

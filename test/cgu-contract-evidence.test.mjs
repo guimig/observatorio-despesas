@@ -39,3 +39,27 @@ test('relacao CGU direta nao confirma PNCP nem compoe seus totais; candidato exi
  assert.equal(indexCguContractEvidence([row],[contract,{...contract,id:'p2'}]).byPncp.size,0);
  assert.deepEqual(missingReferencedNe([month],{scope:'all',cguContracts:[row]}),[ne2]);
 });
+
+import {planCguIdentityDetails} from '../src/cgu-contract-evidence.mjs';
+import {getCguObject,getCguArray} from '../src/cgu.mjs';
+test('formatos compactos e codigo de pessoa juridica sem confundir CPF ou CNPJ divergente',()=>{
+ const compact=normalizeCguContractIdentity({...raw,numero:'000122026',fornecedor:{codigoFormatado:'12.345.678/0001-90'}});
+ assert.equal(compact.number,'12/2026');assert.equal(compact.supplierCnpj,'12345678000190');
+ assert.equal(normalizeCguContractIdentity({...raw,fornecedor:{codigo:'11122233344'}}).supplierCnpj,undefined);
+ assert.equal(normalizeCguContractIdentity({...raw,fornecedor:{cnpj:'12345678000190',codigo:'22222222000100'}}).supplierCnpj,undefined);
+});
+test('detalhe por id deve ser objeto, usar mesma identidade e preservar referencias',async()=>{
+ const {number,process,supplierCnpj,...partial}=identity;
+ const previous=mergeCguContractEvidence(emptyCguContractEvidence(),partial,[ne]).data;
+ assert.equal(planCguIdentityDetails(previous.contracts,{},now).length,1);
+ const budget={stopped:()=>false,snapshot:()=>({})};
+ const result=await collectCguContractEvidence({previous,now,token:'secret',budget,request:async()=>[],requestDetail:async()=>raw});
+ assert.equal(result.report.identityDetailsImproved,1);
+ assert.equal(result.data.contracts[0].number,'12/2026');assert.deepEqual(result.data.contracts[0].refs,[ne]);
+ const bad=await collectCguContractEvidence({previous,now,token:'secret',budget,request:async()=>[],requestDetail:async()=>({...raw,id:43})});
+ assert.equal(bad.report.identityDetailsImproved,0);assert.deepEqual(bad.data,previous);
+ const fetcher=async()=>new Response(JSON.stringify({id:42}));
+ assert.deepEqual(await getCguObject('https://example.invalid',{token:'secret',fetcher}),{id:42});
+ await assert.rejects(getCguArray('https://example.invalid',{token:'secret',fetcher}));
+ await assert.rejects(getCguObject('https://example.invalid',{token:'secret',fetcher:async()=>new Response('[]')}));
+});
