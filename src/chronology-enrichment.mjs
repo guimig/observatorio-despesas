@@ -171,7 +171,7 @@ export function planChronologyEnrichment(base,months,{
  const availableHistories=ordered.concat(orderGroups(largeGroups,slot)).filter(g=>!itemIds.has(g.id)).flatMap(g=>g.tasks);
  const histories=unique([...priorityHistory,...baseHistory.filter(t=>eligible(t)&&!itemIds.has(t.id)),...availableHistories]).slice(0,historyLimit);
  const other=base.filter(t=>!isNeTask(t));
- const tasks=interleave([items,histories,other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
+ const tasks=interleave([[...items],[...histories],other.filter(t=>t.kind==='liquidation'),other.filter(t=>t.kind==='payment'),
    other.filter(t=>!['liquidation','payment'].includes(t.kind))]);
  return {tasks,summary:{groupsSelected,groupTasks,catalogTasks:priorityItems.length,repairTasks:repairTasks.length,
    eligibleSmallGroups:groups.length,eligibleCatalogs:catalogs.length,eligibleHistoryReviews:repairs.length,
