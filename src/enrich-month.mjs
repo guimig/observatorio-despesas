@@ -168,6 +168,40 @@ export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  }
  return roundRobin(queues,queues.reduce((n,q)=>n+q.length,0));
 }
+/** Prioriza NEs com reaparições, mantendo o numero de tarefas do lote.
+ * Datas de listagem nao sao datas de emissao nem movimentos comprovados. */
+export function prioritizeObservedCommitments(tasks,months,{slot=0}={}){
+ const all=months.flatMap(m=>(m.commitmentObservations||[]));
+ const latest=new Map();
+ for(const o of all)if(!latest.has(o.id)||o.date>latest.get(o.id).date)latest.set(o.id,o);
+ const candidates=[];
+ for(const m of months)for(const doc of m.documents){
+   const o=latest.get(doc.id);
+   if(!o||doc.phase!==1||doc.date!==o.ownerDate)continue;
+   const items=m.itemsByDocument?.[doc.id];
+   const sum=Array.isArray(items)&&items.every(i=>Number.isSafeInteger(i.cents))?items.reduce((n,i)=>n+i.cents,0):null;
+   if(doc.itemsDetailVersion!==2||!items?.length||sum!==o.cents){
+    candidates.push({month:m.month,id:doc.id,kind:'items',recheck:true});
+   }else for(const item of items){
+    if(item.historyChecked!==true||!item.historyCheckedAt||item.historyCheckedAt<o.date)
+      candidates.push({month:m.month,id:doc.id,kind:'itemHistory',seq:item.seq,recheck:item.historyChecked===true});
+   }
+ }
+ const selected=rotatePending(candidates,Math.min(6,candidates.length),slot);
+ const key=t=>t.kind+'/'+t.id+'/'+(t.seq||'');
+ const queue=[...tasks],front=[];
+ for(const t of selected){
+   let at=queue.findIndex(x=>key(x)===key(t));
+   if(at<0){for(let i=queue.length-1;i>=0;i--)if(queue[i].kind===t.kind){at=i;break}}
+   // Se a classe estava vazia, usar vaga da fila existente ou reservar uma
+   // tarefa dentro das seis vagas, sem aumentar o orcamento HTTP.
+   if(at<0&&queue.length)at=queue.length-1;
+   if(at>=0)queue.splice(at,1);
+   else if(tasks.length)continue;
+   front.push(t);
+ }
+ return front.concat(queue);
+}
 export function summarizeFailures(failures){
   const counts={};
   for(const reason of failures){
@@ -209,7 +243,7 @@ async function main(){
   const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot:monthSlot});
   const months=[];
   for(const monthName of alternatives)if(inScopeMonth(monthName))months.push(await readMonth(root,monthName));
-  const tasks=planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)});
+  const tasks=prioritizeObservedCommitments(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot});
   if(!tasks.length){
     console.log('Acervo sem documentos pendentes de enriquecimento.');
     return;

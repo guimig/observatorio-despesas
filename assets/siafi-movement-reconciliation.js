@@ -96,3 +96,68 @@ export function reconcileSiafiCommitment(items,{listingDate=null,documentCents=n
    matchesDocument:comparable?totals.reportedCents===documentCents:null
  };
 }
+
+
+/** A data da listagem e apenas uma referencia. Incluso original de item
+ * nao equivale a data de emissao da NE. Movimentos conciliados sao
+ * calculados pelo dia do evento, nunca pela diferenca entre snapshots. */
+export function commitmentChronologyEvidence(doc,items,observations=[]){
+ if(!doc||doc.phase!==1||!/^158459\d{5}20\d{2}NE\d{6}$/.test(doc.id))
+  return {status:'unavailable',reason:'not_commitment',referenceDate:null,referenceCents:null};
+ const refs=[{date:doc.date,cents:doc.cents},...observations.filter(o=>o.id===doc.id)];
+ refs.sort((a,b)=>a.date.localeCompare(b.date));
+ const reference=refs.at(-1);
+ const base={referenceDate:reference.date,referenceCents:reference.cents,listingDates:[...new Set(refs.map(r=>r.date))]};
+ if(doc.itemsDetailVersion!==2||!Number.isSafeInteger(reference.cents))
+   return {...base,status:'pending',reason:'item_catalog_or_reference_pending'};
+ if(observations.length&&Array.isArray(items)&&items.some(item=>!date(item.historyCheckedAt)||item.historyCheckedAt<reference.date))
+   return {...base,status:'pending',reason:'history_older_than_listing'};
+ const result=reconcileSiafiCommitment(items,{listingDate:doc.date,documentCents:reference.cents,commitmentYear:doc.id.slice(11,15)});
+ return {...result,...base};
+}
+export function buildCommitmentChronology(months,{today}={}){
+ const docs=new Map(),observations=new Map(),periods={};
+ for(const month of months){
+   for(const doc of month.documents||[]){
+     if(doc.phase!==1||!/^158459\d{5}20\d{2}NE\d{6}$/.test(doc.id))continue;
+     if(!docs.has(doc.id))docs.set(doc.id,[]);
+     docs.get(doc.id).push({doc,items:month.itemsByDocument?.[doc.id]});
+   }
+   for(const o of month.commitmentObservations||[]){
+     if(!observations.has(o.id))observations.set(o.id,[]);
+     observations.get(o.id).push(o);
+   }
+ }
+ const summary={identities:docs.size,reconciled:0,pending:0,duplicateIdentities:0,dateObservations:[...observations.values()].reduce((n,x)=>n+x.length,0),periods};
+ for(const [id,owners] of docs){
+   if(owners.length!==1){summary.duplicateIdentities++;summary.pending++;continue;}
+   const {doc,items}=owners[0];
+   const result=commitmentChronologyEvidence(doc,items,observations.get(id)||[]);
+   if(result.status!=='reconciled'){summary.pending++;continue;}
+   // Uma data de inclusao futura, anterior ao recorte ou inconsistencias
+   // aritmeticas tornam o conjunto inapto para totalizacao.
+   const movements=items.flatMap(item=>item.movements||[]);
+   if(movements.some(m=>m.date<'2024-01-01'||(today&&m.date>today))){summary.pending++;continue;}
+   summary.reconciled++;
+   const exercise=id.slice(11,15);
+   for(const m of movements){
+     if(today&&m.date>=today)continue; // apenas dias encerrados
+     const key=m.date.slice(0,7);
+     const row=periods[key]||=( {initialCents:0,reinforcementCents:0,annulmentCents:0,priorYearReinforcementCents:0,priorYearAnnulmentCents:0,priorYearCancellationCents:0,movements:0,identities:0,_ids:new Set()} );
+     const sameYear=m.date.slice(0,4)===exercise;
+     const field=m.type==='original'?'initialCents':
+       m.type==='reinforcement'?(sameYear?'reinforcementCents':'priorYearReinforcementCents'):
+       m.type==='annulment'?(sameYear?'annulmentCents':'priorYearAnnulmentCents'):'priorYearCancellationCents';
+     row[field]+=m.cents;row.movements++;row._ids.add(id);
+   }
+ }
+ for(const row of Object.values(periods)){
+   row.identities=row._ids.size;delete row._ids;
+   row.netCents=row.initialCents+row.reinforcementCents-row.annulmentCents;
+   row.priorYearNetCents=row.priorYearReinforcementCents-row.priorYearAnnulmentCents-row.priorYearCancellationCents;
+   if(!Object.values(row).every(Number.isSafeInteger)){
+     for(const key of Object.keys(row))if(key.endsWith('Cents'))row[key]=null;
+   }
+ }
+ return summary;
+}

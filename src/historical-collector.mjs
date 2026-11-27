@@ -4,13 +4,15 @@ import {isoDate} from './cgu.mjs';
 const PHASES=[1,2,3];
 
 /** Conta colisões sem divulgar ID SIAFI e sem arbitrar qual data/fase prevalece. */
-export function documentCollisionSummary(existing,patch){
+export function documentCollisionSummary(existing,patch,{allowCommitmentDateObservations=false}={}){
   const previous=new Map((existing?.documents||[]).map(d=>[d.id,d]));
   const summary={otherDate:0,otherPhase:0};
   for(const doc of patch?.documents||[]){
     const old=previous.get(doc.id);
     if(!old)continue;
-    if(old.date!==doc.date)summary.otherDate++;
+    if(old.date!==doc.date){
+      if(!(allowCommitmentDateObservations&&old.phase===1&&doc.phase===1&&/^158459\d{5}20\d{2}NE\d{6}$/.test(doc.id)))summary.otherDate++;
+    }
     else if(old.phase!==doc.phase)summary.otherPhase++;
   }
   return summary;
@@ -26,6 +28,7 @@ export function safeFailureCategory(error){
   if(Number.isInteger(status)&&status>=400&&status<=599)return 'http_'+status;
   const code=String(error?.code||'').toUpperCase();
   if(code==='CGU_BUDGET_STOP')return 'budget_deferred';
+  if(code==='CGU_NE_LISTING_CHANGED')return 'ne_listing_changed';
   if(code==='CGU_DOC_COLLISION_DATE')return 'document_duplicate_other_date';
   if(code==='CGU_DOC_COLLISION_PHASE')return 'document_duplicate_other_phase';
   if(code==='CGU_DOC_COLLISION_BOTH')return 'document_duplicate_date_and_phase';
@@ -115,7 +118,7 @@ export async function collectHistoricalDate({
       await persist(patch);
     }catch(error){
       const category=safeFailureCategory(error);
-      if(String(error?.code||'').startsWith('CGU_DOC_COLLISION_')){
+      if(String(error?.code||'').startsWith('CGU_DOC_COLLISION_')||category==='ne_listing_changed'||category==='document_duplicate_other_date'){
         failures[category]=(failures[category]||0)+1;
         logger({date,phase,status:'failed',category,count:Number(error?.conflictCount)||0});
         continue; // Nao incorporar fase de contagem inconciliavel; outras datas continuam.

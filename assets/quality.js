@@ -25,6 +25,10 @@ export function summarizeDocumentPhases(month,{now=new Date()}={}){
       obs.date<=lastDate&&obs.phase===phase).map(obs=>obs.date));
     // O proprietário do documento também integra a ocorrência em outro filtro.
     const documents=month.documents.filter(doc=>doc.phase===phase&&doc.date<=lastDate);
+    if(phase===1)for(const o of month.commitmentObservations||[]){
+      if(o.date<=lastDate)overlaps.add(o.date);
+      if(o.ownerDate.startsWith(month.month)&&o.ownerDate<=lastDate)overlaps.add(o.ownerDate);
+    }
     for(const doc of documents)if(observedIds.has(doc.id))overlaps.add(doc.date);
     const eligible=new Set(coverage.filter(entry=>entry.complete&&entry.invalid===0&&
       !overlaps.has(entry.date)).map(entry=>entry.date));
@@ -54,7 +58,7 @@ export function auditMonth(month,{now=new Date()}={}){
     byPhase.set(c.phase,c);
   }
   const byFilter=new Map();
-  for(const doc of [...month.documents,...appearances]){
+  for(const doc of [...month.documents,...appearances,...(month.commitmentObservations||[]).map(o=>({...o,phase:1}))]){
     const key=doc.date+'/'+doc.phase;
     const counts=byFilter.get(key)||{count:0,invalid:0};
     counts.count++;if(doc.cents===null||doc.amountKnown===false)counts.invalid++;
@@ -135,6 +139,7 @@ export function auditMonth(month,{now=new Date()}={}){
       pending:liquidations.pending+payments.pending+items.pending},
     phaseObservations:{
       total:appearances.length,
+      commitmentDateObservations:(month.commitmentObservations||[]).length,
       overlappingDocuments:new Set(appearances.map(item=>item.id)).size,
       amountDisagreements:appearances.filter(item=>item.amountRelation==='different').length
     },

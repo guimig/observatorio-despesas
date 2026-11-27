@@ -62,6 +62,8 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   }
   const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
+  const {periods,...chronology}=index.commitmentChronology;
+  console.log('Cronologia NE (contagens e subtotais parciais do mes corrente): '+JSON.stringify({...chronology,currentMonth:periods[index.asOf.slice(0,7)]||null}));
   for (const month of manifest.months) {
     const file = month + '.json';
     await copyFile(join(base, 'data', 'months', file),

@@ -87,7 +87,7 @@ async function main() {
       }),
       persist:async patch=>{
         const current=await readExisting(month);
-        const collision=documentCollisionSummary(current,patch);
+        const collision=documentCollisionSummary(current,patch,{allowCommitmentDateObservations:true});
         const code=collisionCode(collision);
         if(code){
           const error=Error('Inconsistencia documental CGU');

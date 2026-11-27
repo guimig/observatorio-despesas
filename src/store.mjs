@@ -35,7 +35,7 @@ function validId(id) { return typeof id === 'string' && DOCUMENT_RE.test(id); }
 export function validateMonth(data) {
   assertPublicSafe(data);
   assertAllowedKeys(data, ['schema_version', 'unit', 'month', 'source',
-    'documents', 'relations', 'coverage', 'phaseObservations', 'beneficiaries', 'itemsByDocument', 'updated_at']);
+    'documents', 'relations', 'coverage', 'phaseObservations', 'commitmentObservations', 'beneficiaries', 'itemsByDocument', 'updated_at']);
   if (data.schema_version !== VERSION || data.unit !== UG || !MONTH_RE.test(data.month) ||
     data.source !== 'CGU' || !Array.isArray(data.documents) ||
     !Array.isArray(data.relations) || !Array.isArray(data.coverage)) {
@@ -129,6 +129,22 @@ export function validateMonth(data) {
        appearanceKeys.has(key))throw Error('Aparicao documental em fase invalida');
     appearanceKeys.add(key);
   }
+  // Reaparecimento de uma NE em outra data da listagem: evidencia, nao documento/operacao.
+  const commitmentObservations=data.commitmentObservations||[];
+  if(!Array.isArray(commitmentObservations))throw Error('Observacoes de data de NE invalidas');
+  const commitmentKeys=new Set();
+  for(const item of commitmentObservations){
+    assertAllowedKeys(item,['id','date','ownerDate','cents']);
+    const key=item.id+'/'+item.date;
+    const owner=data.documents.find(doc=>doc.id===item.id&&doc.phase===1&&doc.date===item.ownerDate);
+    if(!NE_RE.test(item.id)||!DATE_RE.test(item.date)||!DATE_RE.test(item.ownerDate)||
+       !item.date.startsWith(data.month)||item.ownerDate===item.date||
+       (item.ownerDate.startsWith(data.month)&&!owner)||
+       data.documents.some(doc=>doc.id===item.id&&doc.date===item.date)||
+       commitmentKeys.has(key))throw Error('Observacao de data de NE invalida');
+    assertCents(item.cents);
+    commitmentKeys.add(key);
+  }
   if (data.itemsByDocument !== undefined) {
     if (!data.itemsByDocument || typeof data.itemsByDocument !== 'object' ||
         Array.isArray(data.itemsByDocument)) throw Error('Catálogo de itens inválido');
@@ -209,9 +225,10 @@ export function validateMonth(data) {
     keys.add(key);
     const matched = data.documents.filter(doc => doc.date === c.date && doc.phase === c.phase);
     const additional=appearances.filter(item=>item.date===c.date&&item.phase===c.phase);
-    if (matched.length+additional.length !== c.count ||
+    const dated=c.phase===1?commitmentObservations.filter(item=>item.date===c.date):[];
+    if (matched.length+additional.length+dated.length !== c.count ||
         matched.filter(doc => doc.cents === null).length+
-          additional.filter(item=>!item.amountKnown).length !== c.invalid) {
+          additional.filter(item=>!item.amountKnown).length+dated.filter(item=>item.cents===null).length !== c.invalid) {
       throw Error('Contagem documental divergente');
     }
     if (c.complete && c.reason) throw Error('Consulta completa com motivo parcial');
@@ -221,6 +238,9 @@ export function validateMonth(data) {
   }
   for(const item of appearances){
     if(!keys.has(item.date+'/'+item.phase))throw Error('Aparicao sem cobertura declarada');
+  }
+  for(const item of commitmentObservations){
+    if(!keys.has(item.date+'/1'))throw Error('Observacao de data de NE sem cobertura');
   }
   return data;
 }
@@ -236,7 +256,16 @@ export function validateManifest(data) {
   return data;
 }
 
-export function mergeMonth(existing, month, patches, now = new Date()) {
+export function indexCommitmentOwners(months){
+  const owners=new Map();
+  for(const m of months)for(const doc of m.documents){
+    if(doc.phase!==1||!NE_RE.test(doc.id))continue;
+    if(!owners.has(doc.id))owners.set(doc.id,[]);
+    owners.get(doc.id).push(doc);
+  }
+  return owners;
+}
+export function mergeMonth(existing, month, patches, now = new Date(), {commitmentOwners=null}={}) {
   if (!MONTH_RE.test(month)) throw Error('Competência mensal inválida');
   const original = validateMonth(structuredClone(existing || emptyMonth(month)));
   if (original.month !== month) throw Error('Competência incompatível');
@@ -255,6 +284,17 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
       doc.date===coverage.date && doc.phase===coverage.phase);
     const previousById=new Map(previousDocs.map(doc=>[doc.id,doc]));
     const incomingIds=new Set(documents.map(doc=>doc.id));
+    const oldObservations=(next.commitmentObservations||[]).filter(o=>o.date===coverage.date&&coverage.phase===1);
+    if(incomingIds.size!==documents.length)throw Error('Documento duplicado no mesmo filtro');
+    // Uma lista CGU posterior pode deixar de trazer uma NE sem que ela tenha
+    // desaparecido. Preservar o checkpoint anterior, sem afirmar nova cobertura.
+    if(commitmentOwners&&coverage.phase===1&&
+       (previousDocs.some(d=>NE_RE.test(d.id)&&!incomingIds.has(d.id))||
+        oldObservations.some(o=>!incomingIds.has(o.id)))){
+      if(!coverage.complete)continue;
+      const error=Error('Listagem omitiu NE anteriormente observada');
+      error.code='CGU_NE_LISTING_CHANGED';throw error;
+    }
     // Coleta diaria parcial nunca elimina NE consultada individualmente,
     // mesmo quando trouxe mais linhas; somente dia completo pode reconciliar.
     if(!coverage.complete&&previousDocs.some(doc=>!incomingIds.has(doc.id)))
@@ -276,8 +316,22 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
     next.coverage = next.coverage.filter(c => c.date + '/' + c.phase !== key);
     next.phaseObservations=(next.phaseObservations||[]).filter(item=>
       !(item.date===coverage.date&&item.phase===coverage.phase));
+    next.commitmentObservations=(next.commitmentObservations||[]).filter(o=>
+      !(coverage.phase===1&&o.date===coverage.date));
     const normalized=[];
     for(const doc of structuredClone(documents)){
+      if(commitmentOwners&&doc.phase===1&&NE_RE.test(doc.id)){
+        const candidates=[...next.documents.filter(d=>d.id===doc.id&&d.phase===1),
+          ...(commitmentOwners.get(doc.id)||[]).filter(d=>!d.date.startsWith(month))];
+        if(candidates.length>1)throw Error('Documento em datas diferentes exige revisao');
+        const prior=candidates[0];
+        if(prior&&prior.date!==doc.date){
+          // Nao mover o proprietario, atualizar seu valor pela data da lista,
+          // nem converter diferenca entre valores em reforco/anulacao.
+          next.commitmentObservations.push({id:doc.id,date:doc.date,ownerDate:prior.date,cents:doc.cents});
+          continue;
+        }
+      }
       const owner=next.documents.find(entry=>entry.id===doc.id);
       if(owner){
         if(owner.date!==doc.date)throw Error('Documento em datas diferentes exige revisao');
@@ -376,6 +430,8 @@ export function mergeMonth(existing, month, patches, now = new Date()) {
   if(next.phaseObservations?.length)next.phaseObservations.sort((a,b)=>
     a.date.localeCompare(b.date)||a.phase-b.phase||a.id.localeCompare(b.id));
   else delete next.phaseObservations;
+  if(next.commitmentObservations?.length)next.commitmentObservations.sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  else delete next.commitmentObservations;
   next.relations.sort((a, b) => a.from.localeCompare(b.from) ||
     a.to.localeCompare(b.to) || a.cents - b.cents);
   next.coverage.sort((a, b) => a.date.localeCompare(b.date) || a.phase - b.phase);
@@ -607,10 +663,17 @@ export async function persistWindow(root, patches, now = new Date()) {
     grouped.get(month).push(patch);
   }
   const updatedMonths = [];
+  // Consultas de NE exigem identidade global, inclusive entre competencias.
+  const working=new Map();
+  if(patches.some(p=>p.coverage.phase===1)){
+    for(const m of existingManifest.months)
+      working.set(m,validateMonth(await readJson(join(folder,m+'.json'),null)));
+  }
   for (const [month, list] of [...grouped.entries()].sort()) {
     const path = join(folder, month + '.json');
     const old = await readJson(path, emptyMonth(month));
-    const next = mergeMonth(old, month, list, now);
+    const next = mergeMonth(old, month, list, now,{commitmentOwners:indexCommitmentOwners([...working.values()])});
+    working.set(month,next.data);
     if (!next.changed) continue;
     await atomicWrite(path, JSON.stringify(next.data) + '\n');
     updatedMonths.push(month);
@@ -649,5 +712,10 @@ export async function validatePublishedData(root) {
       throw Error('Arquivo mensal não indexado');
     }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const owners=indexCommitmentOwners(months);
+  for(const m of months)for(const o of m.commitmentObservations||[]){
+    if(!(owners.get(o.id)||[]).some(d=>d.date===o.ownerDate))
+      throw Error('Observacao de data de NE sem documento de referencia');
+  }
   return { manifest, months };
 }

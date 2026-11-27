@@ -19,11 +19,12 @@ test('incremental preserva documento de data conflitante e incorpora fases indep
   await persistWindow(root,[patch('2026-11-25',1,ne)],now);
   const result=await runIncremental({root,now,token:'fake',logger:silent,
     collect:async()=>[patch('2026-11-27',1,ne),patch('2026-11-27',2,ns)]});
-  assert.equal(result.status,'partial');assert.equal(result.mergeConflicts,1);assert.equal(result.accepted,1);
+  assert.equal(result.status,'complete');assert.equal(result.mergeConflicts,0);assert.equal(result.accepted,2);
   const {months}=await validatePublishedData(root);
   assert.equal(months[0].documents.find(d=>d.id===ne).date,'2026-11-25');
   assert.equal(months[0].documents.find(d=>d.id===ns).date,'2026-11-27');
-  assert.ok(!months[0].coverage.some(c=>c.date==='2026-11-27'&&c.phase===1));
+  assert.ok(months[0].coverage.some(c=>c.date==='2026-11-27'&&c.phase===1));
+  assert.deepEqual(months[0].commitmentObservations,[{id:ne,date:'2026-11-27',ownerDate:'2026-11-25',cents:100}]);
  }finally{await rm(root,{recursive:true,force:true})}
 });
 test('simulacao usa acervo existente e nao altera bytes; lote normal e idempotente',async()=>{
@@ -34,7 +35,7 @@ test('simulacao usa acervo existente e nao altera bytes; lote normal e idempoten
   const path=join(root,'data','months','2026-11.json'),before=await readFile(path,'utf8');
   const opts={root,now,token:'fake',logger:silent,collect:async()=>[patch('2026-11-27',1,ne),patch('2026-11-27',2,ns)]};
   const dry=await runIncremental({...opts,dryRun:true});
-  assert.equal(dry.mergeConflicts,1);assert.equal(await readFile(path,'utf8'),before);
+  assert.equal(dry.mergeConflicts,0);assert.equal(await readFile(path,'utf8'),before);
   const normal=await runIncremental({...opts,collect:async()=>[p]});
   assert.equal(normal.status,'complete');assert.deepEqual(normal.updatedMonths,[]);
   assert.equal(await readFile(path,'utf8'),before);
@@ -43,9 +44,9 @@ test('simulacao usa acervo existente e nao altera bytes; lote normal e idempoten
 test('nenhuma fase valida falha; excecao inesperada nao e suprimida',async()=>{
  const root=await mkdtemp(join(tmpdir(),'incremental-'));
  try{
-  const p=patch('2026-11-25',1,ne);await persistWindow(root,[p],now);
+  const p=patch('2026-11-25',2,ns);await persistWindow(root,[p],now);
   await assert.rejects(runIncremental({root,now,token:'fake',logger:silent,
-    collect:async()=>[patch('2026-11-27',1,ne)]}),{code:'CGU_NO_VALID_PHASE'});
+    collect:async()=>[patch('2026-11-27',2,ns)]}),{code:'CGU_NO_VALID_PHASE'});
   assert.throws(()=>planIncrementalPatches([], [{coverage:{date:'2026-11-27',phase:1}}],now));
  }finally{await rm(root,{recursive:true,force:true})}
 });

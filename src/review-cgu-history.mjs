@@ -8,7 +8,7 @@ import {collectDayPhase} from './cgu.mjs';
 import {currentDateInBrazil} from './backfill.mjs';
 import {inScopeDate} from './collection-scope.mjs';
 import {stateKey,readOperationalState,saveOperationalState,validDay} from './operational-state.mjs';
-import {mergeMonth,persistWindow,validatePublishedData} from './store.mjs';
+import {mergeMonth,persistWindow,validatePublishedData,indexCommitmentOwners} from './store.mjs';
 import {safeFailureCategory} from './historical-collector.mjs';
 const DAY=86400000;
 const dateBefore=(date,days)=>new Date(Date.parse(date+'T00:00:00Z')-days*DAY).toISOString().slice(0,10);
@@ -56,21 +56,21 @@ export function planHistoricalReviews(months,{now=new Date(),state={},limit=4}={
  * Conserva campos previamente publicaveis quando a fonte apenas os omite.
  * Nunca muda data/identidade ou interpreta ausencia como anulacao.
  */
-export function prepareHistoricalReview(month,task,patch,owners=new Map()){
+export function prepareHistoricalReview(month,task,patch,owners=new Map(),{allowCommitmentDateObservations=false}={}){
  const c=patch?.coverage;
  if(!c||c.date!==task.date||c.phase!==task.phase||c.complete!==true||c.invalid!==0||
     !Array.isArray(patch.documents)||!Array.isArray(patch.links)||c.count!==patch.documents.length)
    return {ok:false,reason:'incomplete'};
  const old=month.documents.filter(d=>d.date===task.date&&d.phase===task.phase);
  const known=new Map(old.map(d=>[d.id,d]));
- const expected=[...old.map(d=>d.id),...(month.phaseObservations||[]).filter(d=>d.date===task.date&&d.phase===task.phase).map(d=>d.id)];
+ const expected=[...old.map(d=>d.id),...(month.phaseObservations||[]).filter(d=>d.date===task.date&&d.phase===task.phase).map(d=>d.id),...(task.phase===1?(month.commitmentObservations||[]).filter(o=>o.date===task.date).map(o=>o.id):[])];
  const incoming=new Set(patch.documents.map(d=>d.id));
  if(expected.some(id=>!incoming.has(id)))return {ok:false,reason:'missing_confirmed_document'};
  if(incoming.size!==patch.documents.length)return {ok:false,reason:'duplicate_document'};
  const next=structuredClone(patch);
  for(const d of next.documents){
    if(d.date!==task.date||d.phase!==task.phase||d.cents===null||
-      (owners.has(d.id)&&owners.get(d.id)!==d.date))return {ok:false,reason:'identity_or_date_conflict'};
+      (owners.has(d.id)&&owners.get(d.id)!==d.date&&!(allowCommitmentDateObservations&&d.phase===1&&/^158459\d{5}20\d{2}NE\d{6}$/.test(d.id))))return {ok:false,reason:'identity_or_date_conflict'};
    const prior=known.get(d.id);
    if(!prior)continue;
    if(prior.process&&!d.process)d.process=prior.process;
@@ -96,10 +96,10 @@ export async function reviewHistoricalCgu({root=process.cwd(),token,now=new Date
    try{raw=await collect(br(task.date),task.phase,{token,maxPages:30,maxImpactPages:8})}
    catch(e){fail(safeFailureCategory(e));continue}
    const month=byMonth.get(task.month);
-   const result=prepareHistoricalReview(month,task,raw,owners);
+   const result=prepareHistoricalReview(month,task,raw,owners,{allowCommitmentDateObservations:true});
    if(!result.ok){fail(result.reason);continue}
    let outcome;
-   try{outcome=mergeMonth(month,task.month,[result.patch],now)}
+   try{outcome=mergeMonth(month,task.month,[result.patch],now,{commitmentOwners:indexCommitmentOwners([...byMonth.values()])})}
    catch{fail('canonical_validation');continue}
    // Nao marcar sucesso antes de persistir a revisao validada.
    if(outcome.changed){
