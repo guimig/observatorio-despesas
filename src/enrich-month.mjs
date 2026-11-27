@@ -14,6 +14,7 @@ import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './en
 import {resolveItemMovements} from './item-movements.mjs';
 import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
+import {summarizeStoredValueMeanings} from './cgu-value-semantics.mjs';
 import {planDivergenceProbes,runDivergenceProbes} from './cgu-divergence-probe.mjs';
 import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences} from './chronology-enrichment.mjs';
 
@@ -322,6 +323,7 @@ async function main(){
   const probePlan=planDivergenceProbes(months,{cguContracts,state:historyState,now,today,slot,
     excludeIds:tasks.filter(t=>['items','itemHistory'].includes(t.kind)).map(t=>t.id)});
   console.log('Plano de sondagem de divergencias (somente contagens): '+JSON.stringify(probePlan.summary));
+  console.log('Semantica de valores NE (somente contagens): '+JSON.stringify(summarizeStoredValueMeanings(months,{today})));
   if(!tasks.length&&!probePlan.selected.length){
     console.log('Acervo sem documentos pendentes de enriquecimento.');
     return;
