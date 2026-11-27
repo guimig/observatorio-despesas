@@ -26,3 +26,7 @@ test('metadados inacessiveis falham fechado',async()=>{
  const r=await monitorAgenda({token:'test',now,fetcher:async(_u,o)=>{if(o.method==='POST')posts++;return {ok:false,status:403}}});
  assert.equal(r.failed,WATCHED.length);assert.equal(posts,0);
 });
+
+test('fallback de contratos recupera lacunas historicas sem repetir apenas o mes corrente',()=>{
+ assert.equal(WATCHED.find(t=>t.file==='coleta-contratos.yml').inputs.historical,'true');
+});
