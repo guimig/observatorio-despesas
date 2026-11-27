@@ -37,6 +37,7 @@ on:
       - 'src/item-movements.mjs'
       - 'src/enrich-month.mjs'
       - 'src/chronology-enrichment.mjs'
+      - 'src/cgu-divergence-probe.mjs'
       - 'assets/siafi-movement-reconciliation.js'
       - 'src/audit-cgu-interannual.mjs'
   schedule:
