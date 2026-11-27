@@ -19,7 +19,7 @@ async function reportSourceStatus(scans){
   if(process.env.GITHUB_OUTPUT)await appendFile(process.env.GITHUB_OUTPUT,'status='+status+'\n');
   if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,JSON.stringify(summary)+'\n');
 }
-/** Uma rodada a cada quatro privilegia meses de assinatura CGU ainda
+/** Uma rodada a cada quatro privilegia meses de assinatura CGU e seguintes ainda
  * sem cobertura PNCP. Assinatura nao e publicacao: trata-se de busca
  * exploratoria, nao de equivalencia ou cobertura de um contrato. */
 export function planContractRecovery(coverage,cguContracts,{now=new Date(),slot=Math.floor(now.getTime()/28800000)}={}){
@@ -27,13 +27,20 @@ export function planContractRecovery(coverage,cguContracts,{now=new Date(),slot=
  if(!regular||slot%4!==0)return regular;
  const current=brazilMonth(now),counts=new Map();
  for(const c of cguContracts||[]){
-  const month=(c.signed||c.reference||'').slice(0,7);
-  if(inScopeMonth(month)&&month<current&&!closedCatalogCoverage((coverage||[]).find(x=>x.source==='pncp'&&x.month===month)))
-   counts.set(month,(counts.get(month)||0)+1);
+  const first=(c.signed||c.reference||'').slice(0,7);
+  if(!inScopeMonth(first))continue;
+  // Publicacao pode suceder assinatura: consultar tambem os dois meses seguintes,
+  // priorizando primeiro a assinatura e preservando as rodadas gerais.
+  for(let offset=0;offset<=2;offset++){
+   const date=new Date(first+'-01T00:00:00Z');date.setUTCMonth(date.getUTCMonth()+offset);
+   const month=date.toISOString().slice(0,7);
+   if(month<current&&!closedCatalogCoverage((coverage||[]).find(x=>x.source==='pncp'&&x.month===month)))
+    counts.set(month,(counts.get(month)||0)+3-offset);
+  }
  }
  const months=[...counts.keys()].sort((a,b)=>counts.get(b)-counts.get(a)||a.localeCompare(b));
  if(!months.length)return regular;
- const month=months[Math.floor(slot/4)%months.length];
+ const month=months[Math.floor(slot/4)%Math.min(months.length,3)];
  return {month,missing:(coverage||[]).some(x=>x.source==='pncp'&&x.month===month)?[]:['pncp'],pending:['pncp'],reason:'cgu_signature_window'};
 }
 async function main(){
