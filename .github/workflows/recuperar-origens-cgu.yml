@@ -78,6 +78,17 @@ jobs:
           path: ${{ runner.temp }}/observatorio-original-state.json
           key: cgu-original-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: cgu-original-v1-
+      - name: Registrar estado anterior do cache
+        id: state_before
+        if: steps.credential.outputs.enabled == 'true'
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-original-state.json
+        run: |
+          if [ -f "$STATE_PATH" ]; then
+            echo "digest=$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+          else
+            echo 'digest=missing' >> "$GITHUB_OUTPUT"
+          fi
       - name: Planejar selecao sem requisicoes autenticadas
         if: steps.credential.outputs.enabled == 'true'
         env:
@@ -117,8 +128,20 @@ jobs:
           git commit -m 'data: recuperar origens CGU de NEs referenciadas por identificador'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Verificar alteracao do estado operacional
+        id: state_after
+        if: ${{ !cancelled() && steps.credential.outputs.enabled == 'true' && steps.state_before.outcome == 'success' }}
+        env:
+          STATE_PATH: ${{ runner.temp }}/observatorio-original-state.json
+          PREVIOUS_DIGEST: ${{ steps.state_before.outputs.digest }}
+        run: |
+          if [ -f "$STATE_PATH" ] && [ "$(sha256sum "$STATE_PATH" | cut -d ' ' -f1)" != "$PREVIOUS_DIGEST" ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/cache/save@v5
-        if: ${{ !cancelled() && steps.credential.outputs.enabled == 'true' }}
+        if: ${{ !cancelled() && steps.state_after.outputs.changed == 'true' }}
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/observatorio-original-state.json
