@@ -283,7 +283,7 @@ async function renderCommitmentPeriod(month){
   const row=summary.periods[month];
   amount.textContent=row&&row.netCents!==null?fmtMoney(row.netCents):'Sem subtotal conciliado';
   note.textContent=(row?fmtCount(row.identities)+' NEs · '+fmtCount(row.movements)+' operações no período':'Nenhuma operação conciliada no período')+
-   ' · '+fmtCount(summary.reconciled)+'/'+fmtCount(summary.identities)+' NEs do acervo conciliadas';
+   ' · '+fmtCount(summary.reconciled)+'/'+fmtCount(summary.identities)+' NEs de 2024 em diante conciliadas';
   details.textContent=row&&row.netCents!==null?
    'Inclusões de itens '+fmtMoney(row.initialCents)+' · Reforços '+fmtMoney(row.reinforcementCents)+
    ' · Anulações '+fmtMoney(row.annulmentCents)+' · Operações de NEs de exercícios anteriores (fora do subtotal): reforços '+fmtMoney(row.priorYearReinforcementCents)+

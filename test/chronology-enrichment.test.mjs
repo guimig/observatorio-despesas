@@ -76,3 +76,17 @@ test('identidade duplicada nao vira prioridade nem entra em subtotal',()=>{
  const r=buildCommitmentChronology([a,a],{today});
  assert.equal(r.pendingReasons.duplicate_identity,1);
 });
+
+test('NE anterior ao recorte permanece referenciada mas não entra na fila ou denominador',()=>{
+ const oldId=id(1,2023);
+ const a=month([{doc:{...doc(1),id:oldId},items:[pending(1,100)]},{doc:doc(2),items:[pending(1,100)]}]);
+ const r=buildCommitmentChronology([a],{today});
+ assert.equal(r.identities,1);assert.equal(r.pending,1);assert.equal(r.beforeCutoffIdentities,1);
+ const {tasks}=planChronologyEnrichment([{kind:'items',id:oldId,month:'2026-11'},task(2)],[a],{now});
+ assert.ok(!tasks.some(t=>t.id===oldId));assert.equal(tasks.filter(t=>t.id===id(2)).length,1);
+});
+test('soma divergente de itens é motivo próprio antes mesmo de recuperar históricos',()=>{
+ const a=month([{doc:doc(1),items:[pending(1,80)]}]);
+ const r=buildCommitmentChronology([a],{today});
+ assert.deepEqual(r.pendingReasons,{catalog_amount_mismatch:1});
+});

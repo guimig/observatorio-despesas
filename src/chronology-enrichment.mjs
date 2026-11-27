@@ -143,7 +143,10 @@ export function planChronologyEnrichment(base,months,{
  priorityHistory.push(...repairTasks.map(t=>priorityTask(t,'history_review')));
  const eligible=t=>{
    const record=byId.get(t.id);
-   return record?.owners.length===1&&!recentlyAttempted(record,t,state,now,1);
+   if(record?.owners.length!==1)return false;
+   const item=t.kind==='itemHistory'?record.owners[0].items?.find(i=>i.seq===t.seq):null;
+   const freshRequired=item&&requiresCanonicalHistoryCheckpoint(record,item);
+   return !recentlyAttempted(record,t,state,now,t.recheck&&!freshRequired?7:1);
  };
  const baseItems=base.filter(t=>t.kind==='items');
  const baseHistory=base.filter(t=>t.kind==='itemHistory');

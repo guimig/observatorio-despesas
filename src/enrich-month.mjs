@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import {createCguBudget,collectionLimits} from './cgu-budget.mjs';
-import {inScopeMonth} from './collection-scope.mjs';
+import {inScopeMonth,inScopeNe} from './collection-scope.mjs';
 import {stateKey,validDay,readOperationalState,saveOperationalState} from './operational-state.mjs';
 import { join, resolve } from 'node:path';
 import { validateManifest, validateMonth, persistEnrichment,
@@ -43,7 +43,7 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
   const selectedPayments=rotatePending(payments,bounded(maxPayments,15,50),slot);
-  const items=month.documents.filter(doc=>doc.phase===1&&
+  const items=month.documents.filter(doc=>doc.phase===1&&inScopeNe(doc.id)&&
     (!Object.hasOwn(month.itemsByDocument||{},doc.id)||doc.itemsDetailVersion!==2))
     .sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id))
     .map(doc=>doc.id);
@@ -52,7 +52,7 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
   // antes de se iniciar uma nova rodada de notas ainda inteiramente pendentes.
   // Reservar no maximo um terco do lote preserva rodizio e evita monopolizacao.
   const partialHistories=[],newHistories=[];
-  for(const doc of month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)){
+  for(const doc of month.documents.filter(doc=>doc.phase===1&&inScopeNe(doc.id)&&doc.itemsDetailVersion===2)){
     const all=month.itemsByDocument?.[doc.id]||[];
     const pending=all.filter(item=>item.historyChecked!==true);
     const destination=all.some(item=>item.historyChecked===true)?
@@ -77,7 +77,7 @@ export function planEnrichment(month,{maxLiquidations=12,maxPayments=15,maxItems
   const nowDay=Date.parse(today+'T00:00:00Z');
   const referenceYear=Number(today.slice(0,4));
   const rechecks=[];
-  for(const doc of month.documents.filter(doc=>doc.phase===1&&doc.itemsDetailVersion===2)){
+  for(const doc of month.documents.filter(doc=>doc.phase===1&&inScopeNe(doc.id)&&doc.itemsDetailVersion===2)){
     // A CGU pode registrar movimentacoes posteriores ao exercicio da NE;
     // por isso as NEs antigas precisam de revisao mais frequente.
     const commitmentYear=Number(doc.id.slice(11,15));
@@ -140,7 +140,7 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
  const today=now.toISOString().slice(0,10),cutoff=new Date(now.getTime()-30*86400000).toISOString().slice(0,10);
  const lists={liquidation:[],payment:[],items:[]};
  for(const doc of month.documents){
-  const kind=doc.phase===1&&doc.itemsDetailVersion===2&&Object.hasOwn(month.itemsByDocument||{},doc.id)?'items':
+  const kind=doc.phase===1&&inScopeNe(doc.id)&&doc.itemsDetailVersion===2&&Object.hasOwn(month.itemsByDocument||{},doc.id)?'items':
    doc.phase===2&&doc.liquidationLinksChecked===true?'liquidation':
    doc.phase===3&&doc.paymentLinksChecked===true?'payment':null;
   if(!kind)continue;
@@ -221,7 +221,7 @@ async function main(){
     maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks
   });
   console.log('Plano de conciliacao NE (somente contagens): '+JSON.stringify({
-    identities:beforeChronology.identities,reconciled:beforeChronology.reconciled,
+    identities:beforeChronology.identities,beforeCutoffIdentities:beforeChronology.beforeCutoffIdentities,reconciled:beforeChronology.reconciled,
     pending:beforeChronology.pending,pendingReasons:beforeChronology.pendingReasons,...chronologyPlan
   }));
   if(!tasks.length){
