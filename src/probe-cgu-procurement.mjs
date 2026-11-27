@@ -14,8 +14,8 @@ const UG=new Set(['158459','158125']);
 const label=s=>typeof s==='string'?s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,' ').trim().toLowerCase():'';
 const fieldNames=obj=>obj&&typeof obj==='object'&&!Array.isArray(obj)?Object.keys(obj).filter(k=>/^[A-Za-z0-9_-]{1,60}$/.test(k)).sort().slice(0,60):[];
 function digits(value,pattern){return ['string','number'].includes(typeof value)&&pattern.test(String(value))?String(value):null}
-export function selectProcesses(notices=[],contracts=[]){
- const candidates=[...notices,...contracts].map(r=>r.process).filter(p=>typeof p==='string'&&P.test(p)&&Number(P.exec(p)[1])>=2024);
+export function selectProcesses(notices=[],contracts=[],months=[]){
+ const candidates=[...notices,...contracts,...months.flatMap(m=>m.documents.filter(d=>d.phase===1))].map(r=>r.process).filter(p=>typeof p==='string'&&P.test(p)&&Number(P.exec(p)[1])>=2024);
  return [...new Set(candidates)].sort((a,b)=>Number(b.startsWith('23349.'))-Number(a.startsWith('23349.'))||b.slice(13,17).localeCompare(a.slice(13,17))||a.localeCompare(b)).slice(0,5);
 }
 export function procurementKey(row,modalities){
@@ -60,7 +60,7 @@ export async function probeCguProcurement({token,notices=[],contracts=[],months=
  const purchases=[],contractRows=[];
  const summarizeList=r=>({status:r.status,count:r.rows.length,fields:fieldNames(r.rows[0]),
   purchaseFields:fieldNames(r.rows[0]?.licitacao),unitFields:fieldNames(r.rows[0]?.unidadeGestora)});
- for(const process of selectProcesses(notices,contracts)){
+ for(const process of selectProcesses(notices,contracts,months)){
   const r=await call('licitacoes/por-processo',{processo:process.replace(/\D/g,'')});
   report.processLookups.push(summarizeList(r));
   // A consulta por processo e somente um caminho de descoberta; nao equivale a vinculo PNCP.
@@ -74,7 +74,7 @@ export async function probeCguProcurement({token,notices=[],contracts=[],months=
   return {dataInicial:'01/'+mm+'/'+year,dataFinal:String(last)+'/'+mm+'/'+year,codigoOrgao:'26422',pagina:'1'};
  };
  report.monthlySamples=[];
- for(const year of [date.getUTCFullYear(),date.getUTCFullYear()-1].filter(y=>y>=2024)){
+ for(const year of [date.getUTCFullYear(),date.getUTCFullYear()-1,date.getUTCFullYear()-2].filter(y=>y>=2024)){
   const q=dates(year),r=await call('licitacoes',q),c=await call('contratos',q);
   report.monthlySamples.push({year,purchase:summarizeList(r),contract:{status:c.status,count:c.rows.length,fields:fieldNames(c.rows[0]),unitFields:fieldNames(c.rows[0]?.unidadeGestora)}});
   purchases.push(...r.rows);contractRows.push(...c.rows);
@@ -98,7 +98,7 @@ export async function probeCguProcurement({token,notices=[],contracts=[],months=
   if(id&&(UG.has(ug)||UG.has(buying))&&year.some(v=>Number(v)>=2024))ids.add(id);
  }
  report.contractKeys={rows:contractRows.length,usable:ids.size};
- for(const id of [...ids].slice(0,3)){
+ for(const id of [...ids].slice(0,6)){
   const r=await call('contratos/documentos-relacionados',{id});
   report.contractLookups.push({status:r.status,fields:fieldNames(r.rows[0]),...identityCounts(r.rows,known,'empenho')});
  }

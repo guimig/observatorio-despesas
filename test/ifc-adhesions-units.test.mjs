@@ -13,7 +13,14 @@ test('IFC aderente a ata externa, nao autorizacao de terceiros nem desconhecido'
  assert.equal(isIfcAdhesion({...c,orgCnpj:'01612452000197'}),false);
  assert.equal(isIfcAdhesion(normalizePncp({...raw,frutoAdesao:false})),false);
  assert.equal(isIfcAdhesion(normalizePncp({...raw,frutoAdesao:undefined,possibilidadeAdesao:true})),false);
- assert.equal(normalizePncp({...raw,numeroControlePncpAta:'01612452000197-1-000006/2025-000001'}).ataControl,undefined);
+ const distinct='01612452000197-1-000006/2025-000001';
+ const linked=normalizePncp({...raw,numeroControlePncpAta:distinct});
+ assert.equal(linked.ataControl,distinct);
+ assert.equal(linked.procurementId,purchase);
+ assert.equal(normalizePncp({...raw,frutoAdesao:false,numeroControlePncpAta:distinct}).ataControl,undefined);
+ const data=mergeProcurement(blankProcurement(),[{source:'pncp',month:'2026-11',records:[linked],status:'complete',skipped:0}],now).data;
+ assert.equal(validateProcurement(data).contracts[0].ataControl,distinct);
+ assert.equal(mergePncpRecord(linked,{...linked,adhesion:false},{kind:'contract',now}).record.ataControl,undefined);
 });
 test('lista de Araquari exige unidade 158459 no próprio instrumento aderente',()=>{
  const contract=base();

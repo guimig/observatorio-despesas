@@ -64,8 +64,10 @@ test('NE curta com cinco concordancias gera somente indicio contextual, nunca re
  assert.deepEqual(result.refs,[]);assert.deepEqual(result.details,[]);
  assert.equal(result.context.length,1);assert.equal(result.context[0].pi,'IFC-0001');
  assert.equal(validateContextualCommitments(result.context,instrument),true);
- for(const bad of [{...doc,date:'2026-11-09'},{...doc,cents:1},{...doc,partyRef:'99999999000100'},{...doc,process:'23349.000000/2026-00'}])
+ for(const bad of [{...doc,cents:1},{...doc,partyRef:'99999999000100'},{...doc,process:'23349.000000/2026-00'}])
   assert.deepEqual(extractContextualCommitments([short],instrument,[bad]),[]);
+ assert.equal(extractContextualCommitments([short],instrument,[{...doc,date:'2026-11-09'}]).length,1);
+ assert.equal(extractContextualCommitments([{...short,numeroPlanoInterno:null}],instrument,[doc])[0].pi,undefined);
  assert.deepEqual(extractContextualCommitments([short],instrument,[doc,{...doc,id:'158459999992026NE000123'}]),[]);
  assert.deepEqual(extractContextualCommitments([{...short,tipoPessoa:'PF'}],instrument,[doc]),[]);
  const original=mergeProcurement(null,[{source:'pncp',month:'2026-11',records:[instrument],status:'complete',skipped:0}]).data;

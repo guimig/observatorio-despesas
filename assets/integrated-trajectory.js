@@ -3,6 +3,7 @@
  * Nunca inferir pagamento de NS especifica, saldo de ata ou dotacao. */
 import {buildCommitmentTrajectories} from './trajectory.js';
 import {extractAraquariNeEvidence,matchDocumentContract} from './procurement-links.js';
+import {commitmentChronologyEvidence} from './siafi-movement-reconciliation.js';
 const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const PURCHASE=/^\d{14}-1-\d{6}\/20\d{2}$/;
 const ATA=/^(\d{14}-1-\d{6}\/20\d{2})-(\d{6})$/;
@@ -22,27 +23,35 @@ export function ataControlFor(ata){
   ata.id!==ata.procurementId+':ata:'+ata.sequence)return null;
  return ata.procurementId+'-'+String(ata.sequence).padStart(6,'0');
 }
-function strongContext(doc,c){
+/** Identidade curta e contexto continuam candidatos: data CGU e listagem, nao emissao. */
+export function contextualEvidenceMatches(doc,detail,observations=[]){
+ return doc?.phase===1&&detail?.id===doc.id&&
+  Number.isSafeInteger(detail.totalCents)&&detail.totalCents>0&&
+  [doc.cents,...observations.filter(o=>o.id===doc.id).map(o=>o.cents)].includes(detail.totalCents);
+}
+function strongContext(doc,c,observations){
  return c.source==='pncp'&&c.commitmentStatus==='complete'&&doc?.phase===1&&
   /^\d{14}$/.test(c.supplierCnpj||'')&&c.supplierCnpj===doc.partyRef&&
   PROC.test(c.process||'')&&c.process===doc.process&&
-  (c.commitmentContext||[]).some(row=>row.id===doc.id&&row.issueDate===doc.date&&row.totalCents===doc.cents);
+  (c.commitmentContext||[]).some(row=>contextualEvidenceMatches(doc,row,observations));
 }
 const instrumentKey=c=>c.id||c.pncpId;
 export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],arpDetails=[],tender=null,totalMonths=months.length}={}){
  const entries=buildCommitmentTrajectories(months);
- const byNe=new Map(entries.map(e=>[e.id,e])),docs=new Map(),originsByDoc=new Map();
+ const byNe=new Map(entries.map(e=>[e.id,e])),docs=new Map(),originsByDoc=new Map(),observations=new Map(),owners=new Map();
+ for(const m of months){for(const o of m.commitmentObservations||[])add(observations,o.id,o);for(const d of m.documents)add(owners,d.id,m.month);}
  for(const m of months)for(const d of m.documents)docs.set(d.id,d);
  for(const entry of entries)for(const link of entry.links){
   add(originsByDoc,link.id,{entry,link});
  }
- const byShort=new Map(),byProcess=new Map();
+ const byShort=new Map(),byProcess=new Map(),shortInstruments=new Map();
  for(const entry of entries){
   if(!entry.document||!inScope(entry.id))continue;
   add(byShort,entry.id.slice(-12),entry.document);
   if(PROC.test(entry.document.process||''))add(byProcess,entry.document.process,entry.document);
  }
  const instruments=new Map(contracts.filter(c=>instrumentKey(c)).map(c=>[instrumentKey(c),c]));
+ for(const [id,c] of instruments)if(/^20\d{2}NE\d{6}$/.test(c.number||'')&&String(c.unitCode)==='158459')add(shortInstruments,c.number,id);
  const instrumentByPncp=new Map();
  for(const [id,c] of instruments)if(c.pncpId)add(instrumentByPncp,c.pncpId,id);
  const noticeMap=new Map(notices.map(n=>[n.pncpId,n]));
@@ -88,14 +97,22 @@ export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],
     for(const d of byShort.get(raw)||[])candidate.set(d.id,d);
    }
   }
+  for(const row of c.commitmentContext||[]){const d=byNe.get(row.id)?.document;if(d&&inScope(d.id))candidate.set(d.id,d);}
   if(PROC.test(c.process||''))for(const d of byProcess.get(c.process)||[])candidate.set(d.id,d);
   const edges=[];
   for(const [ne,doc] of candidate){
    const evidence=matchDocumentContract(doc,c);
-   const contextual=strongContext(doc,c);
+   const obs=observations.get(ne)||[];
+   const contextual=strongContext(doc,c,obs);
    if(!evidence&&!contextual)continue;
-   const level=evidence?.level==='confirmed'?'confirmed':contextual?'contextual_candidate':evidence.level;
-   const reason=level==='contextual_candidate'?'NE abreviada, CNPJ, processo, data e valor coincidentes; identidade SIAFI integral não declarada':evidence.reason;
+   const uniqueShort=String(c.unitCode)==='158459'&&c.number===ne.slice(-12)&&
+    (byShort.get(c.number)||[]).length===1&&(shortInstruments.get(c.number)||[]).length===1&&
+    owners.get(ne)?.length===1&&PROC.test(c.process||'')&&c.process===doc.process&&
+    /^\d{14}$/.test(c.supplierCnpj||'')&&c.supplierCnpj===doc.partyRef&&
+    Number.isSafeInteger(c.amountCents)&&c.amountCents>0&&[doc.cents,...obs.map(o=>o.cents)].includes(c.amountCents);
+   const level=evidence?.level==='confirmed'?'confirmed':contextual?'contextual_candidate':uniqueShort?'high_confidence':evidence.level;
+   const reason=level==='contextual_candidate'?'PNCP declara NE curta, CNPJ, processo e valor compatíveis; data de emissão PNCP independente da listagem CGU; identidade integral não declarada':
+    level==='high_confidence'?'Unidade administrativa, NE curta, processo, CNPJ e valor coincidentes, sem concorrente no acervo carregado; não é confirmação SIAFI':evidence.reason;
    edges.push({instrumentId:id,ne,level,reason});
   }
   for(const ne of declared)if(!candidate.has(ne))edges.push({instrumentId:id,ne,level:'declared_ne',reason:'NE integral declarada; documento CGU não localizado no acervo carregado'});
@@ -116,7 +133,7 @@ export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],
   }
  }
  return {entries,byNe,docs,originsByDoc,instruments,noticeMap,ataMap,byAtaPurchase,details,tenderByPurchase,
-  byInstrument,neEdges,ataEdges,noticeEdges,ataInstruments,noticeInstruments,
+  byInstrument,neEdges,ataEdges,noticeEdges,ataInstruments,noticeInstruments,observations,owners,
   loadedMonths:months.length,totalMonths,complete:totalMonths>0&&months.length===totalMonths};
 }
 export function neEvidenceLevel(index,id){
@@ -155,11 +172,13 @@ export function scopeFinancialEvidence(index,kind,id){
   const row={ne,edges,entry:index.byNe.get(ne)};
   result.confirmed.push(row);
   const allConfirmed=unique((index.neEdges.get(ne)||[]).filter(e=>e.level==='confirmed').map(e=>e.instrumentId));
-  if(allConfirmed.length!==1||!row.entry?.document||row.entry.issues?.length||
+  if(allConfirmed.length!==1||!row.entry?.document||row.entry.issues?.length||index.owners.get(ne)?.length!==1||
      (kind==='ata'&&(index.ataEdges.get(allConfirmed[0])||[]).length!==1)){
    result.excluded.push(ne);continue;
   }
-  safeAdd(result.commitment,row.entry.document.cents);
+  const chronological=commitmentChronologyEvidence(row.entry.document,row.entry.items,index.observations.get(ne)||[]);
+  safeAdd(result.commitment,chronological.status==='reconciled'?chronological.reportedCents:
+    (index.observations.get(ne)||[]).length?null:row.entry.document.cents);
   for(const link of row.entry.liquidations){safeAdd(result.liquidation,link.cents);liqDocs.add(link.id);}
   for(const link of row.entry.payments){safeAdd(result.payment,link.cents);payDocs.add(link.id);}
  }
@@ -169,7 +188,7 @@ export function scopeFinancialEvidence(index,kind,id){
 export function trajectoryMatches(index,entry,query){
  const q=labelText(query);if(!q)return true;
  const fields=[entry.id,entry.document?.process,entry.document?.partyRef,entry.document?.description,
-  ...Object.values(entry.document?.nature||{}),...entry.links.map(l=>l.id)];
+  ...Object.values(entry.document?.nature||{}),...entry.links.map(l=>l.id),...(entry.items||[]).flatMap(i=>[i.purchaseItem,i.description])];
  for(const e of index.neEdges.get(entry.id)||[]){
   const c=index.instruments.get(e.instrumentId);
   fields.push(c?.number,c?.pncpId,c?.process,c?.object);
@@ -181,9 +200,12 @@ export function trajectoryMatches(index,entry,query){
 /** Cruzamento de itens: sequencial extraido de descricao CGU e referencia
  * a catalogo exato; nao prova identidade do item, consumo ou saldo. */
 export function itemReferenceCandidates(index,entry){
- const strict=unique((index.neEdges.get(entry.id)||[]).filter(e=>e.level==='confirmed').map(e=>e.instrumentId));
- if(strict.length!==1||!entry.document||entry.issues?.length)return [];
- const id=strict[0],instrument=index.instruments.get(id);
+ const edges=index.neEdges.get(entry?.id)||[];
+ const strict=unique(edges.filter(e=>e.level==='confirmed').map(e=>e.instrumentId));
+ const candidates=unique(edges.filter(e=>['high_confidence','contextual_candidate'].includes(e.level)).map(e=>e.instrumentId));
+ const selected=strict.length?strict:candidates;
+ if(selected.length!==1||!entry?.document||entry.issues?.length||index.owners.get(entry.id)?.length!==1)return [];
+ const id=selected[0],instrument=index.instruments.get(id),evidence=strict.length?'confirmed':'candidate';
  const aa=index.ataEdges.get(id)||[];
  if(aa.length>1)return [];
  const purchase=instrument.procurementId;
@@ -202,7 +224,7 @@ export function itemReferenceCandidates(index,entry){
     i.supplierCnpj&&i.supplierCnpj===entry.document.partyRef&&i.supplierCnpj===instrument.supplierCnpj&&!i.excluded);
   const units=(arp?.unitItems||[]).filter(i=>Number(i.number)===number);
   if(ti.length!==1&&ai.length!==1)continue;
-  result.push({seq:item.seq,number,purchaseId:purchase,instrumentId:id,ne:entry.id,item,
+  result.push({seq:item.seq,number,purchaseId:purchase,instrumentId:id,ne:entry.id,item,evidence,
     tender:ti.length===1?ti[0]:null,ata:ai.length===1?ata:null,
     ataItem:ai.length===1?ai[0]:null,unitRecords:ai.length===1&&units.length===1?units[0].units:[]});
  }
@@ -211,7 +233,7 @@ export function itemReferenceCandidates(index,entry){
 /** Direct reverse traversal of already-qualified NE item candidates; no duplicate database. */
 export function scopeItemReferences(index,kind,id){
  const ids=unique(instrumentAssociations(index,kind,id).flatMap(a=>(index.byInstrument.get(a.instrumentId)||[])
-  .filter(e=>e.level==='confirmed').map(e=>e.ne)));
+  .filter(e=>['confirmed','high_confidence','contextual_candidate'].includes(e.level)).map(e=>e.ne)));
  return ids.flatMap(ne=>{
   const entry=index.byNe.get(ne);return entry?itemReferenceCandidates(index,entry):[];
  }).filter(r=>kind==='notice'?r.purchaseId===id:kind==='ata'?r.ata?.id===id:r.instrumentId===id);
@@ -246,13 +268,23 @@ export function summarizeIntegratedCoverage(index){
   for(const l of e.payments)payments.add(l.id);
  }
  const specific=instruments.filter(c=>index.ataEdges.has(instrumentKey(c)));
- const itemRefs=confirmed.flatMap(e=>itemReferenceCandidates(index,e));
+ const itemRefs=entries.flatMap(e=>itemReferenceCandidates(index,e));
+ const high=entries.filter(e=>neEvidenceLevel(index,e.id)!=='confirmed'&&(index.neEdges.get(e.id)||[]).some(x=>x.level==='high_confidence'||x.level==='contextual_candidate'));
+ const impact=new Set(index.entries.flatMap(e=>e.links.filter(l=>Number.isSafeInteger(l.cents)).map(l=>l.id)));
+ const paymentsInIndex=[...index.docs.values()].filter(d=>d.phase===3);
+ const liquidationsInIndex=[...index.docs.values()].filter(d=>d.phase===2);
  const arpRefs=[...index.byAtaPurchase.keys()].flatMap(p=>noticeAtaItemReferences(index,p));
  return {loadedMonths:index.loadedMonths,totalMonths:index.totalMonths,
   commitments:entries.length,confirmedCommitments:confirmed.length,indicatedCommitments:indications.length,
+  highConfidenceCandidates:high.length, paymentDocuments:paymentsInIndex.length,paymentDocumentsWithImpact:paymentsInIndex.filter(d=>impact.has(d.id)).length,
+  liquidationDocuments:liquidationsInIndex.length,liquidationDocumentsWithImpact:liquidationsInIndex.filter(d=>impact.has(d.id)).length,
+  missingPurchases:new Set(instruments.filter(c=>PURCHASE.test(c.procurementId||'')&&!index.noticeMap.has(c.procurementId)).map(c=>c.procurementId)).size,
+  missingSpecificAtas:new Set([...index.ataEdges.values()].flat().filter(e=>!e.ata).map(e=>e.ataId)).size,
+  candidateItemRefs:itemRefs.filter(r=>r.evidence==='candidate').length,
   relatedDocumentsChecked:checked.length,relatedNeChecked:checked.filter(d=>d.phase===1).length,
   cguRelatedPairs:direct.length,cguRelatedOnlyPairs:relatedOnly.length,
   cguRelatedOnlyDocuments:new Set(relatedOnly.map(l=>l.id)).size,
+  relatedMissingNe:index.entries.filter(e=>!e.document&&inScope(e.id)&&e.links.some(l=>l.relatedCgu)).length,
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
   neItemCandidates:itemRefs.length,neItemsWithAta:itemRefs.filter(r=>r.ataItem).length,
@@ -264,4 +296,29 @@ export function summarizeIntegratedCoverage(index){
   instrumentsWithLocalAta:specific.filter(c=>(index.ataEdges.get(instrumentKey(c))||[]).some(a=>a.ata)).length,
   instrumentsWithMultipleAtas:specific.filter(c=>(index.ataEdges.get(instrumentKey(c))||[]).length>1).length,
   instrumentsWithConfirmedNe:instruments.filter(c=>(index.byInstrument.get(instrumentKey(c))||[]).some(e=>confirmedIds.has(e.ne)&&e.level==='confirmed')).length};
+}
+
+
+/** Indice derivado, apenas identidades publicas e meses; nunca replica valores,
+ * textos, favorecidos ou documentos. Mantem multiplos donos para auditoria. */
+export function buildRelationshipLocator(months){
+ const owners=new Map(),neighbors=new Map();
+ const addMonth=(map,id,month)=>{if(!map.has(id))map.set(id,new Set());map.get(id).add(month);};
+ const valid=id=>typeof id==='string'&&/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/.test(id);
+ const pairs=[];
+ for(const m of months){
+  for(const d of m.documents||[])if(valid(d.id)){
+   addMonth(owners,d.id,m.month);
+   for(const other of d.relatedIds||[])if(valid(other))pairs.push([d.id,other,m.month]);
+  }
+  for(const r of m.relations||[])if(valid(r.from)&&valid(r.to))pairs.push([r.from,r.to,m.month]);
+  for(const o of m.commitmentObservations||[])if(valid(o.id))addMonth(neighbors,o.id,m.month);
+ }
+ for(const [a,b,m] of pairs){
+  addMonth(neighbors,a,m);addMonth(neighbors,b,m);
+  for(const month of owners.get(a)||[])addMonth(neighbors,b,month);
+  for(const month of owners.get(b)||[])addMonth(neighbors,a,month);
+ }
+ const encode=m=>Object.fromEntries([...m].sort(([a],[b])=>a.localeCompare(b)).map(([id,s])=>[id,[...s].sort()]));
+ return {schema_version:1,unit:'158459',months:months.map(m=>m.month).sort(),owners:encode(owners),neighbors:encode(neighbors)};
 }

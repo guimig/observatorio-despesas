@@ -14,7 +14,7 @@ async function main(){
     return;
   }
   const selected=planMissingNotices(contracts,notices,{
-    count:process.env.PNCP_NOTICES_DETAIL_BATCH||30
+    count:process.env.PNCP_NOTICES_DETAIL_BATCH||30,slot:Math.floor(Date.now()/86400000)
   });
   console.log('Recuperação histórica por ID PNCP: '+selected.length+
     ' contratação(ões) ausentes do catálogo de editais.');

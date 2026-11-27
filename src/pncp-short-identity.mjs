@@ -19,7 +19,7 @@ export function indexLocalCommitments(documents){
 }
 export const emptyShortAudit=()=>({shortRows:0,shortWithPi:0,numberMatch:0,uniqueNumber:0,
  numberAndCreditor:0,numberCreditorDate:0,numberCreditorProcess:0,
- numberCreditorDateProcess:0,allIncludingValue:0,uniqueAllIncludingValue:0});
+ numberCreditorDateProcess:0,allIncludingValue:0,uniqueAllIncludingValue:0,numberCreditorProcessValue:0,uniqueNumberCreditorProcessValue:0});
 export function auditShortCommitments(rows,contract,byShort){
  const result=emptyShortAudit();
  if(!(byShort instanceof Map))throw Error('Indice local invalido');
@@ -38,6 +38,7 @@ export function auditShortCommitments(rows,contract,byShort){
   result.numberAndCreditor++;
   const date=typeof row.dataEmissaoEmpenho==='string'?row.dataEmissaoEmpenho.slice(0,10):'';
   const process=typeof contract?.process==='string'&&PROC.test(contract.process)?contract.process:null;
+  // Coincidencia de data da listagem apenas; nao comprova emissao.
   const dated=creditor.filter(d=>date&&d.date===date);
   const processed=creditor.filter(d=>process&&d.process===process);
   if(dated.length)result.numberCreditorDate++;
@@ -45,6 +46,9 @@ export function auditShortCommitments(rows,contract,byShort){
   const strong=dated.filter(d=>process&&d.process===process);
   if(strong.length)result.numberCreditorDateProcess++;
   const cents=typeof row.valorTotal==='number'?parseMoneyCents(row.valorTotal):null;
+  const withoutDate=processed.filter(d=>cents!==null&&d.cents===cents);
+  if(withoutDate.length)result.numberCreditorProcessValue++;
+  if(withoutDate.length===1)result.uniqueNumberCreditorProcessValue++;
   const complete=strong.filter(d=>cents!==null&&d.cents===cents);
   if(complete.length)result.allIncludingValue++;
   if(complete.length===1)result.uniqueAllIncludingValue++;

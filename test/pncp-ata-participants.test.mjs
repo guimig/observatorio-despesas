@@ -97,3 +97,10 @@ test('reconferencia de papeis identicos fica no cache sem apagar primeira eviden
  assert.equal(changed.checkedAt,'2026-11-26');assert.deepEqual(changed.campusRoles,[2]);
  assert.notEqual(participationKey(first),participationKey(changed));
 });
+
+test('papel candidato do CNPJ permanece separado do papel confirmado',()=>{
+ const first=mergeParticipantCheck(null,ata.id,[],'2026-11-27',{operational:true,candidates:[2]});
+ assert.deepEqual(first.campusRoles,[]);assert.deepEqual(first.candidateRoles,[2]);
+ assert.equal(validateParticipants({schema_version:1,checks:[first]}).checks.length,1);
+ assert.strictEqual(mergeParticipantCheck(first,ata.id,[],'2026-11-28',{operational:true,candidates:[2]}),first);
+});

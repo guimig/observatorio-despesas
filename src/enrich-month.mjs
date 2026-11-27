@@ -156,6 +156,39 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
  }
  return lists;
 }
+/** Usa evidencias de identidade CGU para completar impactos ainda sem valor.
+ * Substitui no maximo 40% das vagas de cada fase; preserva cotas e rodizio. */
+export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Date()}={}){
+ const docs=new Map(),pairs=new Set(),wanted=new Map();
+ for(const m of months){for(const d of m.documents){if(!docs.has(d.id))docs.set(d.id,[]);docs.get(d.id).push({doc:d,month:m});}
+  for(const r of m.relations)pairs.add(r.from+'>'+r.to);}
+ for(const [id,rows] of docs)if(rows.length===1){
+  const d=rows[0].doc;
+  for(const other of d.relatedIds||[]){
+   const ne=d.phase===1?id:other,from=d.phase===1?other:id;
+   if(!/^158459\d{5}20\d{2}NE\d{6}$/.test(ne)||!inScopeNe(ne)||pairs.has(from+'>'+ne))continue;
+   const found=docs.get(from);if(found?.length!==1||![2,3].includes(found[0].doc.phase))continue;
+   const {doc,month}=found[0],kind=doc.phase===2?'liquidation':'payment';
+   const recheck=doc.phase===2?doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true;
+   const last=state[detailKey(month,from,kind)];
+   if(validDay(last)&&Date.parse(now.toISOString().slice(0,10))-Date.parse(last)<7*86400000)continue;
+   wanted.set(from,{kind,id:from,month:month.month,recheck});
+  }
+ }
+ const queue=[...base],selected=[];
+ for(const kind of ['payment','liquidation']){
+  const targets=rotatePending([...wanted.values()].filter(t=>t.kind===kind).sort((a,b)=>a.id.localeCompare(b.id)),wanted.size,slot);
+  const quota=Math.min(targets.length,Math.floor(base.filter(t=>t.kind===kind).length*.4));
+  for(const t of targets.slice(0,quota)){
+   let at=queue.findIndex(x=>x.kind===kind&&x.id===t.id);
+   if(at<0)at=queue.findLastIndex(x=>x.kind===kind&&!targets.some(y=>y.id===x.id));
+   if(at<0)continue;
+   queue.splice(at,1);selected.push(t);
+  }
+ }
+ // Mantem tipos intercalados e tamanho total inalterado.
+ return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected,...queue].filter(t=>t.kind===k)),base.length),selected:selected.length};
+}
 export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
   review:review?planDetailRechecks(m,{state:args.historyState||{},now:args.now||new Date(),slot:args.slot||0}):{}}));
@@ -215,7 +248,9 @@ async function main(){
   const now=new Date(),today=currentDateInBrazil(now);
   const beforeChronology=buildCommitmentChronology(months,{today});
   const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
-  const base=planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)});
+  const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now});
+  const base=impactPlan.tasks;
+  console.log('Impactos priorizados por relação CGU: '+impactPlan.selected);
   const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
     slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
     maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks

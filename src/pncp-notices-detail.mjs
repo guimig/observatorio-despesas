@@ -44,20 +44,25 @@ export async function fetchNoticeDetailWithRetry(id,{
   }
   throw Error('PNCP não respondeu à consulta de contratação');
 }
-export function planMissingNotices(contracts,notices,{count=18}={}){
+export function planMissingNotices(contracts,notices,{count=18,slot=0}={}){
   const max=Number(count);
   if(!Number.isSafeInteger(max)||max<1||max>35)
     throw Error('Tamanho de lote PNCP inválido');
   const known=new Set((notices?.notices||[]).map(n=>n.pncpId));
   const pending=new Map();
   for(const c of contracts?.contracts||[]) {
-    const id=c.procurementId;
-    if(typeof id!=='string'||!ID.test(id)||!inScopePurchaseId(id)||known.has(id))continue;
-    const weight=c.process?.startsWith('23349.')?0:1;
-    const prev=pending.get(id);
-    if(!prev||weight<prev.weight)pending.set(id,{id,weight});
+    const origin=typeof c.ataControl==='string'?/^(\d{14}-1-\d{6}\/20\d{2})-\d{6}$/.exec(c.ataControl)?.[1]:null;
+    for(const id of [c.procurementId,origin]){
+      if(typeof id!=='string'||!ID.test(id)||!inScopePurchaseId(id)||known.has(id))continue;
+      const weight=c.process?.startsWith('23349.')?0:1;
+      const prev=pending.get(id);
+      if(!prev||weight<prev.weight)pending.set(id,{id,weight});
+    }
   }
-  return [...pending.values()].sort((a,b)=>a.weight-b.weight||
-    b.id.slice(-4).localeCompare(a.id.slice(-4))||a.id.localeCompare(b.id))
-    .slice(0,max).map(item=>item.id);
+  const ordered=[...pending.values()].sort((a,b)=>a.weight-b.weight||b.id.slice(-4).localeCompare(a.id.slice(-4))||a.id.localeCompare(b.id));
+  if(!ordered.length)return [];
+  const priority=ordered.filter(x=>x.weight===0),rest=ordered.filter(x=>x.weight!==0);
+  const rotate=list=>list.length?list.slice(slot%list.length).concat(list.slice(0,slot%list.length)):[];
+  const first=rotate(priority).slice(0,Math.max(1,Math.ceil(max/2)));
+  return [...first,...rotate(rest),...rotate(priority).filter(x=>!first.includes(x))].slice(0,max).map(item=>item.id);
 }

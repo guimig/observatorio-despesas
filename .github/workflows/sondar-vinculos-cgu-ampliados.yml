@@ -1,0 +1,29 @@
+name: Sondar vínculos CGU de contratações (sem persistência)
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/probe-cgu-procurement.mjs'
+      - '.github/workflows/sondar-vinculos-cgu-ampliados.yml'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
+jobs:
+  sondar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Consultar rotas oficiais em amostra limitada
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: node src/probe-cgu-procurement.mjs

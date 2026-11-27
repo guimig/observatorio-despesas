@@ -99,7 +99,7 @@ export function validateProcurement(data){
       if(contract.source!=='pncp'||!contract.pncpId.startsWith(contract.orgCnpj+'-2-')||
        ['adhesion','remanejamento'].some(k=>contract[k]!==undefined&&typeof contract[k]!=='boolean')||
        (contract.ataControl!==undefined&&(!/^\d{14}-1-\d{6}\/20\d{2}-\d{6}$/.test(contract.ataControl)||
-        (contract.procurementId&&contract.ataControl.slice(0,-7)!==contract.procurementId))))
+        (contract.procurementId&&contract.ataControl.slice(0,-7)!==contract.procurementId&&contract.adhesion!==true))))
        throw Error('Evidencia de adesao/ata PNCP invalida');
     }
     if(contract.commitmentStatus!==undefined){
@@ -265,7 +265,7 @@ export function mergeProcurement(current,scans,now=new Date()){
           if(sameInstrument)for(const k of ['adhesion','ataControl','remanejamento']){
             if(copy[k]===undefined&&old[k]!==undefined)copy[k]=old[k];
           }
-          if(copy.ataControl&&copy.procurementId&&copy.ataControl.slice(0,-7)!==copy.procurementId)delete copy.ataControl;
+          if(copy.ataControl&&copy.procurementId&&copy.ataControl.slice(0,-7)!==copy.procurementId&&copy.adhesion!==true)delete copy.ataControl;
           next.contracts.push(copy);
         }
       }
