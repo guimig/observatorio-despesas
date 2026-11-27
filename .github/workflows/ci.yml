@@ -33,6 +33,13 @@ jobs:
         run: npm run build:site
       - name: Validar planejamento de coleta historica
         run: npm run backfill:plan
+      - name: Validar planejamento de conciliacao e enriquecimento
+        env:
+          ENRICH_LIQUIDATIONS: '40'
+          ENRICH_PAYMENTS: '50'
+          ENRICH_ITEMS: '20'
+          ENRICH_HISTORY_ITEMS: '30'
+        run: npm run enrich:plan
       - name: Resumir cobertura documental sem dados sensiveis
         env:
           GITHUB_SHA: ${{ github.sha }}

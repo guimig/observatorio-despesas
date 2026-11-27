@@ -36,6 +36,8 @@ on:
       - 'src/enrich-cgu.mjs'
       - 'src/item-movements.mjs'
       - 'src/enrich-month.mjs'
+      - 'src/chronology-enrichment.mjs'
+      - 'assets/siafi-movement-reconciliation.js'
       - 'src/audit-cgu-interannual.mjs'
   schedule:
     - cron: '37 2,6,10,14,18,22 * * *'

@@ -9,6 +9,9 @@ import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
+import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
+import {currentDateInBrazil} from './backfill.mjs';
+import {planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories} from './chronology-enrichment.mjs';
 
 function bounded(value,fallback,max){
   const n=Number(value||fallback);
@@ -168,40 +171,6 @@ export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  }
  return roundRobin(queues,queues.reduce((n,q)=>n+q.length,0));
 }
-/** Prioriza NEs com reaparições, mantendo o numero de tarefas do lote.
- * Datas de listagem nao sao datas de emissao nem movimentos comprovados. */
-export function prioritizeObservedCommitments(tasks,months,{slot=0}={}){
- const all=months.flatMap(m=>(m.commitmentObservations||[]));
- const latest=new Map();
- for(const o of all)if(!latest.has(o.id)||o.date>latest.get(o.id).date)latest.set(o.id,o);
- const candidates=[];
- for(const m of months)for(const doc of m.documents){
-   const o=latest.get(doc.id);
-   if(!o||doc.phase!==1||doc.date!==o.ownerDate)continue;
-   const items=m.itemsByDocument?.[doc.id];
-   const sum=Array.isArray(items)&&items.every(i=>Number.isSafeInteger(i.cents))?items.reduce((n,i)=>n+i.cents,0):null;
-   if(doc.itemsDetailVersion!==2||!items?.length||sum!==o.cents){
-    candidates.push({month:m.month,id:doc.id,kind:'items',recheck:true});
-   }else for(const item of items){
-    if(item.historyChecked!==true||!item.historyCheckedAt||item.historyCheckedAt<o.date)
-      candidates.push({month:m.month,id:doc.id,kind:'itemHistory',seq:item.seq,recheck:item.historyChecked===true});
-   }
- }
- const selected=rotatePending(candidates,Math.min(6,candidates.length),slot);
- const key=t=>t.kind+'/'+t.id+'/'+(t.seq||'');
- const queue=[...tasks],front=[];
- for(const t of selected){
-   let at=queue.findIndex(x=>key(x)===key(t));
-   if(at<0){for(let i=queue.length-1;i>=0;i--)if(queue[i].kind===t.kind){at=i;break}}
-   // Se a classe estava vazia, usar vaga da fila existente ou reservar uma
-   // tarefa dentro das seis vagas, sem aumentar o orcamento HTTP.
-   if(at<0&&queue.length)at=queue.length-1;
-   if(at>=0)queue.splice(at,1);
-   else if(tasks.length)continue;
-   front.push(t);
- }
- return front.concat(queue);
-}
 export function summarizeFailures(failures){
   const counts={};
   for(const reason of failures){
@@ -243,7 +212,18 @@ async function main(){
   const alternatives=selected?[selected]:orderMonths(manifest.months,{priority,slot:monthSlot});
   const months=[];
   for(const monthName of alternatives)if(inScopeMonth(monthName))months.push(await readMonth(root,monthName));
-  const tasks=prioritizeObservedCommitments(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot});
+  const now=new Date(),today=currentDateInBrazil(now);
+  const beforeChronology=buildCommitmentChronology(months,{today});
+  const records=new Map(indexCommitmentChronology(months).entries.map(r=>[r.id,r]));
+  const base=planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)});
+  const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
+    slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
+    maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks
+  });
+  console.log('Plano de conciliacao NE (somente contagens): '+JSON.stringify({
+    identities:beforeChronology.identities,reconciled:beforeChronology.reconciled,
+    pending:beforeChronology.pending,pendingReasons:beforeChronology.pendingReasons,...chronologyPlan
+  }));
   if(!tasks.length){
     console.log('Acervo sem documentos pendentes de enriquecimento.');
     return;
@@ -259,25 +239,31 @@ async function main(){
   if(!token)throw Error('CGU_API_KEY não disponível');
   const limits=collectionLimits({intensive:process.env.ENRICH_INTENSIVE==='true',backlog:tasks.length,threshold:50});
   const budget=createCguBudget(limits);
-  let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0;
+  let successes=0,errors=0,links=0,items=0,attempted=0,completedReviews=0,followupsPromoted=0;
   const failures=[];
-  for(const task of tasks){
+  for(let taskIndex=0;taskIndex<tasks.length;taskIndex++){
+    const task=tasks[taskIndex];
     if(budget.stopped())break;
     const {kind,id,month,seq,recheck}=task;
     const before=await readMonth(root,month);
     const doc=before.documents.find(d=>d.id===id);
     const old=kind==='itemHistory'?before.itemsByDocument?.[id]?.find(x=>x.seq===seq):null;
     if(!doc||kind==='itemHistory'&&!old)continue;
+    const record=records.get(id);
+    const currentRecord=record?.owners.length===1?{...record,owners:[{doc,month,items:before.itemsByDocument?.[id]}]}:record;
+    const attemptKey=chronologyAttemptKey(currentRecord,task);
     attempted++;
     const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget}):
       kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
       kind==='items'?await resolveItems(id,{token,budget}):await resolveItemMovements(id,seq,{token,budget});
+    if(attemptKey&&(outcome.ok||!budget.stopped()))historyState[attemptKey]=new Date().toISOString().slice(0,10);
     if(!outcome.ok){failures.push(outcome.reason||'outro');errors++;continue;}
     const result=kind==='items'?{kind,items:outcome.items,recheck}:
       kind==='itemHistory'?{kind,seq,movements:outcome.movements,checkedAt:new Date().toISOString().slice(0,10)}:
         {kind,links:outcome.links};
     try{
-      if(statePath&&kind==='itemHistory'&&old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements))
+      if(statePath&&kind==='itemHistory'&&old.historyChecked===true&&JSON.stringify(old.movements)===JSON.stringify(result.movements)&&
+        !requiresCanonicalHistoryCheckpoint(currentRecord,old))
         delete result.checkedAt;
       if(kind==='liquidation'&&doc.cents===null&&outcome.links.length&&before.coverage.some(c=>c.date===doc.date&&c.phase===2&&c.complete)){
         const total=outcome.links.reduce((n,l)=>n+BigInt(l.cents),0n);
@@ -286,9 +272,21 @@ async function main(){
         }
       }
       await persistEnrichment(root,month,id,result,new Date());
+      const after=await readMonth(root,month);
+      const updated=after.documents.find(d=>d.id===id);
+      if(currentRecord?.owners.length===1){
+        const nextRecord={...currentRecord,owners:[{doc:updated,month,items:after.itemsByDocument?.[id]}]};
+        records.set(id,nextRecord);
+        if(attemptKey){
+          const nextKey=chronologyAttemptKey(nextRecord,task);
+          if(nextKey)historyState[nextKey]=new Date().toISOString().slice(0,10);
+        }
+        if(kind==='items'&&!budget.stopped()&&followupsPromoted<6)
+          followupsPromoted+=promoteCatalogHistories(tasks,taskIndex,nextRecord,{
+            remaining:6-followupsPromoted,state:historyState,now:new Date()
+          });
+      }
       if(statePath){
-        const after=await readMonth(root,month);
-        const updated=after.documents.find(d=>d.id===id);
         const previousKey=kind==='itemHistory'?historyKey(doc,old):detailKey(before,id,kind);
         const currentKey=kind==='itemHistory'?historyKey(updated,after.itemsByDocument[id].find(x=>x.seq===seq)):detailKey(after,id,kind);
         delete historyState[previousKey];
@@ -298,8 +296,15 @@ async function main(){
     successes++;if(recheck)completedReviews++;
     links+=outcome.links?.length||0;items+=outcome.items?.length||0;
   }
-  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,limits,...budget.snapshot()}));
-  await validatePublishedData(root);
+  console.log('Telemetria enriquecimento CGU: '+JSON.stringify({planned:tasks.length,attempted,successes,errors,completedReviews,followupsPromoted,limits,...budget.snapshot()}));
+  const validated=await validatePublishedData(root);
+  const afterChronology=buildCommitmentChronology(selected?validated.months.filter(m=>m.month===selected):validated.months,{today});
+  console.log('Resultado de conciliacao NE (somente contagens): '+JSON.stringify({
+    before:beforeChronology.reconciled,after:afterChronology.reconciled,
+    netChange:afterChronology.reconciled-beforeChronology.reconciled,
+    identities:afterChronology.identities,pending:afterChronology.pending,
+    pendingReasons:afterChronology.pendingReasons,followupsPromoted
+  }));
   await saveOperationalState(statePath,historyState);
   console.log('Motivos de consultas não concluídas (somente contagens, sem IDs ou respostas): '+
     JSON.stringify(summarizeFailures(failures)));
