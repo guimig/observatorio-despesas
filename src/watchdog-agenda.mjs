@@ -1,24 +1,36 @@
 /** Fallback de disparos atrasados; sem consultar fontes financeiras nem criar commits.
- * A ultima tentativa (inclusive falha) evita martelar fonte ou fila. */
+ * Idade da ultima tentativa e do ultimo sucesso sao independentes; cooldown limita reintentos. */
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 export const WATCHED=Object.freeze([
- {file:'coleta-cgu.yml',hours:8,inputs:{}},
+ {file:'coleta-cgu.yml',hours:8,retryHours:2,inputs:{}},
  {file:'backfill-cgu.yml',hours:6,inputs:{intensive:'true'}},
  {file:'enriquecer-cgu.yml',hours:6,inputs:{intensive:'true',liquidations:'30',payments:'36',items:'15'}},
  {file:'publicar-pages.yml',hours:4,inputs:{}},
  {file:'atualizar-contratos-pncp.yml',hours:26,inputs:{}},
  {file:'recuperar-origens-cgu.yml',hours:15,inputs:{limit:'15'}},
- {file:'coletar-itens-pncp.yml',hours:15,inputs:{}}
+ {file:'coletar-itens-pncp.yml',hours:15,inputs:{}},
+ {file:'coleta-contratos.yml',hours:12,retryHours:4,inputs:{}}
 ]);
-export function overdueStatus(runs,hours,now=new Date()){
+export function overdueStatus(runs,hours,now=new Date(),{retryHours=hours}={}){
  if(!Array.isArray(runs)||!Number.isFinite(now.getTime())||!Number.isFinite(hours)||hours<=0||
+   !Number.isFinite(retryHours)||retryHours<=0||retryHours>hours||
    runs.some(r=>!r||typeof r.status!=='string'||!Number.isFinite(Date.parse(r.created_at))||Date.parse(r.created_at)>now.getTime()+60000))
    throw Error('Metadados de execucao invalidos');
- if(runs.some(r=>r.status!=='completed'))return {eligible:false,reason:'active'};
  const last=runs.reduce((max,r)=>Math.max(max,Date.parse(r.created_at)),0);
+ const success=runs.filter(r=>r.status==='completed'&&r.conclusion==='success')
+   .reduce((max,r)=>Math.max(max,Date.parse(r.created_at)),0);
  const age=last?(now.getTime()-last)/3600000:null;
- return {eligible:last===0||age>=hours,reason:last===0?'never_run':age>=hours?'overdue':'recent',ageHours:age===null?null:Math.round(age*10)/10};
+ const successAge=success?(now.getTime()-success)/3600000:null;
+ const latest=runs.find(r=>Date.parse(r.created_at)===last);
+ const staleSuccess=successAge===null||successAge>=hours;
+ const round=n=>n===null?null:Math.round(n*10)/10;
+ const detail={ageHours:round(age),lastSuccessAgeHours:round(successAge),staleSuccess,
+   lastConclusion:latest?.conclusion||null};
+ if(runs.some(r=>r.status!=='completed'))return {eligible:false,reason:'active',...detail};
+ const retry=latest?.conclusion&&latest.conclusion!=='success'&&staleSuccess&&age>=retryHours;
+ const eligible=last===0||age>=hours||Boolean(retry);
+ return {eligible,reason:last===0?'never_run':age>=hours?'overdue':retry?'retry_failed':'recent',...detail};
 }
 export async function monitorAgenda({token,repository='guimig/observatorio-despesas',now=new Date(),dryRun=false,fetcher=fetch,maxDispatch=3}={}){
  if(repository!=='guimig/observatorio-despesas'||typeof token!=='string'||!token||
@@ -32,7 +44,7 @@ export async function monitorAgenda({token,repository='guimig/observatorio-despe
    const r=await fetcher(base+target.file+'/runs?branch=main&per_page=30',{headers,redirect:'error',signal:AbortSignal.timeout(15000)});
    if(!r.ok)throw Error('metadata');
    const body=await r.json();
-   outcome=overdueStatus(body.workflow_runs,target.hours,now);
+   outcome=overdueStatus(body.workflow_runs,target.hours,now,{retryHours:target.retryHours||target.hours});
   }catch{summary.failed++;summary.workflows.push({workflow:target.file,reason:'metadata_unavailable'});continue}
   summary.checked++;
   const status={workflow:target.file,...outcome};summary.workflows.push(status);
