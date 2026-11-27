@@ -22,7 +22,7 @@ const fmtMoney = cents => Number.isSafeInteger(cents)
 const fmtCount = n => new Intl.NumberFormat('pt-BR').format(n);
 const phaseNames = { 1: 'Empenho', 2: 'Liquidação', 3: 'Pagamento' };
 const pageSize = 25;
-let procurementData=null,siopCatalog=null;
+let procurementData=null,siopCatalog=null,cguContractEvidence=[];
 let indexedCommitmentCatalog=null,pncpCommitmentIndex=new Map();
 function pncpCommitmentEvidence(doc){
   if(doc?.phase!==1||!procurementData)return [];
@@ -757,11 +757,11 @@ function contractBadge(contract){
   return contractSourceName(contract.source)+' · '+contractScopeName(contract.scope);
 }
 function integratedIndex(){
- const signature=[...cache.values(),state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data];
+ const signature=[...cache.values(),state.manifest?.months?.length,procurementData,noticesData,atasData,arpDetailsById,tenderItemsState.data,cguContractEvidence];
  if(integratedMemo&&signature.length===integratedMemo.signature.length&&signature.every((v,i)=>v===integratedMemo.signature[i]))return integratedMemo.index;
  const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
   notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
-  tender:tenderItemsState.data,totalMonths:state.manifest?.months?.length||0});
+  tender:tenderItemsState.data,cguContracts:cguContractEvidence,totalMonths:state.manifest?.months?.length||0});
  integratedMemo={signature,index};return index;
 }
 const evidenceLabels={confirmed:'NE integral conferida',declared_ne:'NE integral declarada; CGU não localizada',
@@ -844,9 +844,31 @@ function neButton(id){
  const b=element('button','relation-link doc-code',id);b.type='button';
  b.addEventListener('click',()=>openIntegratedNe(id,b));return b;
 }
+function cguContractLink(row){
+ const a=element('a','inline-link','Consultar contrato na CGU');a.href='https://portaldatransparencia.gov.br/contratos/'+row.id;a.target='_blank';a.rel='noopener noreferrer';return a;
+}
+function cguContractTitle(row){return 'Contrato CGU · '+(row.number?row.number+' · ':'')+'ID '+row.id;}
+function showCguContractEvidence(row){
+ if($('document-dialog').open)$('document-dialog').close();
+ $('record-title').textContent=cguContractTitle(row);$('record-eyebrow').textContent='CONTRATO · PORTAL DA TRANSPARÊNCIA';
+ const fields=$('record-fields');fields.replaceChildren();
+ for(const [label,value] of [['Identificador CGU',String(row.id)],['Número do contrato',row.number],['Processo administrativo',row.process],['UG administrativa',row.unitCode],['Unidade gestora de compras',row.buyingUnit],['Assinatura',row.signed?localDate(row.signed):null],['Referência temporal da fonte',localDate(row.reference)]])appendDetailField(fields,label,value);
+ $('record-evidence-section').hidden=true;
+ const host=$('record-trajectory');host.replaceChildren();
+ host.append(element('p','helper','Vínculo documental declarado diretamente no endpoint de documentos relacionados a contratos da CGU. Não comprova equivalência com registro PNCP, completude da relação, saldo ou valor de execução.'),element('strong','',fmtCount(row.refs.length)+' NEs integrais da UG 158459'));
+ for(const ne of row.refs)host.append(neButton(ne));
+ const index=integratedIndex();
+ for(const [id,rows] of index.cguEvidence.byPncp)if(rows.some(c=>c.id===row.id)){
+  const c=index.instruments.get(id);if(c)host.append(element('p','small-muted','Correspondência candidata entre fontes (não confirmada):'),relationButton(instrumentTitle(c),()=>showCatalogDetail(c,'instrument')));
+ }
+ const link=$('record-official-link');link.hidden=false;link.href='https://portaldatransparencia.gov.br/contratos/'+row.id;link.textContent='Consultar registro oficial CGU';
+ showDialogFromTop($('record-dialog'));
+}
 function renderNeAdministrative(host,index,id){
  const edges=[...(index.neEdges.get(id)||[])].sort((a,b)=>Number(b.level==='confirmed')-Number(a.level==='confirmed'));
- if(!edges.length){host.append(element('p','small-muted','Nenhum vínculo administrativo encontrado para '+id+' nos catálogos consultados.'));return;}
+ const direct=index.cguEvidence.byNe.get(id)||[];
+ for(const row of direct){const block=element('div','relation-item integrated-edge');block.append(element('strong','','Relação contrato–NE declarada pela CGU'),relationButton(cguContractTitle(row),()=>showCguContractEvidence(row)),cguContractLink(row),element('span','small-muted','Identidade SIAFI integral; independente da confirmação de instrumento PNCP.'));host.append(block);}
+ if(!edges.length&&!direct.length){host.append(element('p','small-muted','Nenhum vínculo administrativo encontrado para '+id+' nos catálogos consultados.'));return;}
  for(const e of edges.slice(0,30)){
   const c=index.instruments.get(e.instrumentId);if(!c)continue;
   const block=element('div','relation-item integrated-edge');
@@ -1000,7 +1022,10 @@ function renderCatalogTrajectory(record,kind){
  const index=integratedIndex(),refresh=()=>renderCatalogTrajectory(record,kind);
  const id=kind==='notice'?record.pncpId:kind==='ata'?record.id:record.id||record.pncpId;
  const scope=kind==='notice'||kind==='ata'?kind:'instrument';
- if(scope==='instrument')renderOriginButtons(host,index,id);
+ if(scope==='instrument'){
+  renderOriginButtons(host,index,id);
+  for(const row of index.cguEvidence.byPncp.get(id)||[]){const block=element('div','relation-item');block.append(element('strong','','Possível contrato correspondente na CGU'),relationButton(cguContractTitle(row),()=>showCguContractEvidence(row)),element('span','small-muted','Número, processo, CNPJ, assinatura e unidade coincidentes; candidato entre fontes, excluído dos totais PNCP.'));host.append(block);}
+ }
  if(scope==='ata'){
   const notice=index.noticeMap.get(record.procurementId);
   host.append(notice?relationButton('Contratação de origem · '+(notice.number||notice.pncpId),()=>showCatalogDetail(notice,'notice')):
@@ -1439,6 +1464,7 @@ function renderRelationshipCatalog(query,index){
    if(norm([label,...search].join(' ')).includes(q))records.push({label,action});
  };
  for(const d of index.docs.values())if(d.phase!==1)push(d.phase===2?'liquidation':'payment',d,d.id,[d.description,d.process],()=>{const m=cache.get(d.month)||[...cache.values()].find(m=>m.documents.some(x=>x.id===d.id));if(m)showDocument(d,m);});
+ for(const c of index.cguEvidence.records.values())push('cgu_contract',c,cguContractTitle(c),[c.process,c.number,c.unitCode,...c.refs],()=>showCguContractEvidence(c));
  for(const c of index.instruments.values())push('instrument',c,instrumentTitle(c),[c.pncpId,c.object,c.process,c.supplierName,c.supplierCnpj],()=>showCatalogDetail(c,'instrument'));
  for(const n of index.noticeMap.values())push('notice',n,'Licitação / contratação '+n.number,[n.pncpId,n.process,n.object],()=>showCatalogDetail(n,'notice'));
  for(const a of index.ataMap.values())push('ata',a,'Ata '+(a.number||a.sequence),[a.id,ataControlFor(a),index.noticeMap.get(a.procurementId)?.object],()=>showCatalogDetail(a,'ata'));
@@ -1451,7 +1477,7 @@ function renderCommitmentTrajectories(){
   const index=integratedIndex(),level=$('trajectory-evidence').value;
   renderRelationshipCatalog(query,index);
   const all=index.entries.filter(entry=>trajectoryMatches(index,entry,query)&&
-    (level==='all'||(level==='high'?(index.neEdges.get(entry.id)||[]).some(e=>['high_confidence','contextual_candidate'].includes(e.level)):neEvidenceLevel(index,entry.id)===level)));
+    (level==='all'||(level==='cgu'?index.cguEvidence.byNe.has(entry.id):level==='high'?(index.neEdges.get(entry.id)||[]).some(e=>['high_confidence','contextual_candidate'].includes(e.level)):neEvidenceLevel(index,entry.id)===level)));
   const pages=Math.max(1,Math.ceil(all.length/25));trajectoryPage=Math.max(0,Math.min(pages-1,trajectoryPage));
   $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
   $('trajectory-page-info').textContent='Página '+fmtCount(trajectoryPage+1)+' de '+fmtCount(pages);
@@ -1468,7 +1494,7 @@ function renderCommitmentTrajectories(){
     const process=element('td','doc-code',entry.document?.process||'—');
     const object=element('td','beneficiary-cell',entry.document?.nature?.element||'Não informado');
     const e=neEvidenceLevel(index,entry.id);
-    object.append(element('span','small-muted integrated-table-note',e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
+    object.append(element('span','small-muted integrated-table-note',index.cguEvidence.byNe.has(entry.id)?'Contrato–NE declarado pela CGU':e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
     const pg=element('td','align-right',fmtMoney(entry.paymentCents));
     if(!entry.liquidations.length)lq.textContent='Não identificado';
@@ -2473,5 +2499,9 @@ initEvents();
 init();
 loadSiopReference();
 initTrajectories();
+async function loadCguContractEvidence(){
+ try{const response=await fetch('./data/procurement/cgu-contract-links.json',{cache:'no-store'});if(response.ok){const data=await response.json();if(data.schema_version===1&&data.unit==='158459'&&Array.isArray(data.contracts)){cguContractEvidence=data.contracts; if(trajectoryReady||$('trajectory-search').value)renderCommitmentTrajectories();}}}catch{/* A fonte complementar nao impede a navegacao. */}
+}
+loadCguContractEvidence();
 initProcurement().then(()=>{if(noticesData)renderNotices();if(atasData)renderAtas();if(state.data)renderTable();if(trajectoryReady)renderCommitmentTrajectories();});
 initNotices().then(()=>{if(trajectoryReady)renderCommitmentTrajectories();});

@@ -9,6 +9,7 @@ import {relatedUrl} from './inspect-cgu-siafi.mjs';
 import {createCguBudget} from './cgu-budget.mjs';
 import {validatePublishedData,persistEnrichment} from './store.mjs';
 import {readProcurement} from './procurement-store.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 import {stateKey,readOperationalState,saveOperationalState,validDay} from './operational-state.mjs';
 import {assertPublicSafe} from './privacy.mjs';
 import {extractAraquariNeEvidence} from '../assets/procurement-links.js';
@@ -40,10 +41,11 @@ const checkKey=d=>stateKey(['cgu-related-v1',d.id,d.phase,d.relatedIds??null]);
 /** Balanceia consultas de NE e consultas inversas de documentos sem impacto.
  * Prioridade de NE: evidencia de instrumento/mesmo processo e credor, depois
  * demais, com rodizio temporal. Nenhuma prioridade constitui vinculo oficial. */
-export function planRelatedDocuments(months,{contracts=[],state={},now=new Date(),limit=24}={}){
+export function planRelatedDocuments(months,{contracts=[],cguContracts=[],state={},now=new Date(),limit=24}={}){
  if(!Number.isSafeInteger(limit)||limit<1||limit>40)throw Error('Limite documental invalido');
  const today=now.toISOString().slice(0,10),docs=new Map(),ambiguous=new Set(),impacts=new Set();
  const declared=new Set(),short=new Set(),processParty=new Set();
+ for(const c of cguContracts)for(const ref of c.refs||[])if(inScopeRelatedDocument(ref)&&phaseOf(ref)===1)declared.add(ref);
  for(const c of contracts){
   for(const raw of [c.number,...(c.commitmentRefs||[])]){
    const ev=extractAraquariNeEvidence(raw);
@@ -101,7 +103,8 @@ export async function collectRelatedDocuments({root=process.cwd(),token,now=new 
  const {months}=await validatePublishedData(root);
  const catalog=await readProcurement(root);
  const state=await readOperationalState(statePath,{now});
- const plan=planRelatedDocuments(months,{contracts:catalog?.contracts||[],state,now,limit});
+ const cguContracts=(await readCguContractEvidence(root)).contracts;
+ const plan=planRelatedDocuments(months,{contracts:catalog?.contracts||[],cguContracts,state,now,limit});
  const report={planned:plan.length,attempted:0,checked:0,changed:0,references:0,excluded:0,failures:{}};
  if(dryRun)return report;
  if(!token)throw Error('CGU_API_KEY ausente');

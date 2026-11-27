@@ -42,3 +42,9 @@ test('alteracoes concorrentes no mesmo arquivo nao sobrescrevem o remoto',async 
  assert.notEqual(r.status,0);
  assert.equal(git(bare,'show','main:'+file),'remote');
 });
+
+test('coleta com outro arquivo de dados nao staged nao publica commit parcial',async t=>{
+ const {bare,a}=await fixture(t),file='data/months/2024-01.json';
+ await commit(a,file,'local');await writeFile(join(a,'data/procurement/contracts.json'),'pendente\n');
+ const r=spawnSync('bash',[script],{cwd:a,encoding:'utf8'});assert.notEqual(r.status,0);assert.match(r.stderr,/pendentes de stage/);assert.equal(git(bare,'show','main:'+file),'initial');
+});

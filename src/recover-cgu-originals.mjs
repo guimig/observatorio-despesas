@@ -1,6 +1,7 @@
 import {createCguBudget} from './cgu-budget.mjs';
 import {FIRST_YEAR,inScopeNe} from './collection-scope.mjs';
 import {readProcurement} from './procurement-store.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 import {extractAraquariNeEvidence} from '../assets/procurement-links.js';
 /**
  * Recupera por codigo completo NE do mesmo exercicio ou anterior ja referenciada
@@ -80,7 +81,7 @@ function dayBeforeToday(now){
 }
 
 /** Selecao somente de relacoes estruturadas NS/OB/DF -> NE. */
-export function missingReferencedNe(sources,{scope='interannual',contracts=[]}={}){
+export function missingReferencedNe(sources,{scope='interannual',contracts=[],cguContracts=[]}={}){
  if(!['interannual','same_year','all'].includes(scope))throw Error('Escopo NE invalido');
  if(!Array.isArray(sources))throw Error('Acervo de origem invalido');
  const originals=new Set(),owners=new Map(),relations=[],identityPairs=[];
@@ -112,6 +113,7 @@ export function missingReferencedNe(sources,{scope='interannual',contracts=[]}={
   if(c.source!=='pncp')continue;
   for(const raw of [c.number,...(c.commitmentRefs||[])]){const ev=extractAraquariNeEvidence(raw);if(ev?.kind==='full'&&inScopeNe(ev.ne)&&!originals.has(ev.ne))targets.add(ev.ne);}
  }
+ if(scope==='all')for(const c of cguContracts)for(const ne of c.refs||[])if(inScopeNe(ne)&&!originals.has(ne))targets.add(ne);
  return [...targets].sort((a,b)=>a.slice(11,15).localeCompare(b.slice(11,15))||
    a.localeCompare(b));
 }
@@ -260,7 +262,8 @@ export async function recoverReferencedNe({
    throw Error('Exercicio CGU de destino invalido');
  const months=await readSources(root);
  const contracts=scope==='all'?(await readProcurement(root))?.contracts||[]:[];
- const missing=missingReferencedNe(months,{scope,contracts});
+ const cguContracts=scope==='all'?(await readCguContractEvidence(root)).contracts:[];
+ const missing=missingReferencedNe(months,{scope,contracts,cguContracts});
  const eligible=year===null?missing:missing.filter(id=>id.slice(11,15)===year);
  const selected=chooseNeBatch(eligible,{limit,slot});
  const output={status:dryRun?'dry_run':'complete',scope,missing:missing.length,

@@ -2,6 +2,11 @@
 # Dois reintentos limitados quando a main mudou apenas em arquivos disjuntos.
 # Nunca forca push, sobrescreve outro coletor ou rebaseia arquivos fora de data/.
 set -euo pipefail
+# Antes de qualquer push, impedir commit parcial de coleta multiarquivo.
+if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard -- data/)" ]]; then
+  echo 'Coleta possui arquivos pendentes de stage/commit; push bloqueado.' >&2
+  exit 1
+fi
 for attempt in 1 2 3; do
   if git push origin HEAD:main; then exit 0; fi
   base=$(git rev-parse HEAD^)

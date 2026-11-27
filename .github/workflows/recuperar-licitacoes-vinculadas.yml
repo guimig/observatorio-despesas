@@ -15,6 +15,7 @@ on:
       - 'src/pncp-notices-detail.mjs'
       - 'src/backfill-pncp-linked-notices.mjs'
       - 'src/recover-pncp-linked-instruments.mjs'
+      - 'scripts/push-validated-data.sh'
   schedule:
     - cron: '23 13 * * *'
 permissions:

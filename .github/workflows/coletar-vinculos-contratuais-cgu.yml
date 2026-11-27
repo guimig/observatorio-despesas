@@ -1,0 +1,72 @@
+name: Coletar vinculos oficiais contrato-NE CGU
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/cgu-contract-evidence.mjs'
+      - '.github/workflows/coletar-vinculos-contratuais-cgu.yml'
+  schedule:
+    - cron: '17 9,21 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
+jobs:
+  coletar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test && npm run check:data
+      - uses: actions/cache/restore@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-contract-state.json
+          key: cgu-contract-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: cgu-contract-v1-
+      - name: Recuperar relacoes positivas oficiais
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          CGU_CONTRACT_STATE_PATH: ${{ runner.temp }}/observatorio-cgu-contract-state.json
+        run: node src/cgu-contract-evidence.mjs
+      - run: npm run check:data
+      - name: Versionar apenas evidencias normalizadas
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          if [ -f data/procurement/cgu-contract-links.json ]; then
+            git add -- data/procurement/cgu-contract-links.json
+          fi
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m 'data: recuperar vinculos contratuais diretos da CGU'
+          bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/observatorio-cgu-contract-state.json
+          key: cgu-contract-v1-${{ github.run_id }}-${{ github.run_attempt }}
+  publicar:
+    needs: coletar
+    if: needs.coletar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml

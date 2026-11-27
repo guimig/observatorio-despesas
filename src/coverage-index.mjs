@@ -14,7 +14,7 @@ function status(c,closed){
  if(c.status!=='complete')return c.status;
  return closed&&!closedCatalogCoverage(c)?'unsealed':closed?'complete':'open';
 }
-export function buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants,now=new Date()}){
+export function buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants,cguContracts=[],now=new Date()}){
  const calendar=scopeMonths(now),current=brazilMonth(now),known=new Map(months.map(m=>[m.month,m]));
  const origin=new Set(),refs=new Set();
  const all=months.flatMap(m=>m.documents);
@@ -98,7 +98,7 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
    arpByYear,
    lastAtaCheck:latest((atas?.checks||[]).map(c=>c.checkedAt)),lastParticipationCheck:latest((participants?.checks||[]).map(c=>c.checkedAt)),
    atas:atas?.atas?.length||0,ataParticipationChecked:(atas?.atas||[]).filter(a=>participationIds.has(a.id)).length},
-  integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,totalMonths:manifest?.months?.length??months.length})),
+  integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,cguContracts,totalMonths:manifest?.months?.length??months.length})),
   commitmentChronology:buildCommitmentChronology(months,{today:currentDateInBrazil(now)}),
   years:byYear,months:rows};
 }

@@ -6,6 +6,7 @@ import {readPublicDictionaries,SIOP_PUBLIC_PATH} from './siop-public-catalog.mjs
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
+import {readCguContractEvidence,CGU_CONTRACT_PATH} from './cgu-contract-evidence.mjs';
 import {buildCoverageIndex} from './coverage-index.mjs';
 import {buildRelationshipLocator} from '../assets/integrated-trajectory.js';
 import {assertPublicSafe} from './privacy.mjs';
@@ -62,7 +63,9 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
     await mkdir(join(output,'data','siop'),{recursive:true});
     await copyFile(join(base,SIOP_PUBLIC_PATH),join(output,SIOP_PUBLIC_PATH));
   }
-  const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
+  const cgu=await readCguContractEvidence(base);
+  if(cgu.contracts.length){await mkdir(join(output,'data','procurement'),{recursive:true});await copyFile(join(base,CGU_CONTRACT_PATH),join(output,CGU_CONTRACT_PATH));}
+  const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants,cguContracts:cgu.contracts});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
   const locator=JSON.stringify(assertPublicSafe(buildRelationshipLocator(months,{manifestWrite:manifest.updated_at||null})))+'\n';
   await writeFile(join(output,'data','relationship-index.json'),locator);
