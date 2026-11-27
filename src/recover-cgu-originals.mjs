@@ -1,5 +1,7 @@
 import {createCguBudget} from './cgu-budget.mjs';
 import {FIRST_YEAR,inScopeNe} from './collection-scope.mjs';
+import {readProcurement} from './procurement-store.mjs';
+import {extractAraquariNeEvidence} from '../assets/procurement-links.js';
 /**
  * Recupera por codigo completo NE do mesmo exercicio ou anterior ja referenciada
  * por NS/OB/DF canonicos. A consulta individual NAO cobre o dia/mes inteiro.
@@ -78,7 +80,7 @@ function dayBeforeToday(now){
 }
 
 /** Selecao somente de relacoes estruturadas NS/OB/DF -> NE. */
-export function missingReferencedNe(sources,{scope='interannual'}={}){
+export function missingReferencedNe(sources,{scope='interannual',contracts=[]}={}){
  if(!['interannual','same_year','all'].includes(scope))throw Error('Escopo NE invalido');
  if(!Array.isArray(sources))throw Error('Acervo de origem invalido');
  const originals=new Set(),owners=new Map(),relations=[],identityPairs=[];
@@ -105,6 +107,10 @@ export function missingReferencedNe(sources,{scope='interannual'}={}){
    const targetYear=Number(year[1]);
    if((scope!=='same_year'&&owner.year>targetYear)||
       (scope!=='interannual'&&owner.year===targetYear))targets.add(row.to);
+ }
+ if(scope==='all')for(const c of contracts){
+  if(c.source!=='pncp')continue;
+  for(const raw of [c.number,...(c.commitmentRefs||[])]){const ev=extractAraquariNeEvidence(raw);if(ev?.kind==='full'&&inScopeNe(ev.ne)&&!originals.has(ev.ne))targets.add(ev.ne);}
  }
  return [...targets].sort((a,b)=>a.slice(11,15).localeCompare(b.slice(11,15))||
    a.localeCompare(b));
@@ -253,7 +259,8 @@ export async function recoverReferencedNe({
  if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)||Number(year)<FIRST_YEAR))
    throw Error('Exercicio CGU de destino invalido');
  const months=await readSources(root);
- const missing=missingReferencedNe(months,{scope});
+ const contracts=scope==='all'?(await readProcurement(root))?.contracts||[]:[];
+ const missing=missingReferencedNe(months,{scope,contracts});
  const eligible=year===null?missing:missing.filter(id=>id.slice(11,15)===year);
  const selected=chooseNeBatch(eligible,{limit,slot});
  const output={status:dryRun?'dry_run':'complete',scope,missing:missing.length,

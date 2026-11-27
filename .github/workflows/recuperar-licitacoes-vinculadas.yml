@@ -14,6 +14,7 @@ on:
       - '.github/workflows/recuperar-licitacoes-vinculadas.yml'
       - 'src/pncp-notices-detail.mjs'
       - 'src/backfill-pncp-linked-notices.mjs'
+      - 'src/recover-pncp-linked-instruments.mjs'
   schedule:
     - cron: '23 13 * * *'
 permissions:
@@ -52,17 +53,17 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add -- data/procurement/notices.json
+          git add -- data/procurement/notices.json data/procurement/contracts.json
           if git diff --cached --quiet; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git commit -m 'data: recuperar licitacoes de origem por IDs PNCP'
+          git commit -m 'data: recuperar instrumentos e licitacoes de origem por IDs PNCP'
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
   publicar:
     needs: historico
-    if: github.event_name == 'workflow_dispatch' && needs.historico.outputs.changed == 'true'
+    if: needs.historico.outputs.changed == 'true'
     permissions:
       contents: read
       pages: write

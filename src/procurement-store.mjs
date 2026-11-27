@@ -400,6 +400,33 @@ export async function writeContractPurchaseLink(root,id,result,now=new Date()){
   return outcome;
 }
 
+/** Inclui instrumento individual comprovado, sem alegar cobertura integral.
+ * Preserva todos os demais registros e reabre a competencia se necessario. */
+export function applyDirectInstrument(existing,record,now=new Date()){
+ const original=validateProcurement(structuredClone(existing||blankProcurement()));
+ if(record?.source!=='pncp'||!/^\d{14}-2-\d{6}\/20\d{2}$/.test(record.pncpId||'')||
+   record.id!=='pncp:'+record.pncpId||!record.pncpId.startsWith(record.orgCnpj+'-2-')||
+   record.publishedMonth<'2024-01'||Number(record.pncpId.slice(-4))<2024)
+  throw Error('Instrumento individual fora do escopo');
+ if(original.contracts.some(c=>c.id===record.id))return {changed:false,data:original};
+ const next=structuredClone(original);
+ next.contracts.push(structuredClone(record));next.contracts.sort((a,b)=>a.id.localeCompare(b.id));
+ const previous=next.coverage.find(c=>c.source==='pncp'&&c.month===record.publishedMonth);
+ next.coverage=next.coverage.filter(c=>!(c.source==='pncp'&&c.month===record.publishedMonth));
+ next.coverage.push({source:'pncp',month:record.publishedMonth,status:'partial',
+  count:next.contracts.filter(c=>c.source==='pncp'&&c.publishedMonth===record.publishedMonth).length,skipped:previous?.skipped||0});
+ next.coverage.sort((a,b)=>a.month.localeCompare(b.month)||a.source.localeCompare(b.source));
+ next.updated_at=now.toISOString();validateProcurement(next);return {changed:true,data:next};
+}
+export async function writeDirectInstrument(root,record,now=new Date()){
+ const dir=join(root,'data','procurement'),path=join(dir,'contracts.json'),tmp=path+'.tmp';
+ const result=applyDirectInstrument(await readProcurement(root),record,now);
+ if(!result.changed)return result;
+ await mkdir(dir,{recursive:true});
+ try{await writeFile(tmp,JSON.stringify(result.data)+'\n','utf8');await rename(tmp,path)}
+ catch(e){await unlink(tmp).catch(()=>{});throw e}
+ return result;
+}
 export async function readProcurement(root){
   const filename=join(root,'data','procurement','contracts.json');
   try{return validateProcurement(JSON.parse(await readFile(filename,'utf8')))}

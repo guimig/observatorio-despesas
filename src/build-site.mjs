@@ -64,7 +64,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   }
   const index=buildCoverageIndex({months,manifest,procurement,notices,atas,tender,participants});
   await writeFile(join(output,'data','coverage-index.json'),JSON.stringify(index)+'\n');
-  const locator=JSON.stringify(assertPublicSafe(buildRelationshipLocator(months)))+'\n';
+  const locator=JSON.stringify(assertPublicSafe(buildRelationshipLocator(months,{manifestWrite:manifest.updated_at||null})))+'\n';
   await writeFile(join(output,'data','relationship-index.json'),locator);
   console.log('Indice de relacionamentos (bytes): '+Buffer.byteLength(locator));
   console.log('Cobertura de relacionamentos: '+JSON.stringify(index.integrated));
