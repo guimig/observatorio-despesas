@@ -3,6 +3,19 @@
  */
 import {inScopeRelatedDocument} from './trajectory.js';
 const ACCEPTED=new Set(['original','reinforcement','annulment','cancellation']);
+// Art. 36 da Lei 4.320/1964: inscricao em RP nao e novo empenho.
+// Aceita somente a descricao exata observada, preservando tipo 'other'
+// no JSON canonico. Nao presume que o valor inscrito seja saldo atual de RP.
+export function isRpRegistration(event){
+ return event?.type==='other'&&typeof event.operation==='string'&&
+  event.operation.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toUpperCase()==='INSCRICAO EM RP';
+}
+export const isMonetaryMovement=event=>ACCEPTED.has(event?.type);
+export function signedCommitmentMovement(event){
+ if(isRpRegistration(event))return 0n;
+ if(!isMonetaryMovement(event)||!Number.isSafeInteger(event.cents)||event.cents<0)throw Error('Movimentacao monetaria invalida');
+ return (event.type==='original'||event.type==='reinforcement'?1n:-1n)*BigInt(event.cents);
+}
 const integer=n=>Number.isSafeInteger(n);
 const date=value=>typeof value==='string'&&/^20\d{2}-\d{2}-\d{2}$/.test(value)&&
  Number.isFinite(Date.parse(value+'T00:00:00Z'))&&
@@ -23,12 +36,25 @@ export function reconcileSiafiItem(item,{commitmentYear=null}={}){
    return blank('unavailable','no_movement_evidence',1,1);
  if(!integer(item.cents)||item.cents<0)
    return blank('unavailable','item_amount_invalid',1,1);
- const movements=[...item.movements].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ // A fonte fornece dia, nao horario. A unica inclusao precede logicamente
+ // outras operacoes daquele mesmo dia; nao se altera a ordem de outras datas
+ // nem se presume ordem entre os demais eventos.
+ const movements=[...item.movements].sort((a,b)=>String(a?.date).localeCompare(String(b?.date))||
+  Number(b?.type==='original')-Number(a?.type==='original'));
  let initial=0,reinforcement=0,annulment=0,cancellation=0,balance=0,originalDate=null;
  for(const event of movements){
-   if(!date(event?.date)||!ACCEPTED.has(event?.type)||
+   if(!date(event?.date)||(!isMonetaryMovement(event)&&!isRpRegistration(event))||
       !integer(event.cents)||event.cents<0)
      return blank('unavailable','ambiguous_movement',1,1);
+   if(isRpRegistration(event)){
+     if(originalDate===null)return blank('unavailable','movement_before_original',1,1);
+     // Caso observado: inscricao no exercicio imediatamente seguinte. Nao
+     // inferir outra janela ou classificar outros rotulos como neutros.
+     if(commitmentYear===null||!Number.isSafeInteger(Number(commitmentYear))||
+        Number(event.date.slice(0,4))!==Number(commitmentYear)+1)
+       return blank('unavailable','rp_registration_year_unverified',1,1);
+     continue;
+   }
    if(event.type==='original'){
      if(originalDate!==null)return blank('unavailable','multiple_originals',1,1);
      if(commitmentYear!==null&&Number(event.date.slice(0,4))!==Number(commitmentYear))
@@ -59,8 +85,8 @@ export function reconcileSiafiItem(item,{commitmentYear=null}={}){
    reason:balance===item.cents?'matched':'current_value_divergence',
    checked:1,total:1,initialCents:initial,reinforcementCents:reinforcement,
    annulmentCents:annulment,cancellationCents:cancellation,reconstructedCents:balance,reportedCents:item.cents,
-   originalDate,lastMovementDate:movements.at(-1).date,
-   originalDateMatchesListing:null,movements:movements.length};
+   originalDate,lastMovementDate:movements.filter(isMonetaryMovement).at(-1).date,
+   originalDateMatchesListing:null,movements:movements.filter(isMonetaryMovement).length};
  return result;
 }
 
@@ -163,7 +189,7 @@ export function buildCommitmentChronology(months,{today}={}){
    summary.reconciled++;y.reconciled++;
    const exercise=id.slice(11,15);
    for(const m of movements){
-     if(today&&m.date>=today)continue; // apenas dias encerrados
+     if(!isMonetaryMovement(m)||(today&&m.date>=today))continue; // apenas eventos monetarios de dias encerrados
      const key=m.date.slice(0,7);
      const row=periods[key]||=( {initialCents:0,reinforcementCents:0,annulmentCents:0,priorYearReinforcementCents:0,priorYearAnnulmentCents:0,priorYearCancellationCents:0,movements:0,identities:0,_ids:new Set()} );
      const sameYear=m.date.slice(0,4)===exercise;
@@ -189,7 +215,7 @@ export function buildCommitmentChronology(months,{today}={}){
  * O valor documental e o valor dos itens sao evidencias independentes. */
 export const MEASURES=Object.freeze(['initial','issue_year_net','net_before_cancellations','updated']);
 const validAmount=x=>integer(x)&&x>=0;
-const signed=m=>(m.type==='original'||m.type==='reinforcement'?1n:-1n)*BigInt(m.cents);
+const signed=signedCommitmentMovement;
 
 /** Todos os itens precisam ser conhecidos, unicos e conciliados com o valorAtual.
  * As medidas sao reconstrucoes aritmeticas, nao saldos contabilisticos. */
