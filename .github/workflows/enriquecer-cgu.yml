@@ -109,7 +109,7 @@ jobs:
         env:
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
           ENRICH_MONTH: ${{ inputs.month }}
-          ENRICH_PRIORITY: ${{ github.event_name == 'schedule' && 'round_robin' || 'newest' }}
+          ENRICH_PRIORITY: ${{ !inputs.month && 'round_robin' || 'newest' }}
           ENRICH_INTENSIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
           ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '40' }}
           ENRICH_PAYMENTS: ${{ inputs.payments || '50' }}
@@ -138,7 +138,7 @@ jobs:
           bash scripts/push-validated-data.sh
           echo 'changed=true' >> "$GITHUB_OUTPUT"
       - name: Verificar se o estado operacional mudou
-        if: steps.credential.outputs.enabled == 'true'
+        if: ${{ !cancelled() && steps.credential.outputs.enabled == 'true' && steps.state_before.outcome == 'success' }}
         id: state_after
         env:
           STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
@@ -150,7 +150,7 @@ jobs:
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/cache/save@v5
-        if: steps.state_after.outputs.changed == 'true' && steps.credential.outputs.enabled == 'true'
+        if: ${{ !cancelled() && steps.state_after.outputs.changed == 'true' && steps.credential.outputs.enabled == 'true' }}
         continue-on-error: true
         with:
           path: ${{ runner.temp }}/observatorio-history-state.json
