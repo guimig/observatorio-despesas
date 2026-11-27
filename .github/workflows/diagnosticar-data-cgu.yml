@@ -1,0 +1,38 @@
+name: Diagnosticar divergencia de datas CGU
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Data encerrada AAAA-MM-DD para reconsulta de empenhos'
+        type: string
+        required: true
+        default: '2026-11-25'
+  push:
+    branches: [main]
+    paths:
+      - 'src/diagnose-cgu-date-conflict.mjs'
+      - '.github/workflows/diagnosticar-data-cgu.yml'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
+jobs:
+  investigar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validar e investigar somente em memoria
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+          CGU_CONFLICT_DATE: ${{ inputs.date || '2026-11-25' }}
+        run: |
+          npm run check:data
+          node src/diagnose-cgu-date-conflict.mjs

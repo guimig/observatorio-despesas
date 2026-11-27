@@ -8,6 +8,12 @@ on:
         default: false
   schedule:
     - cron: '49 * * * *'
+  # Fallback quando o cron do proprio monitor atrasa. Apenas rotinas agendadas,
+  # nunca os disparos do watchdog (evita ciclos de workflow_run).
+  workflow_run:
+    workflows: ['Publicar Observatorio - GitHub Pages', 'Recuperar historico CGU - Observatorio']
+    types: [completed]
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -21,15 +27,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   monitorar:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'schedule' &&
+        github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Consultar agenda e disparar apenas rotinas atrasadas
