@@ -184,3 +184,100 @@ export function buildCommitmentChronology(months,{today}={}){
  summary.byYear=[...years.values()].sort((a,b)=>a.year.localeCompare(b.year));
  return summary;
 }
+
+/** Medidas reconstruidas compartilhadas entre o navegador e o diagnostico CGU.
+ * O valor documental e o valor dos itens sao evidencias independentes. */
+export const MEASURES=Object.freeze(['initial','issue_year_net','net_before_cancellations','updated']);
+const validAmount=x=>integer(x)&&x>=0;
+const signed=m=>(m.type==='original'||m.type==='reinforcement'?1n:-1n)*BigInt(m.cents);
+
+/** Todos os itens precisam ser conhecidos, unicos e conciliados com o valorAtual.
+ * As medidas sao reconstrucoes aritmeticas, nao saldos contabilisticos. */
+export function reconstructValueMeasures(record,items,{today}={}){
+ if(!record||record.owners?.length!==1||!date(today)||
+    !Array.isArray(items)||!items.length)return {status:'unavailable',measures:null};
+ if(items.some(i=>!Number.isSafeInteger(i.seq)||i.seq<1||!validAmount(i.cents))||
+    new Set(items.map(i=>i.seq)).size!==items.length)return {status:'invalid_catalog',measures:null};
+ const year=record.id.slice(11,15);
+ if(!/^20\d{2}$/.test(year)||year<'2024'||year>today.slice(0,4))return {status:'outside_window',measures:null};
+ if(items.some(i=>i.historyChecked!==true))return {status:'partial',measures:null};
+ const details=items.map(i=>reconcileSiafiItem(i,{commitmentYear:year}));
+ if(details.some(d=>d.status!=='reconciled'))return {status:'history_unreconciled',measures:null};
+ const events=items.flatMap(i=>i.movements);
+ if(events.some(m=>!date(m.date)||m.date<'2024-01-01'||m.date>today))
+  return {status:'outside_window',measures:null};
+ const initial=events.filter(m=>m.type==='original').reduce((n,m)=>n+BigInt(m.cents),0n);
+ const issue_year_net=events.filter(m=>m.date.slice(0,4)===year).reduce((n,m)=>n+signed(m),0n);
+ const net_before_cancellations=events.filter(m=>m.type!=='cancellation').reduce((n,m)=>n+signed(m),0n);
+ const updated=events.reduce((n,m)=>n+signed(m),0n);
+ const catalog=items.reduce((n,i)=>n+BigInt(i.cents),0n);
+ const values={initial,issue_year_net,net_before_cancellations,updated};
+ if(updated!==catalog||Object.values(values).some(v=>v<0n||v>BigInt(Number.MAX_SAFE_INTEGER)))
+  return {status:'aggregate_invalid',measures:null};
+ return {status:'comparable',measures:Object.fromEntries(MEASURES.map(k=>[k,Number(values[k])]))};
+}
+/** A assinatura retém TODAS as coincidências. Se duas medidas têm o mesmo
+ * valor, a coincidência não permite distingui-las. */
+export function classifyValueMeaning(cents,reconstruction){
+ if(!validAmount(cents)||reconstruction?.status!=='comparable')return 'not_comparable';
+ const matches=MEASURES.filter(k=>reconstruction.measures[k]===cents);
+ return matches.length?matches.join('+'):'matches_none';
+}
+
+/** Visao derivada: nenhum campo novo nos JSONs mensais. Todos os valores
+ * reconstruidos ficam nulos quando a evidencia interna nao e suficiente.
+ * Nao altera commitmentChronologyEvidence nem os totais por competencia. */
+export function commitmentValueEvidence(doc,items,observations=[],{today,uniqueIdentity=true}={}){
+ const observed=observations.filter(o=>o.id===doc?.id);
+ const chronology=commitmentChronologyEvidence(doc,items,observed);
+ const out={documentCents:validAmount(doc?.cents)?doc.cents:null,
+  referenceCents:validAmount(chronology.referenceCents)?chronology.referenceCents:null,
+  referenceDate:chronology.referenceDate||null,catalogCents:null,
+  initialCents:null,updatedCents:null,issueYearNetCents:null,netBeforeCancellationsCents:null,
+  originalDate:null,lastMovementDate:null,itemsStatus:'unavailable',comparison:'not_comparable',
+  chronologyStatus:chronology.status,chronologyReason:chronology.reason,meaning:'not_comparable'};
+ if(!uniqueIdentity)return {...out,itemsStatus:'duplicate_identity'};
+ if(!doc||doc.phase!==1||!inScopeRelatedDocument(doc.id)||!date(today)||
+    !date(doc.date)||doc.date<'2024-01-01'||doc.date>today||
+    !date(out.referenceDate)||out.referenceDate>today)return {...out,itemsStatus:'outside_window'};
+ if(doc.itemsDetailVersion!==2||!Array.isArray(items))return {...out,itemsStatus:'items_not_collected'};
+ if(!items.length)return {...out,itemsStatus:'empty_item_catalog'};
+ if(items.some(i=>!integer(i.seq)||i.seq<1||!validAmount(i.cents))||
+    new Set(items.map(i=>i.seq)).size!==items.length)return {...out,itemsStatus:'invalid_catalog'};
+ const sum=items.reduce((n,i)=>n+BigInt(i.cents),0n);
+ if(sum>BigInt(Number.MAX_SAFE_INTEGER))return {...out,itemsStatus:'aggregate_invalid'};
+ out.catalogCents=Number(sum);
+ // A consulta anterior a uma nova observacao documental nao prova atualidade.
+ if(observed.length&&items.some(i=>!date(i.historyCheckedAt)||i.historyCheckedAt<out.referenceDate))
+  return {...out,itemsStatus:'history_older_than_listing'};
+ const r=reconstructValueMeasures({id:doc.id,owners:[{doc}],observations:observed},items,{today});
+ if(r.status!=='comparable')return {...out,itemsStatus:r.status};
+ const detail=reconcileSiafiCommitment(items,{commitmentYear:doc.id.slice(11,15)});
+ return {...out,itemsStatus:'internally_reconciled',
+  initialCents:r.measures.initial,updatedCents:r.measures.updated,
+  issueYearNetCents:r.measures.issue_year_net,netBeforeCancellationsCents:r.measures.net_before_cancellations,
+  originalDate:detail.originalDate,lastMovementDate:detail.lastMovementDate,
+  comparison:out.referenceCents===null?'document_unavailable':out.referenceCents===r.measures.updated?'matching':'different',
+  meaning:classifyValueMeaning(out.referenceCents,r)};
+}
+/** Cobertura exclusivamente por contagem, identidade unica e recorte vigente.
+ * NEs com reconstrucoes independentes nao passam automaticamente ao fluxo. */
+export function summarizeCommitmentValues(months,{today}={}){
+ const {entries}=indexCommitmentChronology(months);
+ const empty=()=>({identities:0,internal:0,documentMatching:0,documentDifferent:0,documentUnavailable:0,notReady:0});
+ const result={...empty(),byYear:[],reasons:{}},years=new Map();
+ for(const r of entries){
+  const year=r.id.slice(11,15);
+  if(!years.has(year))years.set(year,{year,...empty()});
+  const y=years.get(year);
+  result.identities++;y.identities++;
+  const owner=r.owners[0],v=commitmentValueEvidence(owner.doc,owner.items,r.observations,{today,uniqueIdentity:r.owners.length===1});
+  const key=v.itemsStatus==='internally_reconciled'?
+   ({matching:'documentMatching',different:'documentDifferent',document_unavailable:'documentUnavailable'}[v.comparison]):'notReady';
+  if(v.itemsStatus==='internally_reconciled'){result.internal++;y.internal++}
+  result[key]++;y[key]++;
+  if(key==='notReady')result.reasons[v.itemsStatus]=(result.reasons[v.itemsStatus]||0)+1;
+ }
+ result.byYear=[...years.values()].sort((a,b)=>a.year.localeCompare(b.year));
+ return result;
+}

@@ -71,6 +71,7 @@ export async function buildSite(root = process.cwd(), destination = 'dist') {
   await writeFile(join(output,'data','relationship-index.json'),locator);
   console.log('Indice de relacionamentos (bytes): '+Buffer.byteLength(locator));
   console.log('Cobertura de relacionamentos: '+JSON.stringify(index.integrated));
+  console.log('Valores NE (somente contagens): '+JSON.stringify(index.commitmentValues));
   const {periods,...chronology}=index.commitmentChronology;
   console.log('Cronologia NE (contagens e subtotais parciais do mes corrente): '+JSON.stringify({...chronology,currentMonth:periods[index.asOf.slice(0,7)]||null}));
   for (const month of manifest.months) {

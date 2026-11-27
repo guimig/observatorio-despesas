@@ -534,3 +534,7 @@ html[data-theme=dark] {
 .page-actions{display:flex;flex-wrap:wrap;gap:5px;align-items:center}.pagination [aria-current=page]{background:var(--brand);color:var(--surface);border-color:var(--brand);font-weight:750}
 @media(max-width:650px){.filter-block,.catalog-query,.document-query{padding:12px}.filter-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.filter-grid input,.filter-grid select{font-size:.9rem;padding:8px 5px}.filter-actions{align-items:flex-start}.facet-options{grid-template-columns:1fr;max-height:270px}.facet-option{font-size:.95rem}.date-cell{min-width:140px}.pagination{flex-wrap:wrap}.page-actions .button{min-height:36px;padding:6px 9px}.filter-feedback-text{font-size:.88rem}.view-tabs{flex-wrap:wrap}}
 @media(prefers-reduced-motion:reduce){.relation-item,.details-button,.relation-link,.button,.view-tabs a{transition:none}}
+
+/* Grandezas da NE: destaque discreto e responsivo, sem codificar divergencia so por cor. */
+.document-fields .commitment-value-field{border:1px solid var(--border);border-left:3px solid var(--brand);background:var(--surface)}
+.document-fields .commitment-value-field dd{font-size:.96rem;font-variant-numeric:tabular-nums}

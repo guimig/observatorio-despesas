@@ -3,7 +3,7 @@
  * Nunca inferir pagamento de NS especifica, saldo de ata ou dotacao. */
 import {buildCommitmentTrajectories} from './trajectory.js';
 import {extractAraquariNeEvidence,matchDocumentContract} from './procurement-links.js';
-import {commitmentChronologyEvidence} from './siafi-movement-reconciliation.js';
+import {commitmentChronologyEvidence,commitmentValueEvidence} from './siafi-movement-reconciliation.js';
 import {isFormalContract} from './instrument-types.js';
 const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const PURCHASE=/^\d{14}-1-\d{6}\/20\d{2}$/;
@@ -93,7 +93,7 @@ export function indexCguContractEvidence(rows,contracts,{byNeDocument=new Map(),
  }
  return {byNe,byPncp,byCgu,records};
 }
-export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],arpDetails=[],tender=null,cguContracts=[],totalMonths=months.length}={}){
+export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],arpDetails=[],tender=null,cguContracts=[],totalMonths=months.length,today=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}={}){
  const entries=buildCommitmentTrajectories(months);
  const byNe=new Map(entries.map(e=>[e.id,e])),docs=new Map(),originsByDoc=new Map(),observations=new Map(),owners=new Map();
  for(const m of months){for(const o of m.commitmentObservations||[])add(observations,o.id,o);for(const d of m.documents)add(owners,d.id,m.month);}
@@ -192,7 +192,7 @@ export function buildIntegratedIndex({months=[],contracts=[],notices=[],atas=[],
  }
  return {entries,byNe,docs,originsByDoc,instruments,noticeMap,ataMap,byAtaPurchase,details,tenderByPurchase,cguEvidence,
   byInstrument,neEdges,ataEdges,noticeEdges,ataInstruments,noticeInstruments,observations,owners,
-  loadedMonths:months.length,totalMonths,complete:totalMonths>0&&months.length===totalMonths};
+  loadedMonths:months.length,totalMonths,today,complete:totalMonths>0&&months.length===totalMonths};
 }
 export function neEvidenceLevel(index,id){
  const edges=index.neEdges.get(id)||[];
@@ -251,7 +251,7 @@ export function cguContractExecutionEvidence(index,id){
  const group=()=>({cents:0,known:0,unknown:0});
  const fields=['initialCents','reinforcementCents','annulmentCents','cancellationCents','reconstructedCents'];
  const movements=Object.fromEntries(fields.map(k=>[k,group()]));
- const result={references:unique(record?.refs||[]).length,located:0,eligible:0,reconciled:0,missing:[],ambiguous:[],conflicts:[],pendingChronology:[],rows:[],movements,
+ const result={references:unique(record?.refs||[]).length,located:0,eligible:0,reconciled:0,missing:[],ambiguous:[],conflicts:[],pendingChronology:[],rows:[],movements,itemValueCoverage:{internal:0,different:0,documentUnavailable:0},
   liquidation:{...group(),documents:0,neWithoutKnown:0},payment:{...group(),documents:0,neWithoutKnown:0},periods:[]};
  const liqDocs=new Set(),payDocs=new Set(),periods=new Map();
  const period=(date,key,cents)=>{
@@ -262,7 +262,7 @@ export function cguContractExecutionEvidence(index,id){
  };
  for(const ne of unique(record?.refs||[])){
   const entry=index.byNe.get(ne);
-  const row={ne,status:'pending',chronology:null,liquidation:group(),payment:group(),liquidationLinks:[],paymentLinks:[]};
+  const row={ne,status:'pending',chronology:null,values:null,liquidation:group(),payment:group(),liquidationLinks:[],paymentLinks:[]};
   result.rows.push(row);
   if(entry?.document)result.located++;
   if(!entry?.document){row.status='missing';result.missing.push(ne);continue;}
@@ -275,6 +275,13 @@ export function cguContractExecutionEvidence(index,id){
   result.eligible++;
   const chronology=commitmentChronologyEvidence(entry.document,entry.items,index.observations.get(ne)||[]);
   row.chronology=chronology;row.status=chronology.status;
+  const values=commitmentValueEvidence(entry.document,entry.items,index.observations.get(ne)||[],{today:index.today});
+  row.values=values;
+  if(values.itemsStatus==='internally_reconciled'){
+   result.itemValueCoverage.internal++;
+   if(values.comparison==='different')result.itemValueCoverage.different++;
+   if(values.comparison==='document_unavailable')result.itemValueCoverage.documentUnavailable++;
+  }
   if(chronology.status==='reconciled'){
    result.reconciled++;
    for(const field of fields)safeAdd(movements[field],chronology[field]);
@@ -408,6 +415,7 @@ export function summarizeIntegratedCoverage(index){
   cguDirectNePresent:[...index.cguEvidence.byNe.keys()].filter(ne=>index.byNe.get(ne)?.document).length,
   cguDirectPairs:[...index.cguEvidence.records.values()].reduce((n,c)=>n+c.refs.length,0),cguPncpCandidates:index.cguEvidence.byPncp.size,
   cguContractEligibleNe:cguExecution.reduce((n,c)=>n+c.eligible,0),cguContractReconciledNe:cguExecution.reduce((n,c)=>n+c.reconciled,0),
+  cguContractInternalItemNe:cguExecution.reduce((n,c)=>n+c.itemValueCoverage.internal,0),cguContractDifferentItemNe:cguExecution.reduce((n,c)=>n+c.itemValueCoverage.different,0),
   cguContractAmbiguousNe:new Set(cguExecution.flatMap(c=>c.ambiguous)).size,
   cguContractKnownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.known,0),cguContractUnknownPaymentPairs:cguExecution.reduce((n,c)=>n+c.payment.unknown,0),
   cguContractKnownLiquidationPairs:cguExecution.reduce((n,c)=>n+c.liquidation.known,0),cguContractUnknownLiquidationPairs:cguExecution.reduce((n,c)=>n+c.liquidation.unknown,0),
