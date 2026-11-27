@@ -5,7 +5,7 @@ import {resolve} from 'node:path';
 export const WATCHED=Object.freeze([
  {file:'coleta-cgu.yml',hours:8,retryHours:2,inputs:{}},
  {file:'backfill-cgu.yml',hours:6,inputs:{intensive:'true'}},
- {file:'enriquecer-cgu.yml',hours:6,inputs:{intensive:'true',liquidations:'30',payments:'36',items:'15'}},
+ {file:'enriquecer-cgu.yml',hours:6,inputs:{intensive:'true',liquidations:'40',payments:'50',items:'20'}},
  {file:'publicar-pages.yml',hours:4,inputs:{}},
  {file:'atualizar-contratos-pncp.yml',hours:26,inputs:{}},
  {file:'recuperar-origens-cgu.yml',hours:15,inputs:{limit:'15'}},
@@ -25,8 +25,13 @@ export function overdueStatus(runs,hours,now=new Date(),{retryHours=hours}={}){
  const latest=runs.find(r=>Date.parse(r.created_at)===last);
  const staleSuccess=successAge===null||successAge>=hours;
  const round=n=>n===null?null:Math.round(n*10)/10;
+ const lastScheduled=runs.filter(r=>r.event==='schedule').reduce((max,r)=>Math.max(max,Date.parse(r.created_at)),0);
+ const queueStart=Date.parse(latest?.run_started_at||'');
  const detail={ageHours:round(age),lastSuccessAgeHours:round(successAge),staleSuccess,
-   lastConclusion:latest?.conclusion||null};
+   lastConclusion:latest?.conclusion||null,
+   lastScheduledAgeHours:lastScheduled?round((now.getTime()-lastScheduled)/3600000):null,
+   lastQueueDelayMinutes:latest&&Number.isFinite(queueStart)&&queueStart>=last?
+     Math.round((queueStart-last)/60000):null};
  if(runs.some(r=>r.status!=='completed'))return {eligible:false,reason:'active',...detail};
  const retry=latest?.conclusion&&latest.conclusion!=='success'&&staleSuccess&&age>=retryHours;
  const eligible=last===0||age>=hours||Boolean(retry);

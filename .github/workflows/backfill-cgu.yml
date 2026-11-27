@@ -70,13 +70,13 @@ jobs:
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Commits de GITHUB_TOKEN não reexecutam todos os fluxos; quando várias
           # coletas são enfileiradas, cada uma precisa ler o HEAD mais recente.
           ref: main
           persist-credentials: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Verificar Secret da CGU
@@ -104,8 +104,8 @@ jobs:
           BACKFILL_DAYS: ${{ inputs.days || '5' }}
           BACKFILL_INTENSIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
           BACKFILL_ADAPTIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
-          # Lacunas documentadas na issue #88. So voltam a fila se ainda incompletas.
-          BACKFILL_PRIORITY_DATES: '2026-10-14,2026-10-15,2026-10-16'
+          # Lacunas documentadas na issue #88 e valores pendentes de novembro. Somente se incompletas.
+          BACKFILL_PRIORITY_DATES: '2026-10-14,2026-10-15,2026-10-16,2026-11-10,2026-11-11'
           BACKFILL_START_DAY: ${{ inputs.start_day || '1' }}
           BACKFILL_RECHECK: ${{ inputs.recheck || 'false' }}
           BACKFILL_ROTATE: ${{ github.event_name == 'schedule' && 'true' || 'false' }}

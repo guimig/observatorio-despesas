@@ -30,13 +30,13 @@ jobs:
       changed: ${{ steps.commit.outputs.changed }}
       source_status: ${{ steps.collect.outputs.status }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Commits de GITHUB_TOKEN não reexecutam todos os fluxos; quando várias
           # coletas são enfileiradas, cada uma precisa ler o HEAD mais recente.
           ref: main
           persist-credentials: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Verificar disponibilidade do Secret no repositorio

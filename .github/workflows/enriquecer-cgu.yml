@@ -16,19 +16,19 @@ on:
         required: false
         type: choice
         default: '12'
-        options: ['5','10','12','20','30']
+        options: ['5','10','12','20','30','40']
       payments:
         description: 'Pagamentos por lote'
         required: false
         type: choice
         default: '15'
-        options: ['5','10','15','30','36']
+        options: ['5','10','15','30','36','50']
       items:
         description: 'Empenhos para detalhar por lote'
         required: false
         type: choice
         default: '7'
-        options: ['3','7','10','15']
+        options: ['3','7','10','15','20']
   push:
     branches: [main]
     paths:
@@ -56,13 +56,13 @@ jobs:
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Commits de GITHUB_TOKEN não reexecutam todos os fluxos; quando várias
           # coletas são enfileiradas, cada uma precisa ler o HEAD mais recente.
           ref: main
           persist-credentials: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Verificar Secret
@@ -84,7 +84,7 @@ jobs:
       - name: Auditar cruzamentos interanuais existentes (so contagens)
         if: steps.credential.outputs.enabled == 'true'
         run: npm run audit:cgu-interannual
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         if: steps.credential.outputs.enabled == 'true'
         continue-on-error: true
         with:
@@ -109,10 +109,10 @@ jobs:
           ENRICH_MONTH: ${{ inputs.month }}
           ENRICH_PRIORITY: ${{ github.event_name == 'schedule' && 'round_robin' || 'newest' }}
           ENRICH_INTENSIVE: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && 'true' || 'false' }}
-          ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '30' }}
-          ENRICH_PAYMENTS: ${{ inputs.payments || '36' }}
-          ENRICH_ITEMS: ${{ inputs.items || '15' }}
-          ENRICH_HISTORY_ITEMS: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && '20' || '10' }}
+          ENRICH_LIQUIDATIONS: ${{ inputs.liquidations || '40' }}
+          ENRICH_PAYMENTS: ${{ inputs.payments || '50' }}
+          ENRICH_ITEMS: ${{ inputs.items || '20' }}
+          ENRICH_HISTORY_ITEMS: ${{ (github.event_name != 'workflow_dispatch' || inputs.intensive) && '30' || '10' }}
           CGU_HISTORY_STATE_PATH: ${{ runner.temp }}/observatorio-history-state.json
         run: |
           set -o pipefail
@@ -147,7 +147,7 @@ jobs:
           else
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         if: steps.state_after.outputs.changed == 'true' && steps.credential.outputs.enabled == 'true'
         continue-on-error: true
         with:
