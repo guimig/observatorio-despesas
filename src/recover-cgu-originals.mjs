@@ -311,12 +311,12 @@ export async function recoverReferencedNe({
  const today=now.toISOString().slice(0,10);
  const attemptKey=id=>stateKey(['cgu-original-retry-v1',id]);
  const due=id=>{const stamp=state[attemptKey(id)];return !validDay(stamp)||stamp>today||Date.parse(today)-Date.parse(stamp)>=2*86400000};
- const financial=scope==='all'&&year===null?missingContractFinancialDocuments(months,cguContracts):[];
+ const financial=scope==='all'&&year===null?missingContractFinancialDocuments(months,cguContracts).filter(id=>id.slice(11,15)<=today.slice(0,4)):[];
  // Compartilhar as mesmas vagas e o mesmo orçamento de HTTP, sem ampliar lote.
  const dueNe=eligible.filter(due),dueFinancial=financial.filter(due);
  if(!Number.isSafeInteger(limit)||limit<1||limit>15||!Number.isSafeInteger(slot)||slot<0)throw Error('Plano NE invalido');
- const financialQuota=dueFinancial.length?Math.min(dueFinancial.length,dueNe.length?Math.max(1,Math.floor(limit/3)):limit):0;
- const selectFinancial=dueFinancial.length?dueFinancial.slice((slot*financialQuota)%dueFinancial.length).concat(dueFinancial.slice(0,(slot*financialQuota)%dueFinancial.length)).slice(0,financialQuota):[];
+ const financialQuota=dueFinancial.length?Math.min(dueFinancial.length,dueNe.length?(limit===1?slot%2:Math.max(1,Math.floor(limit/3))):limit):0;
+ const selectFinancial=financialQuota?dueFinancial.slice((slot*financialQuota)%dueFinancial.length).concat(dueFinancial.slice(0,(slot*financialQuota)%dueFinancial.length)).slice(0,financialQuota):[];
  const neSlots=limit-selectFinancial.length;
  const declared=new Set(cguContracts.flatMap(c=>c.refs||[]));
  const priority=dueNe.filter(id=>declared.has(id));
@@ -326,8 +326,8 @@ export async function recoverReferencedNe({
  const selected=reserved.concat(remaining?chooseNeBatch(rest,{limit:remaining,slot}):[],selectFinancial);
  const output={status:dryRun?'dry_run':'complete',scope,missing:missing.length,
    missingByYear:byYear(missing),eligible:eligible.length,
-   selected:byYear(selected),attempted:0,
-   recovered:0,unchanged:0,failures:{},financialMissing:financial.length,financialSelected:selectFinancial.length,financialRecovered:0,deferred:eligible.length-dueNe.length+financial.length-dueFinancial.length};
+   selected:byYear(selected.filter(inScopeNe)),attempted:0,
+   recovered:0,unchanged:0,failures:{},financialMissing:financial.length,financialSelected:selectFinancial.length,financialAttempted:0,financialRecovered:0,financialUnchanged:0,deferred:eligible.length-dueNe.length+financial.length-dueFinancial.length};
  if(!dryRun&&!selected.length&&(missing.length||financial.length))output.status='no_eligible';
  if(dryRun||!selected.length)return output;
  if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
@@ -336,11 +336,12 @@ export async function recoverReferencedNe({
    output.attempted++;
    try{
      const isFinancial=!inScopeNe(id);
+     if(isFinancial)output.financialAttempted++;
      const raw=await fetchCguDocumentDetail(id,{token,fetchFn,wait,budget});
      const doc=isFinancial?normalizeRelatedFinancialDetail(id,raw,{now}):normalizeOriginalDetail(id,raw,{now});
      const result=await (isFinancial?persistFinancial:persist)(root,doc,now);
-     if(result.changed){output.recovered++;if(isFinancial)output.financialRecovered++;}
-     else output.unchanged++;
+     if(isFinancial){if(result.changed)output.financialRecovered++;else output.financialUnchanged++;}
+     else if(result.changed)output.recovered++;else output.unchanged++;
      delete state[attemptKey(id)];
    }catch(error){
      const reason=categorize(error);
@@ -399,7 +400,7 @@ async function main(){
      '. Consulta individual nao equivale a cobertura diaria, RP inscrito ou saldo.');
    // Falhas de API sem novos documentos mantem a fila; um problema de esquema
    // nunca deve ser disfarçado de cobertura integral.
-   if(result.status==='partial'&&!result.recovered)process.exitCode=1;
+   if(result.status==='partial'&&!result.recovered&&!result.financialRecovered)process.exitCode=1;
  }catch{
    console.error('Recuperacao CGU de NEs interrompida; verificar esquema e autenticação.');
    process.exitCode=1;
