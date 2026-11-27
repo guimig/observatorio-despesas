@@ -24,3 +24,18 @@ test('descoberta retoma janelas da sondagem e conserva apenas evidencias positiv
  assert.equal(report.report.contractsQueried,1);assert.equal(report.report.positiveContracts,1);assert.equal(report.data.contracts.length,1);
  assert.ok(Object.keys(report.state).length>0);assert.ok(!JSON.stringify(report).includes('secret'));
 });
+
+import {buildIntegratedIndex,scopeFinancialEvidence,trajectoryMatches,summarizeIntegratedCoverage,indexCguContractEvidence} from '../assets/integrated-trajectory.js';
+import {missingReferencedNe} from '../src/recover-cgu-originals.mjs';
+test('relacao CGU direta nao confirma PNCP nem compoe seus totais; candidato exige unicidade',()=>{
+ const row={...identity,refs:[ne,ne2]},contract={id:'p',source:'pncp',kind:'Contrato',number:'00012/2026',process:identity.process,signed:identity.signed,supplierCnpj:identity.supplierCnpj,unitCode:'158459'};
+ const month={unit:'158459',month:'2026-10',documents:[{id:ne,phase:1,date:'2026-10-10',cents:100}],relations:[]};
+ const i=buildIntegratedIndex({months:[month],contracts:[contract],cguContracts:[row]});
+ assert.equal(i.cguEvidence.byNe.get(ne)[0].id,42);
+ assert.equal(i.cguEvidence.byPncp.get('p').length,1);
+ assert.equal(scopeFinancialEvidence(i,'instrument','p').commitment.known,0);
+ assert.equal(trajectoryMatches(i,i.byNe.get(ne),'12/2026'),true);
+ assert.equal(summarizeIntegratedCoverage(i).cguDirectNePresent,1);
+ assert.equal(indexCguContractEvidence([row],[contract,{...contract,id:'p2'}]).byPncp.size,0);
+ assert.deepEqual(missingReferencedNe([month],{scope:'all',cguContracts:[row]}),[ne2]);
+});

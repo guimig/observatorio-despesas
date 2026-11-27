@@ -8,7 +8,7 @@ export async function comparePublication(site,expected,{fetcher=fetch}={}){
     throw Error('URL HTTPS do GitHub Pages inválida');
   const base=new URL(site.endsWith('/')?site:site+'/');
   for(const [relative,contents] of Object.entries(expected)){
-    if(!/^(index\.html|assets\/[A-Za-z0-9.-]+|data\/(?:manifest|coverage-index|relationship-index)\.json|data\/procurement\/(?:contracts|notices|atas|ata-participants|tender-items)\.json|data\/siop\/dictionaries\.json|data\/months\/20\d{2}-(0[1-9]|1[0-2])\.json)$/.test(relative))
+    if(!/^(index\.html|assets\/[A-Za-z0-9.-]+|data\/(?:manifest|coverage-index|relationship-index)\.json|data\/procurement\/(?:contracts|notices|atas|ata-participants|tender-items|cgu-contract-links)\.json|data\/siop\/dictionaries\.json|data\/months\/20\d{2}-(0[1-9]|1[0-2])\.json)$/.test(relative))
       throw Error('Caminho de publicação não permitido');
     const target=new URL(relative,base);
     target.searchParams.set('v',String(Date.now()));
@@ -45,7 +45,7 @@ export async function verifyPublication({
   const paths=['data/relationship-index.json','data/coverage-index.json','data/manifest.json','index.html','assets/app.js','assets/budget-classification.js','assets/integrated-trajectory.js','assets/style.css','assets/quality.js','assets/coverage-panel.js'];
   const expected={};
   for(const path of paths)expected[path]=await readFile(join(dist,path),'utf8');
-  for(const path of ['contracts','notices','atas','ata-participants','tender-items'].map(s=>'data/procurement/'+s+'.json')){
+  for(const path of ['contracts','notices','atas','ata-participants','tender-items','cgu-contract-links'].map(s=>'data/procurement/'+s+'.json')){
     try{expected[path]=await readFile(join(dist,path),'utf8')}catch(e){if(e.code!=='ENOENT')throw e}
   }
   try{expected['data/siop/dictionaries.json']=await readFile(join(dist,'data/siop/dictionaries.json'),'utf8')}catch(e){if(e.code!=='ENOENT')throw e}

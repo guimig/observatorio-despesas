@@ -43,7 +43,7 @@ function render(root,x){
  if(x.integrated){
   const g=x.integrated;
   root.append(elem('h3','','Rastreabilidade integrada · acervo publicado'));
-  metricGrid(root,[['NEs com referência integral conferida',fraction(g.confirmedCommitments,g.commitments)],
+  metricGrid(root,[['NEs com referência integral PNCP conferida',fraction(g.confirmedCommitments,g.commitments)],['Contratos com NEs integrais declaradas pela CGU',fmt(g.cguDirectContracts||0)],['Pares contrato–NE declarados pela CGU',fmt(g.cguDirectPairs||0)],['NEs CGU localizadas no acervo',fraction(g.cguDirectNePresent||0,g.cguDirectNe||0)],['Contratos CGU candidatos a correspondência PNCP',fmt(g.cguPncpCandidates||0)],
    ['Consultas CGU de documentos relacionados',fmt(g.relatedDocumentsChecked||0)],
    ['NEs com consulta de relacionados',fmt(g.relatedNeChecked||0)],
    ['Pares declarados pela CGU (relacionados)',fmt(g.cguRelatedPairs||0)],

@@ -4,6 +4,7 @@ import {readPublicDictionaries} from './siop-public-catalog.mjs';
 import { readProcurement } from './procurement-store.mjs';
 import { readNotices } from './pncp-notices-store.mjs';
 import { readAtas } from './pncp-atas-store.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 import {validateParticipantReferences} from './collect-pncp-ata-participants.mjs';
 import {validateTenderCatalog} from './collect-pncp-tender-items.mjs';
 import { summarizeInstrumentTypes } from '../assets/instrument-types.js';
@@ -15,6 +16,7 @@ try {
   const procurement = await readProcurement(process.cwd());
   const notices = await readNotices(process.cwd());
   const atas = await readAtas(process.cwd());
+  await readCguContractEvidence(process.cwd());
   try{validateParticipantReferences(JSON.parse(await readFile('data/procurement/ata-participants.json','utf8')),atas.atas)}
   catch(e){if(e.code!=='ENOENT')throw e}
   try{validateTenderCatalog(JSON.parse(await readFile('data/procurement/tender-items.json','utf8')),notices.notices)}
