@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
-import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences} from '../src/chronology-enrichment.mjs';
+import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences,summarizeCatalogBacklog,needsInitialCatalog,orderMissingCatalogs,catalogPaginationKey,catalogPageLimit} from '../src/chronology-enrichment.mjs';
 const now=new Date('2026-11-27T17:00:00Z'),today='2026-11-27';
 const id=(n,year=2026)=>'15845900001'+year+'NE'+String(n).padStart(6,'0');
 const doc=(n,extra={})=>({id:id(n),date:'2026-11-10',phase:1,cents:100,itemsDetailVersion:2,...extra});
@@ -126,4 +126,65 @@ test('diagnostico de catalogos distingue observacao anterior sem promover concil
  assert.deepEqual(result.direction,{above:1,below:2});
  assert.equal(buildCommitmentChronology([a],{today}).reconciled,1);
  assert.ok(!JSON.stringify(result).includes(id(1)));
+});
+
+test('passivo distingue catalogo ausente ou legado, consulta vazia v2 e identidade duplicada',()=>{
+ const a=month([{doc:doc(1,{itemsDetailVersion:undefined})},{doc:doc(2,{itemsDetailVersion:1}),items:[pending(1,100)]},
+  {doc:doc(3),items:[]},{doc:doc(4),items:[pending(1,100)]},{doc:doc(5)}]);
+ const b=month([{doc:doc(5)}]);
+ const result=summarizeCatalogBacklog([a,b]);
+ assert.equal(result.identities,5);assert.equal(result.missing,2);assert.equal(result.empty,1);
+ assert.equal(result.available,1);assert.equal(result.duplicate,1);
+ assert.deepEqual(result.byYear['2026'],{missing:2,empty:1,available:1,duplicate:1});
+ assert.ok(!JSON.stringify(result).includes(id(1)));
+});
+test('planejamento ocupa as vagas de catalogos com NEs novas e limita revisoes',()=>{
+ const rows=[...Array.from({length:12},(_,i)=>({doc:doc(i+1,{itemsDetailVersion:undefined})})),
+  ...Array.from({length:5},(_,i)=>({doc:doc(i+20),items:[pending(1,80)]}))];
+ const a=month(rows),ns={kind:'liquidation',id:'ns'},ob={kind:'payment',id:'ob'};
+ const base=[ns,ob,...[20,21,22].map(n=>({kind:'items',id:id(n),month:a.month,recheck:true}))];
+ const {tasks,summary}=planChronologyEnrichment(base,[a],{now,maxItems:10,review:true});
+ assert.equal(tasks.filter(t=>t.initialCatalog).length,10);
+ assert.equal(tasks.filter(t=>t.kind==='items'&&!t.initialCatalog).length,2);
+ assert.equal(tasks[0].initialCatalog,true);assert.equal(tasks[1].initialCatalog,true);
+ assert.ok(tasks.includes(ns)&&tasks.includes(ob));
+ assert.equal(summary.initialCatalogEligible,12);assert.equal(summary.initialCatalogSelected,10);
+ assert.equal(summary.initialCatalogByYear['2026'],10);
+ assert.ok(tasks.findIndex(t=>t===ns)<5);assert.ok(tasks.findIndex(t=>t===ob)<5);
+});
+test('distribuicao por exercicio reserva cobertura minima e considera volume do passivo',()=>{
+ const rows=[...Array.from({length:60},(_,i)=>({id:id(i+1,2024),year:'2024',lastAttempt:''})),
+ ...Array.from({length:20},(_,i)=>({id:id(i+1,2025),year:'2025',lastAttempt:''})),
+ ...Array.from({length:5},(_,i)=>({id:id(i+1,2026),year:'2026',lastAttempt:''}))];
+ const selected=orderMissingCatalogs(rows,{limit:12,slot:0});
+ const count=y=>selected.filter(r=>r.year===y).length;
+ assert.equal(selected.length,12);assert.ok(count('2024')>count('2025'));
+ assert.ok(count('2025')>=count('2026'));assert.ok(count('2026')>=1);
+ assert.equal(new Set(selected.map(r=>r.id)).size,12);
+ const priority=orderMissingCatalogs(rows,{limit:12,slot:0,contractual:code=>code===id(5,2026)});
+ assert.ok(priority.some(r=>r.id===id(5,2026)));
+ const small=orderMissingCatalogs(rows,{limit:1,slot:1});
+ assert.equal(small[0].year,'2025');
+});
+test('catalogo independe do valor documental e preserva sequenciais legados em reconsulta',()=>{
+ const r=record([{doc:doc(1,{cents:null,itemsDetailVersion:undefined})}]);
+ assert.equal(needsInitialCatalog(r),true);assert.equal(classifyChronologyWork(r,{now}).missingCatalog,true);
+ const old=record([{doc:doc(1,{itemsDetailVersion:1}),items:[pending(1,80)]}]);
+ const w=classifyChronologyWork(old,{now});
+ assert.equal(w.missingCatalog,true);assert.equal(w.task.recheck,true);
+ const state={[chronologyAttemptKey(old,w.task)]:today};
+ assert.equal(classifyChronologyWork(old,{now,state}).kind,'cooldown');
+ assert.equal(classifyChronologyWork(old,{now:new Date('2026-11-28T17:00:00Z'),state}).kind,'catalog');
+});
+test('amplia limite de paginas apenas apos falha de paginacao e somente com evidencia vigente',()=>{
+ const r=record([{doc:doc(1,{itemsDetailVersion:undefined})}]);
+ assert.equal(catalogPageLimit(r,{},now),8);
+ const key=catalogPaginationKey(r),state={[key]:today};
+ assert.equal(catalogPageLimit(r,state,now),20);
+ assert.equal(catalogPageLimit(r,{[key]:'2026-11-28'},now),8);
+ assert.equal(catalogPageLimit(r,state,new Date('2026-12-28T17:00:00Z')),8);
+ const other=record([{doc:doc(1,{itemsDetailVersion:undefined,cents:101})}]);
+ assert.equal(catalogPageLimit(other,state,now),8);
+ const complete=record([{doc:doc(1),items:[pending(1,100)]}]);
+ assert.equal(catalogPaginationKey(complete),null);assert.equal(catalogPageLimit(complete,state,now),8);
 });
