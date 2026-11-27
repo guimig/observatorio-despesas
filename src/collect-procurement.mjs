@@ -40,7 +40,7 @@ export function planContractRecovery(coverage,cguContracts,{now=new Date(),slot=
  }
  const months=[...counts.keys()].sort((a,b)=>counts.get(b)-counts.get(a)||a.localeCompare(b));
  if(!months.length)return regular;
- const month=months[Math.floor(slot/4)%Math.min(months.length,3)];
+ const month=months[Math.floor(slot/4)%months.length];
  return {month,missing:(coverage||[]).some(x=>x.source==='pncp'&&x.month===month)?[]:['pncp'],pending:['pncp'],reason:'cgu_signature_window'};
 }
 async function main(){
