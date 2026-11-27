@@ -47,7 +47,7 @@ function render(root,x){
    ['Consultas CGU de documentos relacionados',fmt(g.relatedDocumentsChecked||0)],
    ['NEs com consulta de relacionados',fmt(g.relatedNeChecked||0)],
    ['Pares declarados pela CGU (relacionados)',fmt(g.cguRelatedPairs||0)],
-   ['Vínculos documentais adicionais sem valor por NE',fmt(g.cguRelatedOnlyPairs||0)],
+   ['Vínculos documentais adicionais sem valor por NE',fmt(g.cguRelatedOnlyPairs||0)],['NEs referenciadas por identidade ainda ausentes',fmt(g.relatedMissingNe||0)],
    ['NEs somente com indícios',fmt(g.indicatedCommitments)],['Candidatos com evidência contextual forte',fmt(g.highConfidenceCandidates||0)],['Pagamentos com impacto recuperado',fraction(g.paymentDocumentsWithImpact||0,g.paymentDocuments||0)],['Liquidações com impacto recuperado',fraction(g.liquidationDocumentsWithImpact||0,g.liquidationDocuments||0)],['Contratações referenciadas ausentes',fmt(g.missingPurchases||0)],['Atas específicas ausentes',fmt(g.missingSpecificAtas||0)],['Itens de vínculos administrativos candidatos',fmt(g.candidateItemRefs||0)],['NEs com instrumentos concorrentes (sem alocação)',fmt(g.ambiguousCommitments)],
    ['Liquidações com origem NE confirmada',fmt(g.liquidationsWithConfirmedOrigin)],['Pagamentos com origem NE confirmada',fmt(g.paymentsWithConfirmedOrigin)],
    ['Instrumentos com contratação presente',fmt(g.instrumentsWithLocalPurchase)],

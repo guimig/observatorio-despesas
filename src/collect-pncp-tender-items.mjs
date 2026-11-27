@@ -1,6 +1,7 @@
 import {readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {fetchTenderItems} from './pncp-tender-items.mjs';
+import {readProcurement} from './procurement-store.mjs';
 import {inScopePurchaseId} from './collection-scope.mjs';
 import {validateResults,fetchItemResults,applyItemResults,planItemResults,resultKey} from './pncp-item-results.mjs';
 import {readOperationalState,saveOperationalState} from './operational-state.mjs';
@@ -30,7 +31,7 @@ export function validateTenderCatalog(data,notices){
  }
  return data;
 }
-export function planTenderItems(notices,procedures,limit=5,slot=0){
+export function planTenderItems(notices,procedures,limit=5,slot=0,priorityPurchases=new Set()){
  if(!Number.isSafeInteger(limit)||limit<1||limit>10||!Number.isSafeInteger(slot)||slot<0)throw Error('Limite ou rodada invalida');
  const known=new Set(procedures.map(p=>p.pncpId));
  const pending=notices.filter(n=>inScopePurchaseId(n.pncpId)&&!known.has(n.pncpId))
@@ -38,7 +39,9 @@ export function planTenderItems(notices,procedures,limit=5,slot=0){
  if(!pending.length)return [];
  // Alternar o ponto inicial a cada dia impede que uma falha persistente bloqueie o acervo.
  const start=slot%pending.length;
- return pending.slice(start).concat(pending.slice(0,start)).slice(0,limit);
+ const rotated=pending.slice(start).concat(pending.slice(0,start));
+ const priority=rotated.filter(n=>priorityPurchases.has(n.pncpId)).slice(0,Math.max(1,Math.floor(limit/2)));
+ return [...priority,...rotated.filter(n=>!priority.includes(n))].slice(0,limit);
 }
 async function main(){
  const notices=JSON.parse(await readFile('data/procurement/notices.json','utf8')).notices;
@@ -46,7 +49,9 @@ async function main(){
  catch(e){if(e.code==='ENOENT')data={schema_version:1,procedures:[]};else throw e}
  validateTenderCatalog(data,notices);
  const slot=Math.floor(Date.now()/43200000);
- const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||5),slot);
+ const contracts=(await readProcurement(process.cwd()))?.contracts||[];
+ const priorityPurchases=new Set(contracts.filter(c=>c.unitCode==='158459'||c.process?.startsWith('23349.')||c.commitmentRefs?.length||c.commitmentContext?.length).map(c=>c.procurementId));
+ const plan=planTenderItems(notices,data.procedures,Number(process.env.PNCP_TENDER_ITEMS_LIMIT||5),slot,priorityPurchases);
  console.log('Itens licitados: '+JSON.stringify({totalNotices:notices.length,srpNotices:notices.filter(n=>n.srp===true).length,already:data.procedures.length,selected:plan.length,remaining:notices.filter(n=>inScopePurchaseId(n.pncpId)&&!data.procedures.some(p=>p.pncpId===n.pncpId)).length}));
  if(process.argv.includes('--dry-run'))return;
  let success=0,failed=0;

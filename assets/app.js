@@ -50,7 +50,7 @@ function contextualPncpCommitmentEvidence(doc){
 }
 let noticesData=null;
 let atasData=null;
-let arpDetailsById=null;
+let arpDetailsById=null,arpParticipationById=null;
 const noticesState={query:'',modality:'all',attribution:'likely',srp:'all',minCents:null,maxCents:null,page:0};
 const contractsState={query:'',source:'all',scope:'all',attribution:'likely',minCents:null,maxCents:null,activeOn:'',page:0};
 const contractsPerPage=20;
@@ -214,7 +214,8 @@ function showCatalogDetail(record,kind){
     ['Assinatura',record.signed?localDate(record.signed):'Não informada'],
     ['Início da vigência',record.starts?localDate(record.starts):'Não informado'],
     ['Fim da vigência',record.ends?localDate(record.ends):'Não informado'],
-    ['Cancelada',record.cancelled===true?'Sim':record.cancelled===false?'Não':'Não informado']
+    ['Cancelada',record.cancelled===true?'Sim':record.cancelled===false?'Não':'Não informado'],
+    ['Participação administrativa de Araquari',ataParticipationLabel(record.id)]
   ]:[
     ['Identificador',record.pncpId||record.id],
     ['Número do instrumento',record.number],
@@ -775,6 +776,14 @@ function externalNoticeLink(id,label){
  if(!url)return element('span','small-muted',label);
  const a=element('a','inline-link',label);a.href=url;a.target='_blank';a.rel='noopener noreferrer';return a;
 }
+function ataParticipationLabel(id){
+ const check=arpParticipationById?.get(id);
+ if(!check)return 'Consulta pendente';
+ const roles={1:'gerenciador',2:'participante',3:'não participante'};
+ if(check.campusRoles?.length)return 'Papel confirmado na fonte: '+check.campusRoles.map(r=>roles[r]).join(', ');
+ if(check.candidateRoles?.length)return 'CNPJ do campus localizado; papel candidato: '+check.candidateRoles.map(r=>roles[r]).join(', ')+' (unidade não homologada)';
+ return 'Nenhum papel confirmado na consulta; não prova ausência de participação';
+}
 function renderOriginButtons(host,index,instrumentId){
  for(const p of index.noticeEdges.get(instrumentId)||[]){
   const name='Licitação / contratação '+(p.notice?.number||p.purchaseId);
@@ -790,7 +799,11 @@ function renderOriginButtons(host,index,instrumentId){
   const row=element('div','integrated-origin');
   row.append(element('span','small-muted','Ata específica · '+a.sources.map(s=>s==='controle_ata_instrumento'?'controle informado no instrumento':'consulta direta da ata').join(' + ')));
   if(a.ata)row.append(relationButton('Ata '+(a.ata.number||a.ata.sequence),()=>showCatalogDetail(a.ata,'ata')));
-  else row.append(element('span','small-muted',a.ataId+' · não localizada no catálogo'));
+  else{
+    const m=/^(\d{14})-1-(\d{6})\/(20\d{2}):ata:(\d+)$/.exec(a.ataId);
+    if(m){const link=element('a','inline-link','Ata '+a.ataId+' · consultar no PNCP');link.href='https://pncp.gov.br/api/pncp/v1/orgaos/'+m[1]+'/compras/'+m[3]+'/'+Number(m[2])+'/atas/'+Number(m[4]);link.target='_blank';link.rel='noopener noreferrer';row.append(link);}
+    else row.append(element('span','small-muted',a.ataId+' · não localizada no catálogo'));
+  }
   host.append(row);
  }
 }
@@ -1443,7 +1456,7 @@ function renderCommitmentTrajectories(){
   $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
   $('trajectory-page-info').textContent='Página '+fmtCount(trajectoryPage+1)+' de '+fmtCount(pages);
   const tbody=$('trajectory-rows');tbody.replaceChildren();
-  $('trajectory-count').textContent=fmtCount(all.length)+' empenho(s) com registro ou vínculo';
+  $('trajectory-count').textContent=fmtCount(all.length)+' empenho(s) com registro ou vínculo · '+fmtCount(cache.size)+' competências carregadas';
   if(!all.length){
     const row=element('tr'),cell=element('td','','Nenhum empenho corresponde à pesquisa.');
     cell.colSpan=7;row.append(cell);tbody.append(row);return;
@@ -1562,7 +1575,10 @@ async function initTrajectories(){
     if (event.key === 'Enter' && !event.isComposing) loadTrajectoryView();
   });
   $('trajectory-load').addEventListener('click',loadTrajectoryView);
-  $('trajectory-full').addEventListener('click',async()=>{try{await loadAllTrajectoryMonths();}catch{$('trajectory-status').textContent='Histórico parcial; uma ou mais competências indisponíveis.';}});
+  $('trajectory-full').addEventListener('click',async()=>{
+    const button=$('trajectory-full');if(button.disabled)return;button.disabled=true;
+    try{await loadAllTrajectoryMonths();}catch{$('trajectory-status').textContent='Histórico parcial; uma ou mais competências indisponíveis.';}finally{button.disabled=trajectoryReady;}
+  });
   $('document-trajectory').addEventListener('click',()=>{
     $('trajectory-search').value = $('dialog-title').textContent;
     $('trajectory-evidence').value='all';trajectoryPage=0;
@@ -2330,7 +2346,7 @@ async function initNotices() {
   }catch{atasData=null;}
   try{
     const response=await fetch('./data/procurement/ata-participants.json',{cache:'no-store'});
-    if(response.ok){const parsed=await response.json();if(Array.isArray(parsed.details))arpDetailsById=new Map(parsed.details.map(d=>[d.ataId,d]));}
+    if(response.ok){const parsed=await response.json();if(Array.isArray(parsed.details))arpDetailsById=new Map(parsed.details.map(d=>[d.ataId,d]));if(Array.isArray(parsed.checks))arpParticipationById=new Map(parsed.checks.map(d=>[d.ataId,d]));}
   }catch{arpDetailsById=null;}
   try{
     const response=await fetch('./data/procurement/notices.json',{cache:'no-store'});

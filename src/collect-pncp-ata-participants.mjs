@@ -17,7 +17,8 @@ export function validateParticipants(value){
   if(!/^\d{14}-1-\d{6}\/20\d{2}:ata:\d+$/.test(c.ataId)||
     !/^20\d{2}-\d{2}-\d{2}$/.test(c.checkedAt)||
     !Array.isArray(c.campusRoles)||c.campusRoles.some(x=>![1,2,3].includes(x))||
-    Object.keys(c).some(k=>!['ataId','checkedAt','campusRoles'].includes(k))||
+    (c.candidateRoles!==undefined&&(!Array.isArray(c.candidateRoles)||c.candidateRoles.some(x=>![1,2,3].includes(x))||new Set(c.candidateRoles).size!==c.candidateRoles.length))||
+    Object.keys(c).some(k=>!['ataId','checkedAt','campusRoles','candidateRoles'].includes(k))||
     ids.has(c.ataId))throw Error('Evidencia ARP invalida');
   ids.add(c.ataId);
  }
@@ -32,11 +33,12 @@ export function validateParticipantReferences(value,atas){
  if(value.details!==undefined)validateArpDetails(value.details,atas);
  return value;
 }
-export const participationKey=check=>stateKey(['arp-participation-v1',check.ataId,[...check.campusRoles].sort((a,b)=>a-b)]);
-export function mergeParticipantCheck(old,ataId,roles,today,{operational=false}={}){
+export const participationKey=check=>stateKey(['arp-participation-v1',check.ataId,[...check.campusRoles].sort((a,b)=>a-b),check.candidateRoles||null]);
+export function mergeParticipantCheck(old,ataId,roles,today,{operational=false,candidates}={}){
  const campusRoles=[...new Set(roles)].sort((a,b)=>a-b);
- if(operational&&old&&JSON.stringify([...old.campusRoles].sort((a,b)=>a-b))===JSON.stringify(campusRoles))return old;
- return {ataId,checkedAt:today,campusRoles};
+ const candidateRoles=candidates===undefined?old?.candidateRoles:[...new Set(candidates)].sort((a,b)=>a-b);
+ if(operational&&old&&JSON.stringify([...old.campusRoles].sort((a,b)=>a-b))===JSON.stringify(campusRoles)&&JSON.stringify(old.candidateRoles)===JSON.stringify(candidateRoles))return old;
+ return {ataId,checkedAt:today,campusRoles,...(candidateRoles!==undefined?{candidateRoles}:{})};
 }
 export function planParticipants(atas,checks,now=new Date(),limit=12,state={}){
  if(!Number.isSafeInteger(limit)||limit<1||limit>50)throw Error('Limite invalido');
@@ -84,7 +86,7 @@ async function main(){
  for(const ata of plan){
   try{
    const result=await scanParticipants(ata);
-   const old=byId.get(ata.id),next=mergeParticipantCheck(old,ata.id,result.campusRoles,now,{operational:Boolean(statePath)});
+   const old=byId.get(ata.id),next=mergeParticipantCheck(old,ata.id,result.campusRoles,now,{operational:Boolean(statePath),candidates:result.candidateRoles});
    if(next!==old){
     data.checks=data.checks.filter(c=>c.ataId!==ata.id);data.checks.push(next);byId.set(ata.id,next);material++;
    }

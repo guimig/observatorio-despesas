@@ -60,7 +60,7 @@ export function mergePncpRecord(original,incoming,{kind,now=new Date(),checked=f
       delete record.supplierCnpj;
       delete record.supplierName;
     }
-    if(record.ataControl&&record.procurementId&&record.ataControl.slice(0,-7)!==record.procurementId)delete record.ataControl;
+    if(record.ataControl&&record.procurementId&&record.ataControl.slice(0,-7)!==record.procurementId&&record.adhesion!==true)delete record.ataControl;
     const linkChanged=record.procurementId!==original.procurementId;
     if(linkChanged&&record.procurementId){
       record.procurementLinkStatus='linked';

@@ -150,7 +150,7 @@ export function normalizePncp(row){
     if(typeof row.temRemanejamento==='boolean')contract.remanejamento=row.temRemanejamento;
     const control=row.numeroControlePncpAta??row.numeroControlePNCPAta;
     if(typeof control==='string'&&/^\d{14}-1-\d{6}\/20\d{2}-\d{6}$/.test(control)&&
-       (!contract.procurementId||control.slice(0,-7)===contract.procurementId))contract.ataControl=control;
+       (!contract.procurementId||control.slice(0,-7)===contract.procurementId||contract.adhesion===true))contract.ataControl=control;
   }
   const vendor=supplier(row,'niFornecedor','tipoPessoa','nomeRazaoSocialFornecedor');
   Object.assign(contract,vendor);

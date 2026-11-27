@@ -269,8 +269,8 @@ export function summarizeIntegratedCoverage(index){
  }
  const specific=instruments.filter(c=>index.ataEdges.has(instrumentKey(c)));
  const itemRefs=entries.flatMap(e=>itemReferenceCandidates(index,e));
- const high=entries.filter(e=>(index.neEdges.get(e.id)||[]).some(x=>x.level==='high_confidence'||x.level==='contextual_candidate'));
- const impact=new Set(entries.flatMap(e=>e.links.filter(l=>Number.isSafeInteger(l.cents)).map(l=>l.id)));
+ const high=entries.filter(e=>neEvidenceLevel(index,e.id)!=='confirmed'&&(index.neEdges.get(e.id)||[]).some(x=>x.level==='high_confidence'||x.level==='contextual_candidate'));
+ const impact=new Set(index.entries.flatMap(e=>e.links.filter(l=>Number.isSafeInteger(l.cents)).map(l=>l.id)));
  const paymentsInIndex=[...index.docs.values()].filter(d=>d.phase===3);
  const liquidationsInIndex=[...index.docs.values()].filter(d=>d.phase===2);
  const arpRefs=[...index.byAtaPurchase.keys()].flatMap(p=>noticeAtaItemReferences(index,p));
@@ -284,6 +284,7 @@ export function summarizeIntegratedCoverage(index){
   relatedDocumentsChecked:checked.length,relatedNeChecked:checked.filter(d=>d.phase===1).length,
   cguRelatedPairs:direct.length,cguRelatedOnlyPairs:relatedOnly.length,
   cguRelatedOnlyDocuments:new Set(relatedOnly.map(l=>l.id)).size,
+  relatedMissingNe:index.entries.filter(e=>!e.document&&inScope(e.id)&&e.links.some(l=>l.relatedCgu)).length,
   ambiguousCommitments:confirmed.filter(e=>unique((index.neEdges.get(e.id)||[]).filter(x=>x.level==='confirmed').map(x=>x.instrumentId)).length>1).length,
   liquidationsWithConfirmedOrigin:liquidations.size,paymentsWithConfirmedOrigin:payments.size,
   neItemCandidates:itemRefs.length,neItemsWithAta:itemRefs.filter(r=>r.ataItem).length,
