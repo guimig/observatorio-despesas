@@ -13,8 +13,10 @@ import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {normalizeDocument} from './cgu.mjs';
 import {detailUrl} from './inspect-cgu-siafi.mjs';
-import {persistTargetedOriginal,validateManifest,validateMonth,validatePublishedData}
+import {persistTargetedOriginal,persistTargetedDocument,validateManifest,validateMonth,validatePublishedData}
  from './store.mjs';
+import {inScopeRelatedDocument,validRelatedPair} from '../assets/trajectory.js';
+import {stateKey,readOperationalState,saveOperationalState,validDay} from './operational-state.mjs';
 
 const NOTE=/^158459\d{5}(20\d{2})NE\d{6}$/;
 const PARENT=/^158459\d{5}(20\d{2})(NS|OB|DF)\d{6}$/;
@@ -117,6 +119,23 @@ export function missingReferencedNe(sources,{scope='interannual',contracts=[],cg
  return [...targets].sort((a,b)=>a.slice(11,15).localeCompare(b.slice(11,15))||
    a.localeCompare(b));
 }
+/** Identidade de origem financeira ausente, declarada pela NE de contrato CGU
+ * inequivoco. Nunca usar valor documental ou presumir relacao NS -> OB. */
+export function missingContractFinancialDocuments(months,cguContracts=[]){
+ const refs=new Map(),docs=new Map(),targets=new Set();
+ for(const c of cguContracts)for(const ne of new Set(c.refs||[]))if(inScopeNe(ne))refs.set(ne,(refs.get(ne)||0)+1);
+ for(const m of months)for(const d of m.documents){
+  if(!docs.has(d.id))docs.set(d.id,[]);
+  docs.get(d.id).push(d);
+ }
+ for(const [id,count] of refs){
+  const found=docs.get(id);
+  if(count!==1||found?.length!==1||found[0].phase!==1)continue;
+  for(const other of found[0].relatedIds||[])
+   if(validRelatedPair(id,other)&&PARENT.test(other)&&!docs.has(other))targets.add(other);
+ }
+ return [...targets].sort();
+}
 export function chooseNeBatch(targets,{limit=3,slot=0}={}){
  if(!Array.isArray(targets)||targets.some(id=>!inScopeNe(id))||
    new Set(targets).size!==targets.length||
@@ -155,6 +174,25 @@ export function normalizeOriginalDetail(id,payload,{now=new Date()}={}){
  catch{throw coded('normalization_invalid');}
  if(doc.id!==id||doc.date!==issued||doc.phase!==1)
    throw coded('normalization_mismatch');
+ return doc;
+}
+/** Recupera documento de outra fase apenas se identidade, fase e data forem
+ * verificadas no detalhe oficial; nenhum valor vira impacto automaticamente. */
+export function normalizeRelatedFinancialDetail(id,payload,{now=new Date()}={}){
+ const type=PARENT.exec(id||'')?.[2],expected=PHASE[type];
+ if(!inScopeRelatedDocument(id)||!expected||!payload||typeof payload!=='object'||Array.isArray(payload))
+  throw coded('detail_invalid');
+ if(payload.documento!==id||String(payload.codigoUg)!=='158459')throw coded('identity_mismatch');
+ const phase=typeof payload.fase==='string'?payload.fase.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''):payload.fase;
+ const accepted=expected===2?[2,'2','liquidacao','liquidacoes','2 - liquidacao']:[3,'3','pagamento','pagamentos','3 - pagamento'];
+ if(!accepted.includes(phase))throw coded('phase_unverified');
+ const date=dateFromSource(payload.data);
+ if(!date||date.slice(0,4)!==id.slice(11,15)||date>dayBeforeToday(now))throw coded('issue_date_unverified');
+ if(payload.dataEmissao!==undefined&&dateFromSource(payload.dataEmissao)!==date)throw coded('issue_date_conflict');
+ let doc;
+ try{doc=normalizeDocument(payload,date.split('-').reverse().join('/'),expected);}
+ catch{throw coded('normalization_invalid');}
+ if(doc.id!==id||doc.date!==date||doc.phase!==expected)throw coded('normalization_mismatch');
  return doc;
 }
 function categorize(error){
@@ -203,10 +241,14 @@ async function parseBounded(response){
    throw coded('invalid_json');
  }
 }
-export async function fetchCguOriginal(id,{
+export async function fetchCguOriginal(id,options={}){
+ if(!inScopeNe(id))throw Error('Consulta CGU nao autorizada');
+ return fetchCguDocumentDetail(id,options);
+}
+export async function fetchCguDocumentDetail(id,{
  token,fetchFn=fetch,wait=delay,timeoutMs=18000,budget
 }={}){
- if(!inScopeNe(id)||typeof token!=='string'||!token||
+ if(!inScopeRelatedDocument(id)||typeof token!=='string'||!token||
    !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)
    throw Error('Consulta CGU nao autorizada');
  const url=detailUrl(id);
@@ -256,7 +298,7 @@ const byYear=targets=>targets.reduce((obj,id)=>{
  */
 export async function recoverReferencedNe({
  root=process.cwd(),token,now=new Date(),limit=3,slot=0,
- year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal,budget
+ year=null,scope='interannual',dryRun=false,fetchFn=fetch,wait=delay,persist=persistTargetedOriginal,persistFinancial=persistTargetedDocument,budget,statePath
 }={}){
  if(year!==null&&(typeof year!=='string'||!/^20\d{2}$/.test(year)||Number(year)<FIRST_YEAR))
    throw Error('Exercicio CGU de destino invalido');
@@ -265,31 +307,52 @@ export async function recoverReferencedNe({
  const cguContracts=scope==='all'?(await readCguContractEvidence(root)).contracts:[];
  const missing=missingReferencedNe(months,{scope,contracts,cguContracts});
  const eligible=year===null?missing:missing.filter(id=>id.slice(11,15)===year);
- const selected=chooseNeBatch(eligible,{limit,slot});
+ const state=await readOperationalState(statePath,{now});
+ const today=now.toISOString().slice(0,10);
+ const attemptKey=id=>stateKey(['cgu-original-retry-v1',id]);
+ const due=id=>{const stamp=state[attemptKey(id)];return !validDay(stamp)||stamp>today||Date.parse(today)-Date.parse(stamp)>=2*86400000};
+ const financial=scope==='all'&&year===null?missingContractFinancialDocuments(months,cguContracts).filter(id=>id.slice(11,15)<=today.slice(0,4)):[];
+ // Compartilhar as mesmas vagas e o mesmo orçamento de HTTP, sem ampliar lote.
+ const dueNe=eligible.filter(due),dueFinancial=financial.filter(due);
+ if(!Number.isSafeInteger(limit)||limit<1||limit>15||!Number.isSafeInteger(slot)||slot<0)throw Error('Plano NE invalido');
+ const financialQuota=dueFinancial.length?Math.min(dueFinancial.length,dueNe.length?(limit===1?slot%2:Math.max(1,Math.floor(limit/3))):limit):0;
+ const selectFinancial=financialQuota?dueFinancial.slice((slot*financialQuota)%dueFinancial.length).concat(dueFinancial.slice(0,(slot*financialQuota)%dueFinancial.length)).slice(0,financialQuota):[];
+ const neSlots=limit-selectFinancial.length;
+ const declared=new Set(cguContracts.flatMap(c=>c.refs||[]));
+ const priority=dueNe.filter(id=>declared.has(id));
+ const reserved=neSlots&&priority.length?chooseNeBatch(priority,{limit:Math.min(neSlots,Math.max(1,Math.ceil(neSlots/2))),slot}):[];
+ const rest=dueNe.filter(id=>!reserved.includes(id));
+ const remaining=neSlots-reserved.length;
+ const selected=reserved.concat(remaining?chooseNeBatch(rest,{limit:remaining,slot}):[],selectFinancial);
  const output={status:dryRun?'dry_run':'complete',scope,missing:missing.length,
    missingByYear:byYear(missing),eligible:eligible.length,
-   selected:byYear(selected),attempted:0,
-   recovered:0,unchanged:0,failures:{}};
- if(!dryRun&&!selected.length&&missing.length)output.status='no_eligible';
+   selected:byYear(selected.filter(inScopeNe)),attempted:0,
+   recovered:0,unchanged:0,failures:{},financialMissing:financial.length,financialSelected:selectFinancial.length,financialAttempted:0,financialRecovered:0,financialUnchanged:0,deferred:eligible.length-dueNe.length+financial.length-dueFinancial.length};
+ if(!dryRun&&!selected.length&&(missing.length||financial.length))output.status='no_eligible';
  if(dryRun||!selected.length)return output;
  if(!token||typeof token!=='string')throw Error('CGU_API_KEY ausente');
  for(const id of selected){
    if(budget?.stopped())break;
    output.attempted++;
    try{
-     const raw=await fetchCguOriginal(id,{token,fetchFn,wait,budget});
-     const doc=normalizeOriginalDetail(id,raw,{now});
-     const result=await persist(root,doc,now);
-     if(result.changed)output.recovered++;
-     else output.unchanged++;
+     const isFinancial=!inScopeNe(id);
+     if(isFinancial)output.financialAttempted++;
+     const raw=await fetchCguDocumentDetail(id,{token,fetchFn,wait,budget});
+     const doc=isFinancial?normalizeRelatedFinancialDetail(id,raw,{now}):normalizeOriginalDetail(id,raw,{now});
+     const result=await (isFinancial?persistFinancial:persist)(root,doc,now);
+     if(isFinancial){if(result.changed)output.financialRecovered++;else output.financialUnchanged++;}
+     else if(result.changed)output.recovered++;else output.unchanged++;
+     delete state[attemptKey(id)];
    }catch(error){
      const reason=categorize(error);
      output.failures[reason]=(output.failures[reason]||0)+1;
+     if(statePath&&!budget?.stopped())state[attemptKey(id)]=today;
    }
  }
  if(budget)output.telemetry=budget.snapshot();
- if(persist===persistTargetedOriginal)
+ if(persist===persistTargetedOriginal&&persistFinancial===persistTargetedDocument)
    await validatePublishedData(root);
+ await saveOperationalState(statePath,state,{now});
  if(Object.keys(output.failures).length)output.status='partial';
  return output;
 }
@@ -331,13 +394,13 @@ async function main(){
    const year=!selectedYear||selectedYear==='all'?null:selectedYear;
    const result=await recoverReferencedNe({root:resolve(process.cwd()),
      token:process.env.CGU_API_KEY,limit:max,slot,year,budget:createCguBudget({requests:30}),
-     scope:process.env.CGU_ORIGINAL_SCOPE||'interannual',
+     scope:process.env.CGU_ORIGINAL_SCOPE||'interannual',statePath:process.env.CGU_ORIGINAL_STATE_PATH,
      dryRun:process.argv.includes('--dry-run')});
    console.log('NEs referenciadas: '+JSON.stringify(result)+
      '. Consulta individual nao equivale a cobertura diaria, RP inscrito ou saldo.');
    // Falhas de API sem novos documentos mantem a fila; um problema de esquema
    // nunca deve ser disfarçado de cobertura integral.
-   if(result.status==='partial'&&!result.recovered)process.exitCode=1;
+   if(result.status==='partial'&&!result.recovered&&!result.financialRecovered)process.exitCode=1;
  }catch{
    console.error('Recuperacao CGU de NEs interrompida; verificar esquema e autenticação.');
    process.exitCode=1;

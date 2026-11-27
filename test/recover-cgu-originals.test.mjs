@@ -6,9 +6,9 @@ import {tmpdir} from 'node:os';
 import {
  missingReferencedNe,chooseNeBatch,normalizeOriginalDetail,
  fetchCguOriginal,recoverReferencedNe,summarizeOriginalIssueFields,
- diagnoseOldestIssueDate
+ diagnoseOldestIssueDate,missingContractFinancialDocuments,normalizeRelatedFinancialDetail
 } from '../src/recover-cgu-originals.mjs';
-import {applyTargetedOriginal,emptyMonth,mergeMonth,validateMonth}
+import {applyTargetedOriginal,applyTargetedDocument,persistTargetedOriginal,emptyMonth,mergeMonth,validateMonth}
  from '../src/store.mjs';
 
 const prefix='15845926422',note24=prefix+'2024NE000001',
@@ -353,4 +353,49 @@ test('recuperacao do mesmo exercicio usa origem confirmada e preserva cobertura 
 test('origem de impacto repetida com a mesma data nao gera conflito artificial',()=>{
  const m=references();
  assert.equal(missingReferencedNe([...m,...m]).length,3);
+});
+
+test('seleciona documento financeiro ausente somente por identidade NE contratual unica',()=>{
+ const missing=prefix+'2026OB000009',old=prefix+'2023OB000009';
+ const m=[listing([{id:note24,phase:1,relatedIds:[missing,ns,old]},{id:ns,phase:2}])];
+ assert.deepEqual(missingContractFinancialDocuments(m,[{refs:[note24]}]),[missing]);
+ assert.deepEqual(missingContractFinancialDocuments(m,[{refs:[note24]},{refs:[note24]}]),[]);
+ assert.deepEqual(missingContractFinancialDocuments(m,[]),[]);
+});
+test('detalhe financeiro exige identidade, fase e data verificadas e nunca cria impacto',()=>{
+ const raw=detail(ob,{fase:'Pagamento',data:'2026-11-20'});
+ const d=normalizeRelatedFinancialDetail(ob,raw,{now});
+ assert.equal(d.phase,3);assert.equal(d.cents,12345);
+ const m=applyTargetedDocument(emptyMonth('2026-11'),d,now).data;
+ assert.equal(m.coverage[0].complete,false);assert.equal(m.coverage[0].phase,3);
+ assert.deepEqual(m.relations,[]);assert.equal(m.documents[0].paymentLinksChecked,undefined);
+ for(const override of [{fase:'Empenho'},{codigoUg:'158125'},{data:'2025-11-20'},{dataEmissao:'2026-11-19'},{data:'2026-11-23'}])
+  assert.throws(()=>normalizeRelatedFinancialDetail(ob,{...raw,...override},{now}));
+ const complete=mergeMonth(emptyMonth('2026-11'),'2026-11',[{documents:[],links:[],coverage:{date:'2026-11-20',phase:3,complete:true,count:0,invalid:0}}],now).data;
+ assert.throws(()=>applyTargetedDocument(complete,d,now),/ja completo/);
+});
+test('recuperacao contratual financeira utiliza o mesmo lote e checkpoint de falhas',async()=>{
+ await temporary(async root=>{
+  const missing=prefix+'2026OB000009';
+  await persistTargetedOriginal(root,{...normalizeOriginalDetail(note24,detail(),{now}),relatedIds:[missing]},now);
+  await mkdir(join(root,'data','procurement'),{recursive:true});
+  await writeFile(join(root,'data','procurement','cgu-contract-links.json'),JSON.stringify({schema_version:1,unit:'158459',contracts:[{id:42,reference:'2024-06-03',unitCode:'158459',refs:[note24]}]}));
+  const statePath=join(root,'recovery-state.json'),seen=[];
+  const first=await recoverReferencedNe({root,now,scope:'all',limit:3,slot:0,statePath,token:'secret',wait:async()=>{},fetchFn:async url=>{
+   const id=url.split('/').pop();seen.push(id);return json('not found',404);
+  }});
+  assert.equal(first.financialSelected,1);assert.equal(first.financialAttempted,1);
+  assert.ok(seen.length<=3);assert.equal(first.financialRecovered,0);
+  const second=await recoverReferencedNe({root,now,scope:'all',limit:3,slot:0,statePath,dryRun:true});
+  assert.equal(second.financialMissing,1);assert.equal(second.financialSelected,0);assert.ok(second.deferred>=1);
+  const later=new Date('2026-11-26T19:00:00Z');
+  const result=await recoverReferencedNe({root,now:later,scope:'all',limit:3,slot:0,statePath,token:'secret',wait:async()=>{},fetchFn:async url=>{
+   const id=url.split('/').pop();return id===missing?json(detail(id,{fase:'Pagamento',data:'2026-11-20'})):json('not found',404);
+  }});
+  assert.equal(result.financialRecovered,1);assert.equal(result.recovered,0);
+  const m=JSON.parse(await readFile(join(root,'data','months','2026-11.json'),'utf8'));
+  assert.ok(m.documents.some(d=>d.id===missing&&d.phase===3));
+  assert.equal(m.relations.some(r=>r.from===missing),false);
+  assert.equal(m.coverage.find(r=>r.date==='2026-11-20'&&r.phase===3).complete,false);
+ });
 });

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildCommitmentChronology,indexCommitmentChronology} from '../assets/siafi-movement-reconciliation.js';
-import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories} from '../src/chronology-enrichment.mjs';
+import {classifyChronologyWork,planChronologyEnrichment,chronologyAttemptKey,requiresCanonicalHistoryCheckpoint,promoteCatalogHistories,summarizeCatalogDivergences} from '../src/chronology-enrichment.mjs';
 const now=new Date('2026-11-27T17:00:00Z'),today='2026-11-27';
 const id=(n,year=2026)=>'15845900001'+year+'NE'+String(n).padStart(6,'0');
 const doc=(n,extra={})=>({id:id(n),date:'2026-11-10',phase:1,cents:100,itemsDetailVersion:2,...extra});
@@ -114,4 +114,16 @@ test('catalogo com quatro itens pode completar grupo no mesmo lote sem aumentar 
  const tasks=[cat,ns,task(2),task(3),task(4),task(5)];
  assert.equal(promoteCatalogHistories(tasks,0,r,{now}),4);
  assert.equal(tasks.length,6);assert.ok(tasks.includes(ns));
+});
+
+test('diagnostico de catalogos distingue observacao anterior sem promover conciliacao',()=>{
+ const a=month([{doc:doc(1),items:[checked(1,100)]},{doc:doc(2),items:[pending(1,80)]},{doc:doc(3),items:[pending(1,120)]},{doc:doc(4),items:[checked(1,100)]}],
+  [{id:id(1),ownerDate:'2026-11-10',date:'2026-11-21',cents:110},{id:id(3),ownerDate:'2026-11-10',date:'2026-11-21',cents:110}]);
+ const result=summarizeCatalogDivergences([a],[{refs:[id(1)]}]);
+ assert.equal(result.total,3);assert.equal(result.contractual,1);
+ assert.deepEqual(result.reasons,{matches_earlier_listing:1,single_listing_mismatch:1,different_from_all_observations:1});
+ assert.deepEqual(result.history,{complete:1,partial:0,none:2});
+ assert.deepEqual(result.direction,{above:1,below:2});
+ assert.equal(buildCommitmentChronology([a],{today}).reconciled,1);
+ assert.ok(!JSON.stringify(result).includes(id(1)));
 });

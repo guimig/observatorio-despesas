@@ -40,3 +40,18 @@ export function createCguBudget({requests=BACKFILL_LIMITS.requests,durationMs=BA
   snapshot(){return {requests:count,responses:{...responses},elapsedMs:Math.max(0,clock()-start),stopReason:stopped()}}
  };
 }
+
+/** Indicador operacional, nao autorizacao para aumentar frequencia. Exige
+ * estabilidade em varias rodadas e avaliacao da quota global antes de alterar agenda. */
+export function assessCollectionCapacity({attempted,successes,changed,limits,snapshot}){
+ const {requests,responses,elapsedMs,stopReason}=snapshot;
+ const ratio=(n,d)=>d?Math.round(1000*n/d)/10:null;
+ const bad=Object.entries(responses).reduce((n,[k,v])=>n+(k==='transport'||Number(k)>=500?v:0),0);
+ const restricted=['401','403','429'].some(k=>responses[k]>0);
+ const requestUse=ratio(requests,limits.requests),timeUse=ratio(elapsedMs,limits.durationMs);
+ const successRate=ratio(successes,attempted),changeRate=ratio(changed,attempted);
+ const status=restricted?'restricted':bad||stopReason==='source_unstable'?'unstable':stopReason?'limit_reached':
+  !attempted||successRate<90?'insufficient_or_failed':changed===0?'no_new_evidence':
+  requestUse<=75&&timeUse<=75?'headroom_observed':'near_limit';
+ return {status,requestUse,timeUse,successRate,changeRate,frequencyIncreaseAuthorized:false};
+}
