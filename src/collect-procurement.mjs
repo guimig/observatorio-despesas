@@ -1,4 +1,5 @@
-import {planCatalogMonth,brazilMonth} from './collection-scope.mjs';
+import {planCatalogMonth,brazilMonth,inScopeMonth,closedCatalogCoverage} from './collection-scope.mjs';
+import {readCguContractEvidence} from './cgu-contract-evidence.mjs';
 /** Coleta independente de PNCP e Compras.gov, sem chave ou documentos brutos. */
 import {fileURLToPath} from 'node:url';
 import {appendFile} from 'node:fs/promises';
@@ -18,13 +19,31 @@ async function reportSourceStatus(scans){
   if(process.env.GITHUB_OUTPUT)await appendFile(process.env.GITHUB_OUTPUT,'status='+status+'\n');
   if(process.env.GITHUB_STEP_SUMMARY)await appendFile(process.env.GITHUB_STEP_SUMMARY,JSON.stringify(summary)+'\n');
 }
+/** Uma rodada a cada quatro privilegia meses de assinatura CGU ainda
+ * sem cobertura PNCP. Assinatura nao e publicacao: trata-se de busca
+ * exploratoria, nao de equivalencia ou cobertura de um contrato. */
+export function planContractRecovery(coverage,cguContracts,{now=new Date(),slot=Math.floor(now.getTime()/28800000)}={}){
+ const regular=planCatalogMonth(coverage,{keys:['pncp','compras'],kind:'source',now,slot});
+ if(!regular||slot%4!==0)return regular;
+ const current=brazilMonth(now),counts=new Map();
+ for(const c of cguContracts||[]){
+  const month=(c.signed||c.reference||'').slice(0,7);
+  if(inScopeMonth(month)&&month<current&&!closedCatalogCoverage((coverage||[]).find(x=>x.source==='pncp'&&x.month===month)))
+   counts.set(month,(counts.get(month)||0)+1);
+ }
+ const months=[...counts.keys()].sort((a,b)=>counts.get(b)-counts.get(a)||a.localeCompare(b));
+ if(!months.length)return regular;
+ const month=months[Math.floor(slot/4)%months.length];
+ return {month,missing:(coverage||[]).some(x=>x.source==='pncp'&&x.month===month)?[]:['pncp'],pending:['pncp'],reason:'cgu_signature_window'};
+}
 async function main(){
   const previous=await readProcurement(process.cwd());
   const historical=!process.env.PROC_MONTH&&process.env.PROC_HISTORICAL==='true';
-  const plan=historical?planCatalogMonth(previous?.coverage,{keys:['pncp','compras'],kind:'source'}):null;
+  const plan=historical?planContractRecovery(previous?.coverage,(await readCguContractEvidence(process.cwd())).contracts):null;
   if(historical&&!plan){console.log('Cobertura historica contratual completa no recorte.');if(!process.argv.includes('--dry-run'))await reportSourceStatus([]);return}
   const month=plan?.month||selectedMonth();
   monthBounds(month);
+  if(plan?.reason)console.log('Recuperacao historica dirigida por janela administrativa CGU: '+month+'; publicacao PNCP pode ocorrer em outra competencia.');
   if(process.argv.includes('--dry-run')){
     console.log('Plano de consulta pública: PNCP (CNPJ campus e Reitoria) + Compras.gov (UG '+
       CAMPUS_UG+'); competência '+month+'; '+(previous?.contracts?.length??0)+

@@ -42,7 +42,11 @@ const instrumentKey=c=>c.id||c.pncpId;
 export function indexCguContractEvidence(rows,contracts){
  const byNe=new Map(),byPncp=new Map(),records=new Map(),byIdentity=new Map();
  const key=c=>{
-  const m=/^(\d{1,6})\/(20\d{2})$/.exec(c.number||'');
+  // PNCP normalmente publica numero sem ano; usar ano da assinatura
+  // apenas para candidato, nunca o ano do controle/publicacao.
+  const raw=String(c.number||'');
+  const m=/^(\d{1,6})\/(20\d{2})$/.exec(raw)||
+   (c.source==='pncp'&&/^\d{1,6}$/.test(raw)&&/^20\d{2}-\d{2}-\d{2}$/.test(c.signed||'')?[raw,raw,c.signed.slice(0,4)]:null);
   if(!m||!PROC.test(c.process||'')||!/^\d{14}$/.test(c.supplierCnpj||'')||
    !/^20\d{2}-\d{2}-\d{2}$/.test(c.signed||'')||!['158459','158125'].includes(c.unitCode))return null;
   return [Number(m[1]),m[2],c.process,c.supplierCnpj,c.signed,c.unitCode].join('|');

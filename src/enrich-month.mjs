@@ -159,11 +159,22 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
  return lists;
 }
 /** Usa evidencias de identidade CGU para completar impactos ainda sem valor.
- * Substitui no maximo 40% das vagas de cada fase; preserva cotas e rodizio. */
+ * Reserva ate 40% das vagas (minimo uma); usa uma vaga ociosa quando
+ * nao ha tarefas regulares na fase. Preserva teto configurado e rodizio. */
+export function impactAttemptKey(month,id,kind){
+ return stateKey(['cgu-impact-attempt-v1',detailKey(month,id,kind)]);
+}
 export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Date(),cguContracts=[]}={}){
+ const today=now.toISOString().slice(0,10);
+ const recent=(stamp,days)=>validDay(stamp)&&stamp<=today&&Date.parse(today)-Date.parse(stamp)<days*86400000;
  const docs=new Map(),pairs=new Set(),wanted=new Map(),contractNe=new Set(cguContracts.flatMap(c=>c.refs||[]).filter(inScopeNe));
  for(const m of months){for(const d of m.documents){if(!docs.has(d.id))docs.set(d.id,[]);docs.get(d.id).push({doc:d,month:m});}
-  for(const r of m.relations)pairs.add(r.from+'>'+r.to);}
+ }
+ for(const m of months)for(const r of m.relations){
+  const found=docs.get(r.from);
+  if(found?.length===1&&Number.isSafeInteger(r.cents)&&
+   (found[0].doc.phase===3?found[0].doc.paymentLinksChecked===true:found[0].doc.liquidationLinksChecked===true))pairs.add(r.from+'>'+r.to);
+ }
  for(const [id,rows] of docs)if(rows.length===1){
   const d=rows[0].doc;
   for(const other of d.relatedIds||[]){
@@ -174,7 +185,7 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
    const {doc,month}=found[0],kind=doc.phase===2?'liquidation':'payment';
    const recheck=doc.phase===2?doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true;
    const last=state[detailKey(month,from,kind)];
-   if(validDay(last)&&Date.parse(now.toISOString().slice(0,10))-Date.parse(last)<7*86400000)continue;
+   if(recent(last,7)||recent(state[impactAttemptKey(month,from,kind)],2))continue;
    if(!wanted.has(from))wanted.set(from,{kind,id:from,month:month.month,recheck,missing:new Set(),contract:false});
    const task=wanted.get(from);task.missing.add(ne);task.contract ||= contractNe.has(ne);
   }
@@ -182,7 +193,10 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
  const queue=[...base],selected=[];
  for(const kind of ['payment','liquidation']){
   const candidates=[...wanted.values()].filter(t=>t.kind===kind);
-  const quota=Math.min(candidates.length,Math.floor(base.filter(t=>t.kind===kind).length*.4));
+  const regularSlots=base.filter(t=>t.kind===kind).length;
+  // A ausencia de documentos novos nao encerra a fila de impactos.
+  // Usar uma vaga ociosa da fase ou reservar uma quando o lote e pequeno.
+  const quota=Math.min(candidates.length,Math.max(1,Math.floor(regularSlots*.4)));
   if(!quota)continue;
   const ordered=xs=>xs.sort((a,b)=>b.missing.size-a.missing.size||a.id.localeCompare(b.id));
   const strong=ordered(candidates.filter(t=>t.contract)),other=ordered(candidates.filter(t=>!t.contract));
@@ -191,15 +205,17 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
   const rotate=xs=>{if(!xs.length)return [];const offset=slot%xs.length;return xs.slice(offset).concat(xs.slice(0,offset));};
   const high=rotate(strong),general=rotate(other),first=high.slice(0,Math.ceil(quota/2));
   const targets=[...first,...general,...high.slice(first.length)];
-  for(const t of targets.slice(0,quota)){
+  const chosen=targets.slice(0,quota);
+  for(const t of chosen){
    let at=queue.findIndex(x=>x.kind===kind&&x.id===t.id);
-   if(at<0)at=queue.findLastIndex(x=>x.kind===kind&&!targets.some(y=>y.id===x.id));
-   if(at<0)continue;
-   queue.splice(at,1);selected.push(t);
+   if(at<0)at=queue.findLastIndex(x=>x.kind===kind&&!chosen.some(y=>y.id===x.id));
+   if(at<0&&regularSlots>0)continue;
+   if(at>=0)queue.splice(at,1);
+   selected.push(t);
   }
  }
- // Mantem tipos intercalados e tamanho total inalterado.
- return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected.map(({missing,contract,...t})=>t),...queue].filter(t=>t.kind===k)),base.length),selected:selected.length,contractPriority:selected.filter(t=>t.contract).length,paymentPriority:selected.filter(t=>t.kind==='payment').length};
+ // Mantem tipos intercalados; no maximo uma vaga ociosa por fase.
+ return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected.map(({missing,contract,...t})=>t),...queue].filter(t=>t.kind===k)),queue.length+selected.length),selected:selected.length,contractPriority:selected.filter(t=>t.contract).length,paymentPriority:selected.filter(t=>t.kind==='payment').length,contractPendingDocuments:[...wanted.values()].filter(t=>t.contract).length,contractPendingPaymentPairs:[...wanted.values()].filter(t=>t.kind==='payment').reduce((n,t)=>n+[...t.missing].filter(ne=>contractNe.has(ne)).length,0)};
 }
 export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
@@ -263,7 +279,7 @@ async function main(){
   const cguContracts=(await readCguContractEvidence(root)).contracts;
   const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
   const base=impactPlan.tasks;
-  console.log('Impactos priorizados por relação CGU: '+impactPlan.selected+'; em contratos CGU: '+impactPlan.contractPriority+'; pagamentos: '+impactPlan.paymentPriority);
+  console.log('Impactos priorizados por relação CGU: '+JSON.stringify({selected:impactPlan.selected,contractPriority:impactPlan.contractPriority,paymentPriority:impactPlan.paymentPriority,contractPendingDocuments:impactPlan.contractPendingDocuments,contractPendingPaymentPairs:impactPlan.contractPendingPaymentPairs}));
   const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
     slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
     maxItemHistories:args.maxItemHistories,maxHistoryRechecks:args.maxHistoryRechecks
@@ -305,7 +321,10 @@ async function main(){
       kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
       kind==='items'?await resolveItems(id,{token,budget}):await resolveItemMovements(id,seq,{token,budget});
     if(attemptKey&&(outcome.ok||!budget.stopped()))historyState[attemptKey]=new Date().toISOString().slice(0,10);
-    if(!outcome.ok){failures.push(outcome.reason||'outro');errors++;continue;}
+    if(!outcome.ok){
+      if(statePath&&!budget.stopped()&&['payment','liquidation'].includes(kind))historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
+      failures.push(outcome.reason||'outro');errors++;continue;
+    }
     const result=kind==='items'?{kind,items:outcome.items,recheck}:
       kind==='itemHistory'?{kind,seq,movements:outcome.movements,checkedAt:new Date().toISOString().slice(0,10)}:
         {kind,links:outcome.links};

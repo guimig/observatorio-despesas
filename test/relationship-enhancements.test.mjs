@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildIntegratedIndex,scopeFinancialEvidence,itemReferenceCandidates,buildRelationshipLocator,contextualEvidenceMatches} from '../assets/integrated-trajectory.js';
-import {prioritizeRelatedImpacts} from '../src/enrich-month.mjs';
+import {prioritizeRelatedImpacts,impactAttemptKey} from '../src/enrich-month.mjs';
 import {prioritizeMissingAtas} from '../src/collect-pncp-atas.mjs';
 import {planMissingNotices} from '../src/pncp-notices-detail.mjs';
 import {missingReferencedNe} from '../src/recover-cgu-originals.mjs';
@@ -50,4 +50,33 @@ test('reserva de pagamentos privilegia NEs contratuais CGU sem aumentar cotas',(
  const a=prioritizeRelatedImpacts(base,m,{slot:0,now:new Date('2026-11-27'),cguContracts:[{refs:[ne]}]});
  const b=prioritizeRelatedImpacts(base,m,{slot:1,now:new Date('2026-11-27'),cguContracts:[{refs:[ne]}]});
  assert.equal(a.selected,2);assert.equal(a.contractPriority,2);assert.equal(a.paymentPriority,2);assert.equal(a.tasks.length,5);assert.notEqual(a.tasks[0].id,b.tasks[0].id);
+});
+
+test('impactos contratuais usam vagas ociosas e falhas recentes nao monopolizam consultas',()=>{
+ const m={...months[0],documents:[{...doc,relatedIds:[ob]},payment]};
+ const now=new Date('2026-11-27');
+ const args={slot:0,now,cguContracts:[{refs:[ne]}]};
+ const r=prioritizeRelatedImpacts([],[m],args);
+ assert.equal(r.tasks.length,1);assert.equal(r.tasks[0].id,ob);
+ assert.equal(r.contractPendingPaymentPairs,1);
+ const key=impactAttemptKey(m,ob,'payment');
+ assert.equal(prioritizeRelatedImpacts([],[m],{...args,state:{[key]:'2026-11-26'}}).tasks.length,0);
+ assert.equal(prioritizeRelatedImpacts([],[m],{...args,state:{[key]:'2026-11-24'}}).tasks.length,1);
+ assert.equal(prioritizeRelatedImpacts([],[m],{...args,state:{[key]:'2026-11-28'}}).tasks.length,1);
+});
+test('par numerico sem checkpoint validado continua elegivel para consulta',()=>{
+ const m={...months[0],documents:[{...doc,relatedIds:[ob]},payment],relations:[{from:ob,to:ne,cents:0}]};
+ assert.equal(prioritizeRelatedImpacts([],[m],{now:new Date('2026-11-27')}).selected,1);
+ const checked={...m,documents:[m.documents[0],{...payment,paymentLinksChecked:true}]};
+ assert.equal(prioritizeRelatedImpacts([],[checked],{now:new Date('2026-11-27')}).selected,0);
+});
+import {planContractRecovery} from '../src/collect-procurement.mjs';
+test('recuperacao dirigida usa apenas uma rodada em quatro e respeita cobertura e recorte',()=>{
+ const now=new Date('2026-11-27');
+ const cguContracts=[{signed:'2024-11-28'},{signed:'2024-11-29'},{signed:'2023-12-01'},{signed:'2026-11-01'}];
+ const directed=planContractRecovery([],cguContracts,{now,slot:0});
+ assert.equal(directed.month,'2024-11');assert.deepEqual(directed.pending,['pncp']);
+ assert.equal(planContractRecovery([],cguContracts,{now,slot:1}).reason,undefined);
+ const complete=[{source:'pncp',month:'2024-11',status:'complete',closedMonth:true}];
+ assert.equal(planContractRecovery(complete,cguContracts,{now,slot:0}).reason,undefined);
 });

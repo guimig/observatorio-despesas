@@ -84,3 +84,12 @@ test('historico divergente e impacto sem documento unico nao formam subtotal',()
  const e=cguContractExecutionEvidence(i,42);
  assert.equal(e.movements.initialCents.known,0);assert.equal(e.movements.initialCents.unknown,1);assert.equal(e.payment.known,0);assert.equal(e.payment.unknown,1);
 });
+
+test('numero PNCP sem ano e contextualizado somente pela assinatura, nunca pela publicacao',()=>{
+ const row={...identity,refs:[ne]};
+ const contract={id:'p',source:'pncp',kind:'Contrato',number:'00012',process:identity.process,signed:identity.signed,supplierCnpj:identity.supplierCnpj,unitCode:'158459',publishedMonth:'2027-01'};
+ assert.equal(indexCguContractEvidence([row],[contract]).byPncp.get('p')[0].id,42);
+ assert.equal(indexCguContractEvidence([row],[{...contract,signed:'2025-10-10'}]).byPncp.size,0);
+ assert.equal(indexCguContractEvidence([row],[{...contract,signed:undefined}]).byPncp.size,0);
+ assert.equal(indexCguContractEvidence([row],[contract,{...contract,id:'p2'}]).byPncp.size,0);
+});
