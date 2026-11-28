@@ -31,6 +31,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     await writeFile(join(root, 'assets', 'dialog-scroll.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'siafi-movement-audit.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'siafi-movement-reconciliation.js'), 'export const v=1;');
+    await writeFile(join(root, 'assets', 'rap-trajectory.js'), 'export const v=1;');
     await writeFile(join(root, 'assets', 'style.css'), 'body{}');
     const fontBytes = Buffer.from([0x77, 0x4f, 0x46, 0x32, 0, 0xff]);
     await writeFile(join(root, 'assets', 'source-sans-3-latin.woff2'), fontBytes);
@@ -57,6 +58,7 @@ test('artefato Pages publica somente a allowlist, nunca arquivos privados', asyn
     assert.equal(index.from,'2024-01-01');assert.equal(index.cgu.documents,0);
     assert.ok(index.cgu.missingDays>0);
     await stat(join(root, 'dist', 'assets', 'trajectory.js'));
+    assert.equal(await readFile(join(root,'dist','assets','rap-trajectory.js'),'utf8'),'export const v=1;');
     await assert.rejects(stat(join(root, 'dist', 'assets', 'private.js')));
     await assert.rejects(stat(join(root, 'dist', '.env')));
     await assert.rejects(stat(join(root, 'dist', 'data', 'raw-response.txt')));
@@ -105,6 +107,7 @@ test('build só publica catálogo contratual após validá-lo e não inclui resp
     await writeFile(join(root,'assets','dialog-scroll.js'),'');
     await writeFile(join(root,'assets','siafi-movement-audit.js'),'');
     await writeFile(join(root,'assets','siafi-movement-reconciliation.js'),'');
+    await writeFile(join(root,'assets','rap-trajectory.js'),'');
     await writeFile(join(root,'assets','style.css'),'');
     await writeFile(join(root,'assets','source-sans-3-latin.woff2'),'');
     await writeFile(join(root,'assets','source-sans-3-OFL.txt'),'');
@@ -132,7 +135,7 @@ test('Pages publica somente notices.json validado, sem arquivos PNCP brutos',asy
    await mkdir(join(root,'assets'),{recursive:true});
    await mkdir(join(root,'data','procurement'),{recursive:true});
    await mkdir(join(root,'data','months'),{recursive:true});
-   for(const filename of ['app.js','budget-classification.js','integrated-trajectory.js','style.css','source-sans-3-latin.woff2','source-sans-3-OFL.txt','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js']){
+   for(const filename of ['app.js','budget-classification.js','integrated-trajectory.js','style.css','source-sans-3-latin.woff2','source-sans-3-OFL.txt','procurement-links.js','procurement-financial-evidence.js','procurement-evidence-coverage.js','procurement-evidence-audit.js','procurement-audit-report.js','procurement-structured-filters.js','pncp-modalities.js','instrument-types.js','document-species.js','quality.js','coverage-panel.js','trajectory.js','dialog-scroll.js','siafi-movement-audit.js','siafi-movement-reconciliation.js','rap-trajectory.js']){
      await writeFile(join(root,'assets',filename),'');
    }
    await writeFile(join(root,'index.html'),'<title>Teste</title>');
