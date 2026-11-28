@@ -262,3 +262,35 @@ como pistas não classificadas. Contagem de cabeçalhos candidatos a
 cancelamento não mapeia campos por aproximação. Sem importação de
 valores ou alteração canônica. Testes cobrem rodízio e diferenciação
 de presença/inscrição. Reversão por revert.
+
+
+## Confronto das inscrições e ponte efêmera para a API — 27/11/2026
+
+Run 46096723143: dois ZIPs HTTP 200, 2024-11-28 e 2026-11-16.
+Dez de dez itens-alvo da primeira data localizados com inscrições:
+13 ocorrências coincidentes em dez multiconjuntos, nenhuma divergência
+de conteúdo ou multiplicidade; três ocorrências adicionais em itens
+sem histórico canônico comparável. Quatro repetições observadas no CSV.
+Não implica deduplicação contábil. A segunda data revalidou os mesmos
+nove pagamentos de RP, dois pares com componentes API e seis campos
+coincidentes; sete pares aguardando componentes. Não contar a mesma
+amostra duas vezes. A consulta de 2025 permanece em rodízio.
+
+O CSV passa a fornecer alvos efêmeros para consulta API imediatamente
+na mesma execução, priorizando inscrições de 2025 e lacunas/divergências
+em itens e pares conhecidos. Máximo quatro históricos e seis documentos
+financeiros (até 16 pares), 48 requisições incluindo tentativas, 4 minutos,
+intervalo de 1,5s e quatro páginas por consulta; mesmo grupo de
+concorrência das coletas CGU, sem cron adicional. Identidades integrais,
+campos estruturados, multiplicidade preservada, snapshots divergentes
+não mesclados. Plano em diretório temporário com permissões restritas,
+removido no fim, sem artefato e sem logs de identidades ou valores.
+A API consulta novamente e compara multiconjuntos de inscrições e
+campos de impacto disponíveis; campos faltantes, divergências e
+respostas vazias são distintos. Não altera JSON canônico nem valores.
+Inclui variante exata "valor de restos a pagar cancelados", expressão
+usada na apresentação oficial da CGU; cabeçalho real deve ser confirmado,
+ambiguidade continua bloqueando. Não classifica "valor anulado"
+genericamente como RAP. Fonte: página de documentos de liquidação
+do Portal da Transparência, https://portaldatransparencia.gov.br/despesas/liquidacao/170394000012022NS001928 .
+Reversão por revert. Homologação contábil e saldo permanecem pendentes.
