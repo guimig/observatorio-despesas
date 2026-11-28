@@ -142,7 +142,7 @@ def inspect_archive(stream, day, known=None):
     return out
 
 
-def download_sample(day, metadata, client=None, root="."):
+def download_sample(day, metadata, client=None, root=".", inspector=None):
     size = metadata.get("bytes")
     if metadata.get("status") != 200 or not isinstance(size, int) or not 0 < size <= CAP:
         return {"date": day, "status": "not_downloaded_size_or_http"}
@@ -161,6 +161,9 @@ def download_sample(day, metadata, client=None, root="."):
             if received != size:
                 return {"date": day, "status": "size_changed"}
             temp.seek(0)
+            if inspector is not None:
+                return {"date": day, "status": "inspected", "bytes": received,
+                        "comparison": inspector(temp, day)}
             return {"date": day, "status": "inspected", "bytes": received,
                     "phases": inspect_archive(temp, day, known_documents(root))}
     except urllib.error.HTTPError as exc:
