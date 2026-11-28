@@ -50,12 +50,15 @@ export function validateCsvPlan(plan){
  }
  for(const row of plan.impacts){
   if(!exact(row,['id','ne','phase','components'])||!valid(row.id,SOURCE)||!valid(row.ne,NE)||
-    year(row.id)<=year(row.ne)||row.phase!==(row.id.slice(15,17)==='NS'?2:3)||
+    year(row.id)<year(row.ne)||(row.phase===2&&year(row.id)===year(row.ne))||row.phase!==(row.id.slice(15,17)==='NS'?2:3)||
     !exact(row.components,keys)||keys.some(k=>row.components[k]!==null&&!Number.isSafeInteger(row.components[k]))||
     keys.every(k=>row.components[k]===null)||pairs.has(row.id+'/'+row.ne))throw Error('Impacto CSV inválido');
   pairs.add(row.id+'/'+row.ne);docs.add(row.id);
  }
  if(docs.size>6)throw Error('Limite de documentos CSV');
+ for(const r of plan.impacts)if(year(r.id)===year(r.ne)&&
+   !plan.impacts.some(x=>x.id===r.id&&x.phase===3&&year(x.id)>year(x.ne)&&x.components.rpPaidCents>0))
+  throw Error('Complemento sem alvo RAP interanual');
  return plan;
 }
 const emptyFields=()=>Object.fromEntries(keys.map(k=>[k,{equal:0,different:0,unavailable:0}]));
@@ -128,23 +131,31 @@ export async function auditCsvTargets(plan,{token,budget,historyResolver=resolve
  * que será acrescentado. Nunca promover identidade temporal isolada. */
 function verifiedPaymentAdditions(rows,old){
  const incoming=rows[0]?.apiLinks,id=rows[0]?.id;
+ const fail=reason=>({additions:null,reason});
  if(!Array.isArray(incoming)||!incoming.length||
     new Set(incoming.map(l=>l.to)).size!==incoming.length||
-    incoming.some(l=>l.from!==id||!Number.isSafeInteger(l.cents))||
-    !old.every(l=>incoming.some(x=>x.from===l.from&&x.to===l.to&&x.cents===l.cents&&
-      (!l.impactComponents||keys.every(k=>l.impactComponents[k]===null||
-        l.impactComponents[k]===x.impactComponents?.[k])))))
-  return null;
+    incoming.some(l=>l.from!==id||!Number.isSafeInteger(l.cents)))
+  return fail('invalid_api_set');
+ if(!old.every(l=>incoming.some(x=>x.from===l.from&&x.to===l.to)))
+  return fail('legacy_pair_missing');
+ if(!old.every(l=>incoming.some(x=>x.from===l.from&&x.to===l.to&&x.cents===l.cents)))
+  return fail('legacy_amount_changed');
+ if(!old.every(l=>!l.impactComponents||incoming.some(x=>x.to===l.to&&
+    keys.every(k=>l.impactComponents[k]===null||l.impactComponents[k]===x.impactComponents?.[k]))))
+  return fail('legacy_components_changed');
  const additions=incoming.filter(x=>!old.some(l=>l.to===x.to));
- if(!additions.length)return null;
+ if(!additions.length)return fail('no_new_pair');
+ if(additions.some(x=>!valid(x.to,NE)||year(id)<year(x.to)))return fail('new_pair_outside_scope');
+ if(!additions.some(x=>year(id)>year(x.to)&&x.impactComponents?.rpPaidCents>0))
+  return fail('no_positive_interannual_seed');
  for(const x of additions){
   const evidence=rows.find(r=>r.id===id&&r.ne===x.to&&r.phase===3&&r.apiLinks===incoming&&r.link===x);
+  if(!evidence)return fail('new_pair_not_crosschecked');
   const c=x.impactComponents;
-  if(!evidence||!valid(x.to,NE)||year(id)<=year(x.to)||c?.repeatedRows!==0||
-     !keys.every(k=>Number.isSafeInteger(c[k]))||c.rpPaidCents<=0)return null;
-  try{validateImpactComponents(c,x,3);}catch{return null;}
+  if(c?.repeatedRows!==0||!keys.every(k=>Number.isSafeInteger(c[k])))return fail('new_pair_incomplete_components');
+  try{validateImpactComponents(c,x,3);}catch{return fail('new_pair_invalid_components');}
  }
- return additions;
+ return {additions,reason:null};
 }
 function paymentGroups(confirmed){
  const groups=new Map();
@@ -159,7 +170,7 @@ export async function fetchMissingPaymentDetails(months,confirmed,{token,budget,
  const present=new Set(months.flatMap(m=>m.documents.map(d=>d.id))),details=new Map();
  const report={attempted:0,verified:0,unavailable:0};
  for(const [id,rows] of paymentGroups(confirmed)){
-  if(present.has(id)||!verifiedPaymentAdditions(rows,[])||budget?.stopped())continue;
+  if(present.has(id)||!verifiedPaymentAdditions(rows,[]).additions||budget?.stopped())continue;
   if(report.attempted>=6)break;
   report.attempted++;
   try{
@@ -178,7 +189,7 @@ export function planConfirmedCsvRecovery(months,confirmed,now=new Date(),details
  const working=new Map(),owners=new Map(),tasks=[];
  const summary={historiesEligible:confirmed.histories.length,impactsEligible:confirmed.impacts.length,
   historiesAdded:0,impactsAdded:0,paymentPairsAdded:0,paymentDocumentsAdded:0,
-  paymentGapDocuments:0,skipped:{},monthsChanged:0};
+  paymentGapDocuments:0,paymentGapReasons:{},skipped:{},monthsChanged:0};
  const skip=reason=>summary.skipped[reason]=(summary.skipped[reason]||0)+1;
  for(const m of months){
   validateMonth(m);
@@ -222,8 +233,12 @@ export function planConfirmedCsvRecovery(months,confirmed,now=new Date(),details
   if(!rows.some(r=>!old.some(l=>l.to===r.ne)))continue;
   summary.paymentGapDocuments++;
   if((owners.get(id)||[]).length>1){skip('payment_gap_ambiguous_owner');continue;}
-  const additions=verifiedPaymentAdditions(rows,old);
-  if(!additions){skip('payment_gap_unconfirmed_complete_set');continue;}
+  const {additions,reason}=verifiedPaymentAdditions(rows,old);
+  if(!additions){
+   skip('payment_gap_unconfirmed_complete_set');
+   summary.paymentGapReasons[reason]=(summary.paymentGapReasons[reason]||0)+1;
+   continue;
+  }
   if(m){
    const doc=m.documents.find(d=>d.id===id);
    if(doc?.phase!==3){skip('payment_gap_phase_mismatch');continue;}
@@ -248,6 +263,7 @@ export function planConfirmedCsvRecovery(months,confirmed,now=new Date(),details
   }
  }
  for(const r of confirmed.impacts){
+  if(r.phase===3&&year(r.id)===year(r.ne))continue;
   const m=owner(r.id),doc=m?.documents.find(d=>d.id===r.id);
   if(!m||!valid(r.id,SOURCE)||!valid(r.ne,NE)||year(r.id)<=year(r.ne)||
     doc?.phase!==r.phase||![2,3].includes(r.phase)||

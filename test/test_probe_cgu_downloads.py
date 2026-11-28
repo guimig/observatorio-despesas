@@ -211,3 +211,22 @@ class RapCsvTests(unittest.TestCase):
         self.assertEqual(choose_dates(idx, window=0, focus="2025-02-11"),
                          [self.day, "2025-02-11"])
         self.assertEqual(choose_dates(idx, self.day, focus="2025-02-11"), [self.day])
+
+
+    def test_companions_only_for_missing_positive_interannual_seed(self):
+        from src.probe_rap_csv import bounded_targets
+        idx = self.fixture()
+        idx["pairs"] = {}
+        idx["storedPairs"] = set()
+        current = "158459264222025NE000007"
+        other = "158459264222025OB000008"
+        header = "Código Pagamento;Código Empenho;Valor Pago;Valor Resto Inscrito;Valor Resto Cancelado;Valor Resto Pago\n"
+        csv = header + f"{self.ob};{self.ne};0,00;0,00;0,00;100,00\n"
+        csv += f"{self.ob};{current};20,00;0,00;0,00;0,00\n"
+        csv += f"{other};{current};50,00;0,00;0,00;0,00\n"
+        targets = {"histories": [], "impacts": []}
+        result = inspect_rap_archive(self.archive({"Pagamento_EmpenhosImpactados": csv}), self.day, idx, targets)["Pagamento_EmpenhosImpactados"]
+        self.assertEqual(result["pairs"], 1)
+        self.assertEqual(result["companionPairs"], 1)
+        self.assertEqual({r["ne"] for r in bounded_targets(targets, idx)["impacts"]}, {self.ne, current})
+        self.assertNotIn(self.ob, str(result))

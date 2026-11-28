@@ -169,3 +169,33 @@ test('detalhe ausente ou inválido não é transformado em pagamento; consulta r
   fetchDetail:async()=>{throw Error('não consultar');}});
  assert.equal(stopped.report.attempted,0);
 });
+
+
+test('recuperação integral admite complemento do mesmo exercício só junto de RAP positivo confrontado',()=>{
+ const {months,confirmed}=missingPairFixture();
+ const r=confirmed.impacts[0],same='158459264222026NE000006';
+ const extra={from:ob,to:same,cents:500,impactComponents:{...actualComponents,paidCents:500,rpPaidCents:0}};
+ r.apiLinks.push(extra);
+ let p=planConfirmedCsvRecovery(months,confirmed,dateNow);
+ assert.equal(p.tasks.length,0);
+ assert.equal(p.summary.paymentGapReasons.new_pair_not_crosschecked,1);
+ confirmed.impacts.push({id:ob,ne:same,phase:3,link:extra,apiLinks:r.apiLinks});
+ p=planConfirmedCsvRecovery(months,confirmed,dateNow);
+ assert.equal(p.summary.paymentPairsAdded,2);assert.equal(p.tasks.length,1);
+ assert.equal(p.tasks[0].result.links.find(x=>x.to===same).impactComponents.rpPaidCents,0);
+ const only=fixture();only.impacts=[{id:ob,ne:same,phase:3,components:{...components,paidCents:500,rpPaidCents:0}}];
+ assert.throws(()=>validateCsvPlan(only));
+ only.impacts.push(fixture().impacts[0]);assert.doesNotThrow(()=>validateCsvPlan(only));
+});
+test('diagnóstico diferencia conflito legado de complemento não confirmado e recorte',()=>{
+ const cases=[
+  [r=>r.apiLinks.shift(),'legacy_pair_missing'],
+  [r=>r.apiLinks[0]={...original,cents:10001},'legacy_amount_changed'],
+  [r=>r.apiLinks.push({from:ob,to:'158459264222023NE000001',cents:100}),'new_pair_outside_scope']
+ ];
+ for(const [change,reason] of cases){
+  const {months,confirmed}=missingPairFixture();change(confirmed.impacts[0]);
+  const p=planConfirmedCsvRecovery(months,confirmed,dateNow);
+  assert.equal(p.tasks.length,0);assert.equal(p.summary.paymentGapReasons[reason],1);
+ }
+});
