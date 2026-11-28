@@ -128,6 +128,25 @@ def canonical_index(months):
             if in_scope(doc["id"]):
                 owners[doc["id"]].append((doc, month))
     histories, pairs, event_days, payment_days = {}, {}, Counter(), Counter()
+    history_targets = defaultdict(set)
+    origin2025_targets = defaultdict(set)
+    pending_impact_days = defaultdict(set)
+    note_dates = defaultdict(set)
+    # A data de observação é pista de localização, não data de inscrição.
+    for ne, records in owners.items():
+        if len(records) == 1 and NE_RE.fullmatch(ne):
+            d = day_value(records[0][0].get("date"))
+            if d:
+                note_dates[ne].add(d)
+    for month in months:
+        if month.get("unit") != "158459":
+            continue
+        for obs in month.get("commitmentObservations", []):
+            ne = obs.get("id")
+            if ne in note_dates:
+                d = day_value(obs.get("date"))
+                if d:
+                    note_dates[ne].add(d)
     for ne, rows in owners.items():
         if len(rows) != 1 or not NE_RE.fullmatch(ne):
             continue
@@ -157,6 +176,9 @@ def canonical_index(months):
                 histories[ne, seq] = sigs
                 for sig, count in sigs.items():
                     event_days[sig[0]] += count
+                if sigs:
+                    for d in note_dates[ne]:
+                        history_targets[d].add((ne, seq))
     candidates = defaultdict(list)
     for month in months:
         if month.get("unit") != "158459":
@@ -181,12 +203,19 @@ def canonical_index(months):
         else:
             c = None
         pairs[key] = c
-        if c and c["rpPaidCents"] not in (None, 0) and phase == 3:
-            d = day_value(doc.get("date"))
-            if d:
+        d = day_value(doc.get("date"))
+        if d:
+            if c is None or any(c[field] is None for field in FIELDS):
+                pending_impact_days[d].add(key)
+            if c and c["rpPaidCents"] not in (None, 0) and phase == 3:
                 payment_days[d] += 1
+        if key[1][11:15] == "2025" and key[0][11:15] > "2025":
+            for note_day in note_dates[key[1]]:
+                origin2025_targets[note_day].add(key[1])
     return {"histories": histories, "pairs": pairs,
-            "eventDays": event_days, "paymentDays": payment_days}
+            "eventDays": event_days, "paymentDays": payment_days,
+            "historyTargets": history_targets, "origin2025Targets": origin2025_targets,
+            "pendingImpactDays": pending_impact_days}
 
 
 def load_canonical(root="."):
@@ -199,15 +228,44 @@ def load_canonical(root="."):
     return canonical_index(months)
 
 
-def choose_dates(index, explicit=None):
+def choose_dates(index, explicit=None, window=0):
     if explicit:
         archive_url(explicit)
         return [explicit]
+    if type(window) is not int or window < 0:
+        raise ValueError("invalid_window")
+    # Alterna as duas coortes, usando datas da listagem/reaparição da NE,
+    # em lugar de insistir na data da inscrição (arquivo 11/01/2025 vazio).
+    # Ordenação determinística: maior cobertura potencial, depois data.
+    def ranked(groups):
+        return sorted(groups, key=lambda d: (-len(groups[d]), d))
+    known = ranked(index.get("historyTargets", {}))
+    search = ranked(index.get("origin2025Targets", {}))
+    groups = (known, search) if window % 2 == 0 else (search, known)
     dates = []
-    if index["eventDays"]:
-        dates.append(sorted(index["eventDays"], key=lambda d: (-index["eventDays"][d], d))[0])
-    if index["paymentDays"]:
-        dates.append(max(index["paymentDays"]))
+    for group in groups:
+        if group:
+            dates.append(group[(window // 2) % len(group)])
+            break
+    if not dates and index["eventDays"]:
+        candidates = sorted(index["eventDays"], key=lambda d: (-index["eventDays"][d], d))
+        dates.append(candidates[window % len(candidates)])
+    # Dar preferência a datas com pagamento já verificável e vínculos
+    # pendentes; depois rodar as demais datas com componentes faltantes.
+    missing = index.get("pendingImpactDays", {})
+    preferred = sorted((d for d in missing if d in index["paymentDays"]),
+                       key=lambda d: (-len(missing[d]), d))
+    others = sorted((d for d in missing if d not in index["paymentDays"]),
+                    key=lambda d: (-len(missing[d]), d))
+    if preferred and (window % 2 == 0 or not others):
+        impacts = preferred
+    elif others:
+        impacts = others
+    else:
+        impacts = sorted(index["paymentDays"], reverse=True)
+    if impacts:
+        rotated = impacts[(window // 2) % len(impacts):] + impacts[:(window // 2) % len(impacts)]
+        dates.append(next((d for d in rotated if d not in dates), rotated[0]))
     return list(dict.fromkeys(dates))[:2]
 
 
@@ -280,7 +338,16 @@ def identity_columns(names, kind):
 def inspect_history(archive, member, parent, index, day):
     known = index["histories"]
     expected = {key for key, sigs in known.items() if any(sig[0] == day for sig in sigs)}
+    date_targets = set(index.get("historyTargets", {}).get(day, ()))
+    search_targets = set(index.get("origin2025Targets", {}).get(day, ()))
+    seen_target_items, seen_search_notes, search_inscribed = set(), set(), set()
     counts = {"status": "inspected", "qualifiedRows": 0, "validRows": 0,
+              "campusHistoryRows": 0, "campusNotesSeen": 0,
+              "targetItemsByDocumentDate": len(date_targets),
+              "targetItemsSeenInHistory": 0, "targetItemsWithInscription": 0,
+              "search2025Notes": len(search_targets), "search2025NotesSeen": 0,
+              "search2025NotesWithInscription": 0,
+              "operationHints": {"unqualifiedInscription": 0, "cancellation": 0, "reversal": 0},
               "invalidRows": 0, "matchedItems": 0, "matchedOccurrences": 0,
               "archiveOnlyOccurrences": 0, "canonicalOnlyOccurrencesForMatchedItems": 0,
               "sameMultisetItems": 0, "differentMultiplicityItems": 0,
@@ -288,6 +355,7 @@ def inspect_history(archive, member, parent, index, day):
               "unmatchedCheckedItems": 0, "unmatchedCatalogRows": 0,
               "targetItemsForArchiveDate": len(expected), "targetItemsLocated": 0}
     observed = defaultdict(Counter)
+    campus_notes = set()
     with csv_rows(archive, member) as (names, rows):
         idcols = identity_columns(names, "Empenho")
         cols = {k: column(names, aliases) for k, aliases in HISTORY_FIELDS.items()}
@@ -299,12 +367,27 @@ def inspect_history(archive, member, parent, index, day):
             return counts
         for row in rows:
             ne = identity(row, idcols, parent, "Empenho")
-            if not ne or not is_inscription(get(row, cols["operation"])):
+            if not ne:
+                continue
+            counts["campusHistoryRows"] += 1
+            if counts["campusHistoryRows"] > LIMIT:
+                raise ValueError("history_limit")
+            campus_notes.add(ne)
+            seq = seq_value(get(row, cols["seq"]))
+            if (ne, seq) in date_targets:
+                seen_target_items.add((ne, seq))
+            if ne in search_targets:
+                seen_search_notes.add(ne)
+            label = operation(get(row, cols["operation"]))
+            if not is_inscription(label):
+                if label == "inscricao":
+                    counts["operationHints"]["unqualifiedInscription"] += 1
+                elif "cancelamento" in label or "anulacao de rp" in label:
+                    counts["operationHints"]["cancellation"] += 1
+                elif "estorno" in label:
+                    counts["operationHints"]["reversal"] += 1
                 continue
             counts["qualifiedRows"] += 1
-            if counts["qualifiedRows"] > LIMIT:
-                raise ValueError("history_limit")
-            seq = seq_value(get(row, cols["seq"]))
             sig = (day_value(get(row, cols["date"])), operation(get(row, cols["operation"])),
                    decimal_value(get(row, cols["quantity"]), True),
                    decimal_value(get(row, cols["unitPrice"]), True),
@@ -315,8 +398,15 @@ def inspect_history(archive, member, parent, index, day):
             counts["validRows"] += 1
             key = (ne, seq)
             observed[key][sig] += 1
+            if ne in search_targets:
+                search_inscribed.add(ne)
             if key not in known:
                 counts["unmatchedCatalogRows"] += 1
+    counts["campusNotesSeen"] = len(campus_notes)
+    counts["targetItemsSeenInHistory"] = len(seen_target_items)
+    counts["targetItemsWithInscription"] = len(date_targets & observed.keys())
+    counts["search2025NotesSeen"] = len(seen_search_notes)
+    counts["search2025NotesWithInscription"] = len(search_inscribed)
     # Não classificar concordância de multiconjunto se houve linha inválida.
     if counts["invalidRows"]:
         counts["status"] = "partial_invalid_rows"
@@ -351,6 +441,8 @@ def inspect_impacts(archive, member, parents, kind, index):
         subitem = column(names, SUBITEM)
         cols = {k: column(names, aliases) for k, aliases in FIELDS.items()}
         out["recognizedFields"] = {k: v is not None for k, v in cols.items()}
+        out["cancellationHeaderCandidates"] = sum(
+            "valor" in name and ("cancel" in name or "anul" in name) for name in names)
         out["subitemColumn"] = subitem is not None
         out["sourceFullCodeColumn"] = fromcols[0] is not None
         out["neFullCodeColumn"] = tocols[0] is not None
@@ -425,8 +517,13 @@ def inspect_rap_archive(stream, day, index):
 
 def main():
     index = load_canonical()
-    days = choose_dates(index, os.environ.get("CGU_RAP_ARCHIVE_DATE") or None)
+    raw_window = os.environ.get("GITHUB_RUN_NUMBER", "0")
+    window = int(raw_window) if raw_window.isdecimal() and len(raw_window) <= 12 else 0
+    days = choose_dates(index, os.environ.get("CGU_RAP_ARCHIVE_DATE") or None, window)
     print("Plano CSV RAP (somente contagens): " + json.dumps({
+        "window": window, "datesWithKnownInscriptionTargets": len(index["historyTargets"]),
+        "datesWith2025Targets": len(index["origin2025Targets"]),
+        "datesWithPendingImpacts": len(index["pendingImpactDays"]),
         "archives": len(days), "dates": days,
         "checkedItems": len(index["histories"]),
         "interannualPairs": len(index["pairs"]),

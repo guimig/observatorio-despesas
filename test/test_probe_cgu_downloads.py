@@ -113,3 +113,47 @@ class RapCsvTests(unittest.TestCase):
         self.assertEqual(choose_dates(self.fixture()), [self.day])
         with self.assertRaises(ValueError):
             choose_dates(self.fixture(), "2023-12-31")
+
+
+    def test_targeted_date_rotation_and_2025_search(self):
+        ne25 = "158459264222025NE000010"
+        ob26 = "158459264222026OB000010"
+        event = {"date": self.day, "operation": "INSCRICAO EM RP",
+                 "quantity": "1", "unitPrice": "100.00", "cents": 10000}
+        idx = canonical_index([
+            {"unit": "158459", "month": "2024-12",
+             "documents": [{"id": self.ne, "phase": 1, "date": "2024-12-03", "itemsDetailVersion": 2}],
+             "itemsByDocument": {self.ne: [{"seq": 1, "historyChecked": True, "movements": [event]}]}},
+            {"unit": "158459", "month": "2025-12",
+             "documents": [{"id": ne25, "phase": 1, "date": "2025-12-12"}],
+             "commitmentObservations": [{"id": self.ne, "date": "2025-12-19"}]},
+            {"unit": "158459", "month": "2026-11",
+             "documents": [{"id": ob26, "phase": 3, "date": "2026-11-16", "paymentLinksChecked": True}],
+             "relations": [{"from": ob26, "to": ne25, "cents": 10000}]}])
+        self.assertEqual(choose_dates(idx, window=0), ["2024-12-03", "2026-11-16"])
+        self.assertEqual(choose_dates(idx, window=1), ["2025-12-12", "2026-11-16"])
+        self.assertEqual(choose_dates(idx, window=2)[0], "2025-12-19")
+        self.assertEqual(choose_dates(idx, "2025-01-11", window=3), [self.day])
+        self.assertEqual(len(choose_dates(idx, window=500)), 2)
+
+    def test_history_presence_different_from_inscription_and_cancel_hint(self):
+        idx = self.fixture()
+        idx["historyTargets"][self.day].add((self.ne, 1))
+        idx["origin2025Targets"][self.day].add("158459264222025NE000010")
+        a = self.archive({
+            "ItemEmpenhoHistorico": "Código Empenho;Sequencial;Data Operação;Operação;Quantidade;Valor Unitário;Valor Total\n"
+                + f"{self.ne};1;11/01/2025;INCLUSAO;1;100,00;100,00\n"
+                + "158459264222025NE000010;1;11/01/2025;CANCELAMENTO;1;100,00;100,00\n",
+            "Pagamento_EmpenhosImpactados": "Código Pagamento;Código Empenho;Valor Resto Pago;Valor Anulado\n"
+                + f"{self.ob};{self.ne};100,00;0,00\n",
+        })
+        result = inspect_rap_archive(a, self.day, idx)
+        history = result["ItemEmpenhoHistorico"]
+        self.assertEqual(history["targetItemsSeenInHistory"], 1)
+        self.assertEqual(history["targetItemsWithInscription"], 0)
+        self.assertEqual(history["search2025NotesSeen"], 1)
+        self.assertEqual(history["search2025NotesWithInscription"], 0)
+        self.assertEqual(history["operationHints"]["cancellation"], 1)
+        self.assertEqual(result["Pagamento_EmpenhosImpactados"]["cancellationHeaderCandidates"], 1)
+        self.assertFalse(result["Pagamento_EmpenhosImpactados"]["recognizedFields"]["rpCancelledCents"])
+        self.assertNotIn(self.ne, str(result))
