@@ -12,7 +12,8 @@ import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
-import {summarizeRapEvidence,needsRapComponentReview} from './rap-evidence.mjs';
+import {summarizeRapEvidence,needsRapComponentReview,IMPACT_FIELDS} from './rap-evidence.mjs';
+import {buildRapTrajectories,summarizeRapReadiness} from '../assets/rap-trajectory.js';
 import {buildCommitmentChronology,indexCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
 import {summarizeStoredValueMeanings} from './cgu-value-semantics.mjs';
@@ -254,8 +255,24 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
 /** Reserva global para recuperar componentes de RAP, sem ampliar filas ou
  * substituir vínculos documentais explicitamente priorizados. Primeiro os
  * pares legados sem qualquer componente; os parciais seguem revisão normal. */
-export function prioritizeRapComponentRecovery(base,months,{state={},now=new Date(),slot=0,protectedIds=[]}={}){
- const owners=new Map(),candidates=[];
+export function prioritizeRapComponentRecovery(base,months,{state={},now=new Date(),slot=0,protectedIds=[],totalMonths=months.length}={}){
+ const owners=new Map(),candidates=[],pendingByDoc=new Map();
+ const trajectories=buildRapTrajectories(months,{today:currentDateInBrazil(now),totalMonths});
+ const readiness=summarizeRapReadiness(trajectories);
+ // A cobertura de listagem é global; uma consulta de impacto não a resolve.
+ // Identificar apenas o potencial de sanar a última lacuna financeira conhecida.
+ const globalReasons=new Set(['months_missing','listing_unknown','listing_partial','impacts_incomplete']);
+ const finalGap=(entry,id)=>entry?.explicitRapEvidence&&entry.originStatus==='collected'&&
+  entry.readiness.reasons.includes('impacts_incomplete')&&
+  entry.readiness.reasons.every(k=>globalReasons.has(k))&&
+  entry.readiness.otherIncomplete===0&&
+  entry.counts.partial+entry.counts.unavailable===1&&entry.counts.ambiguous===0&&
+  entry.impacts.some(i=>i.id===id&&['partial_fields','unavailable'].includes(i.status));
+ for(const month of months)for(const r of month.relations){
+  if(!needsRapComponentReview(r))continue;
+  if(!pendingByDoc.has(r.from))pendingByDoc.set(r.from,[]);
+  pendingByDoc.get(r.from).push({month,r});
+ }
  const today=now.toISOString().slice(0,10);
  const protectedSet=new Set(protectedIds);
  const recent=(stamp,days)=>validDay(stamp)&&stamp<=today&&Date.parse(today)-Date.parse(stamp)<days*86400000;
@@ -269,19 +286,22 @@ export function prioritizeRapComponentRecovery(base,months,{state={},now=new Dat
   if(![2,3].includes(doc.phase))continue;
   const kind=doc.phase===2?'liquidation':'payment';
   if(recentImpactAttempt(month,id,kind,state,now))continue;
-  const pending=month.relations.filter(r=>r.from===id&&needsRapComponentReview(r));
+  const pending=(pendingByDoc.get(id)||[]).filter(x=>x.month===month).map(x=>x.r);
   if(!pending.length)continue;
   const missing=pending.filter(r=>!r.impactComponents);
   // O checkpoint legado não confirma a coleta de novos campos. Para
   // evidência parcial já consultada, respeitar o prazo normal de revisão.
   if(!missing.length&&recent(state[detailKey(month,id,kind)],30))continue;
+  const targets=[...new Set(pending.map(r=>r.to))].map(ne=>trajectories.get(ne));
+  const explicit=targets.filter(e=>e?.explicitRapEvidence&&e.originStatus==='collected').length;
+  const closing=targets.filter(e=>finalGap(e,id)).length;
   candidates.push({id,month:month.month,kind,recheck:doc.phase===2?
    doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true,
-   rapRecovery:true,missing:missing.length,pending:pending.length,
+   rapRecovery:true,missing:missing.length,pending:pending.length,explicit,closing,
    origin2025:pending.some(r=>r.to.slice(11,15)==='2025')});
  }
  const queue=[...base],selected=[];
- const clean=({missing,pending,origin2025,...task})=>task;
+ const clean=({missing,pending,origin2025,explicit,closing,...task})=>task;
  // Rodízio estratificado: priorizar o primeiro preenchimento, com uma
  // vaga para origem 2025 sempre que houver espaço. Nunca ampliar o lote.
  for(const kind of ['liquidation','payment']){
@@ -295,7 +315,29 @@ export function prioritizeRapComponentRecovery(base,months,{state={},now=new Dat
   const rotating=xs=>{if(!xs.length)return [];const offset=slot%xs.length;return xs.slice(offset).concat(xs.slice(0,offset));};
   const preferred=[...rotating(first),...rotating(partial)];
   const reserve=quota>=2?preferred.find(x=>x.origin2025&&x.missing):null;
-  const chosen=[...(reserve?[reserve]:[]),...preferred.filter(x=>x.id!==reserve?.id)].slice(0,quota);
+  // Até metade da reserva RAP é dirigida por evidência, sem aumentar o lote.
+  // Em reserva unitária alternar rodada dirigida e exploração. Preservar a
+  // vaga de 2025 e o rodízio geral para não abandonar referências sem inscrição.
+  const chosen=reserve?[reserve]:[];
+  const guidedLimit=quota===1?(slot%2===0?1:0):Math.floor(quota/2);
+  const guided=pool.filter(t=>t.explicit>0&&t.missing>0).sort((a,b)=>
+    b.closing-a.closing||b.explicit-a.explicit||b.missing-a.missing||a.id.localeCompare(b.id));
+  // Rotacionar somente dentro da mesma prioridade, não diluir a classificação.
+  const tiers=new Map();
+  for(const t of guided){
+   const key=[t.closing,t.explicit,t.missing].join('/');
+   if(!tiers.has(key))tiers.set(key,[]);
+   tiers.get(key).push(t);
+  }
+  const directed=[...tiers.values()].flatMap(rotating);
+  for(const t of directed){
+   if(chosen.length>=quota||chosen.filter(x=>x.explicit>0&&x.missing>0).length>=guidedLimit)break;
+   if(!chosen.some(x=>x.id===t.id))chosen.push(t);
+  }
+  for(const t of preferred){
+   if(chosen.length>=quota)break;
+   if(!chosen.some(x=>x.id===t.id))chosen.push(t);
+  }
   for(const t of chosen){
    let index=queue.findIndex(x=>x.kind===kind&&x.id===t.id);
    if(index<0)index=queue.findLastIndex(x=>x.kind===kind&&!protectedSet.has(x.id)&&!chosen.some(y=>y.id===x.id));
@@ -309,12 +351,18 @@ export function prioritizeRapComponentRecovery(base,months,{state={},now=new Dat
   selectedDocuments:selected.length,selectedPairs:selected.reduce((n,t)=>n+t.pending,0),
   selectedWithoutComponents:selected.reduce((n,t)=>n+t.missing,0),
   selectedOrigin2025:selected.filter(t=>t.origin2025).length,
+  eligibleWithExplicitEvidence:candidates.filter(t=>t.explicit>0).length,
+  selectedWithExplicitEvidence:selected.filter(t=>t.explicit>0).length,
+  selectedPotentialLastImpactGap:selected.reduce((n,t)=>n+t.closing,0),
+  readiness,
   byKind:Object.fromEntries(['liquidation','payment'].map(k=>[k,selected.filter(t=>t.kind===k).length]))}};
 }
 /** Uma reconsulta especificamente voltada a componentes não deve retificar
  * os valores legados ou suprimir relações já confirmadas automaticamente. */
 export function consistentRapRecovery(previous,incoming){
- return previous.every(old=>incoming.some(next=>next.to===old.to&&next.from===old.from&&next.cents===old.cents));
+ return previous.every(old=>incoming.some(next=>next.to===old.to&&next.from===old.from&&next.cents===old.cents&&
+  (!old.impactComponents||Object.keys(IMPACT_FIELDS).every(k=>old.impactComponents[k]===null||
+   old.impactComponents[k]===next.impactComponents?.[k]))));
 }
 export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
@@ -389,7 +437,7 @@ async function main(){
   console.log('Cobertura contratual antes da rodada: '+JSON.stringify(beforeContracts));
   const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
   const rapPlan=statePath?prioritizeRapComponentRecovery(impactPlan.tasks,months,{
-    state:historyState,now,slot,protectedIds:impactPlan.protectedIds
+    state:historyState,now,slot,protectedIds:impactPlan.protectedIds,totalMonths:manifest.months.length
   }):{tasks:impactPlan.tasks,summary:null};
   const base=rapPlan.tasks;
   console.log('Plano de recuperação de componentes RAP (somente contagens): '+JSON.stringify(rapPlan.summary));
