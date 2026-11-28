@@ -163,3 +163,33 @@ o limite de dez itens e seis documentos, com até dois itens de NEs de
 2025 ainda sem inscrição identificada e preferência por vínculo posterior
 explícito. Preserva controle e rodízio das duplicidades. Não há novo cron,
 orçamento HTTP, banco ou publicação de saldo. Rollback por revert.
+
+
+## Resultado autenticado e trajetória documental — 27/11/2026
+
+Run 46094349965: 32/32 HTTP 200; dez históricos completos com o mesmo
+multiconjunto armazenado. Sete grupos de inscrições repetidas já eram
+literalmente idênticos na resposta bruta da API; não foram encontrados
+campos adicionais de identidade distintos. Dois itens de origem 2025
+não apresentaram inscrição nesta amostra. Seis documentos financeiros
+completos, seis pares anteriores conferidos e valores legados coincidentes.
+Três pares de pagamento com valorRestoPago positivo; os seis tiveram
+valorRestoInscrito e valorRestoCancelado explicitamente zero. A amostra
+não estabelece identidade contábil nem ausência de outras inscrições.
+Run 46094097382: 111 consultas concluídas sem falha, 240 HTTP 200;
+67 NEs de 2024, 68 itens, 87 ocorrências, 19 repetições; 365 pares
+interanuais, dez com os cinco componentes disponíveis. Continuar rodízio.
+
+A trajetória documental derivada em assets/rap-trajectory.js não altera
+JSONs nem cria base. Agrupa ocorrências idênticas por NE integral e
+sequencial, conserva multiplicidade e valor por ocorrência, sem totalizar.
+Bloqueia componentes quando identidade, par, consulta ou aritmética não
+sustentam a evidência. Vínculos interanuais são candidatos; evidência
+explícita requer rótulo qualificado ou campo RP não zero confirmado.
+Não presume exercício de inscrição pela data, modalidade RPP/RPNP,
+saldo ou ligação NS-OB. Ausência de campo não é zero. A interface
+reutiliza a aba Trajetória, filtro por origem/evidência e ficha da NE
+com componentes por documento e cobertura das competências carregadas.
+Não cria cron, chamadas autenticadas, importação nem dados paralelos.
+Rollback por revert. Confronto com CSV oficial diário permanece pendente;
+a fonte é atualizável, não um razão contábil ou sequência imutável.

@@ -1,3 +1,4 @@
+import {qualifiedRapInscription} from '../assets/rap-trajectory.js';
 /**
  * Auditoria apenas documental de rotulos de inscricao em historicos de itens.
  * Sem semantica contabil, saldos, dados pessoais ou texto livre na saida.
@@ -18,7 +19,7 @@ export function inscriptionLabelEvidence(operation){
  const name=canonical(operation);
  if(name===null)return 'missing';
  if(name==='inscricao')return 'exact';
- if(/^(inscricao (de|em) restos? a pagar|inscricao (de |em )?rp)$/.test(name))
+ if(qualifiedRapInscription(name))
    return 'qualified';
  if(/\binscri(cao|cao\b)/.test(name))return 'other_with_hint';
  return 'not_inscription';
