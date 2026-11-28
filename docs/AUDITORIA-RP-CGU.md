@@ -294,3 +294,40 @@ ambiguidade continua bloqueando. Não classifica "valor anulado"
 genericamente como RAP. Fonte: página de documentos de liquidação
 do Portal da Transparência, https://portaldatransparencia.gov.br/despesas/liquidacao/170394000012022NS001928 .
 Reversão por revert. Homologação contábil e saldo permanecem pendentes.
+
+
+## Recuperação aditiva de lacunas confirmadas — 27/11/2026
+
+Run 46097275780: seis NEs-alvo de 2025 localizadas no arquivo
+2025-12-18, nenhuma inscrição qualificada observada nessa amostra.
+No ZIP 2026-03-12, dez pares interanuais de liquidação, doze linhas,
+todos já conhecidos e sem componentes canônicos; quatro campos
+reconhecidos, todos explicitamente zero. O campo de cancelamento
+foi reconhecido em ambos os CSVs. O lote selecionou seis documentos
+e oito pares, todos confirmados na API: 32 comparações de campos
+coincidentes (liquidado, RP inscrito, RP cancelado e RP pago).
+12 requisições HTTP 200. Ausência de valor positivo de cancelamento
+não prova ausência de baixa, e zero de valorLiquidado não comprova
+que a NS não tenha finalidade contábil distinta.
+
+A rotina anterior era somente leitura; agora o modo explícito
+--apply-confirmed, usado no workflow existente, recupera somente
+lacunas aditivas, sem importar valores do CSV. Históricos: igualdade
+do multiconjunto qualificado CSV/API, resposta API completa,
+proprietário único, catálogo v2 e sequencial já existente ainda
+não consultado. Preserva todas as ocorrências normalizadas da API,
+inclusive multiplicidade; não altera histórico já consultado.
+Impactos: quatro campos pertinentes CSV e cinco campos API
+verificáveis, nenhuma repetição ambígua, par canônico sem componentes,
+documento único com consulta de vínculos concluída, e conjunto
+integral de vínculos API idêntico aos legados em identidade/centavos.
+Não retifica componentes, não altera valor documental, não inclui
+ou remove pares. A validação da fase e privacidade reutiliza
+applyDocumentEnrichment/persistEnrichment/validatePublishedData.
+Conflito, falha ou restrição preserva o dado. Mudanças somente em
+data/months, push validado sem força e publicação reutilizável
+apenas se houve commit. Mantidos limite de 48 HTTP, grupo CGU,
+até dois ZIPs, sem novo cron e sem arquivo bruto. O workflow recebe
+permissão de escrita somente no job de coleta confirmado.
+Teste e merge exigidos; reverter código não apaga dados válidos já
+recuperados. Saldo contábil e RPP/RPNP continuam bloqueados.

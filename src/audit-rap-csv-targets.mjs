@@ -1,13 +1,15 @@
-/** Conferência autenticada de lacunas localizadas em CSV, somente leitura.
- * O plano temporário contém apenas identidades oficiais e campos estruturados.
- * Não grava acervo, não registra IDs, valores ou respostas, não infere saldo. */
+/** Conferência autenticada de lacunas localizadas em CSV.
+ * Por padrão somente leitura; --apply-confirmed recupera lacunas estritas
+ * com dados normalizados da API, nunca importa valores do CSV.
+ * Não registra IDs, valores ou respostas, não infere saldo. */
 import {readFile,stat} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createCguBudget} from './cgu-budget.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
 import {resolvePaymentLinks,resolveLiquidationLinks} from './enrich-cgu.mjs';
-import {isRapInscription,IMPACT_FIELDS} from './rap-evidence.mjs';
+import {isRapInscription,IMPACT_FIELDS,validateImpactComponents} from './rap-evidence.mjs';
+import {validateManifest,validateMonth,applyDocumentEnrichment,persistEnrichment,validatePublishedData} from './store.mjs';
 
 const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const SOURCE=/^158459\d{5}20\d{2}(NS|OB|DF)\d{6}$/;
@@ -58,7 +60,7 @@ export function validateCsvPlan(plan){
 const emptyFields=()=>Object.fromEntries(keys.map(k=>[k,{equal:0,different:0,unavailable:0}]));
 const count=(map,k,n)=>map.set(k,(map.get(k)||0)+n);
 export async function auditCsvTargets(plan,{token,budget,historyResolver=resolveItemMovements,
- paymentResolver=resolvePaymentLinks,liquidationResolver=resolveLiquidationLinks}={}){
+ paymentResolver=resolvePaymentLinks,liquidationResolver=resolveLiquidationLinks,confirmed=null}={}){
  validateCsvPlan(plan);
  const out={history:{planned:plan.histories.length,attempted:0,completed:0,unavailable:0,sameMultiset:0,
   differentMultiplicity:0,differentContent:0,csvOnlyOccurrences:0,apiOnlyOccurrences:0,
@@ -82,6 +84,7 @@ export async function auditCsvTargets(plan,{token,budget,historyResolver=resolve
     const same=sameKeys&&[...csv].every(([k,n])=>api.get(k)===n);
     a[same?'sameMultiset':sameKeys?'differentMultiplicity':'differentContent']++;
     if(same&&year(h.id)===2025)a.origin2025Confirmed++;
+    if(same&&confirmed)confirmed.histories.push({id:h.id,seq:h.seq,movements:fresh.movements});
     for(const [k,n] of csv)a.csvOnlyOccurrences+=Math.max(0,n-(api.get(k)||0));
     for(const [k,n] of api)a.apiOnlyOccurrences+=Math.max(0,n-(csv.get(k)||0));
    }
@@ -107,10 +110,106 @@ export async function auditCsvTargets(plan,{token,budget,historyResolver=resolve
      if(cat!=='equal')allEqual=false;
     }
     if(compared&&allEqual)a.allComparableFieldsEqual++;
+    // Exigir os quatro campos pertinentes do CSV, e os cinco da API.
+    // Campos de outra fase podem estar ausentes no CSV, nunca inferidos.
+    const required=[row.phase===2?'liquidatedCents':'paidCents','rpInscribedCents','rpCancelledCents','rpPaidCents'];
+    const c=found[0].impactComponents;
+    if(confirmed&&allEqual&&required.every(k=>Number.isSafeInteger(row.components[k]))&&
+       c?.repeatedRows===0&&keys.every(k=>Number.isSafeInteger(c[k])))
+     confirmed.impacts.push({id:row.id,ne:row.ne,phase:row.phase,link:found[0],apiLinks:result.links});
    }
   }
  }
  return out;
+}
+/** Plano de enriquecimento estritamente aditivo; nenhuma retificação.
+ * Reutiliza o validador e o gravador canônico. Todos os documentos e pares
+ * legados devem continuar idênticos em identidade/centavos. */
+export function planConfirmedCsvRecovery(months,confirmed,now=new Date()){
+ const working=new Map(),owners=new Map(),tasks=[];
+ const summary={historiesEligible:confirmed.histories.length,impactsEligible:confirmed.impacts.length,
+  historiesAdded:0,impactsAdded:0,skipped:{},monthsChanged:0};
+ const skip=reason=>summary.skipped[reason]=(summary.skipped[reason]||0)+1;
+ for(const m of months){
+  validateMonth(m);
+  if(working.has(m.month))throw Error('Competência duplicada');
+  working.set(m.month,m);
+  for(const d of m.documents){
+   if(!owners.has(d.id))owners.set(d.id,[]);
+   owners.get(d.id).push(m.month);
+  }
+ }
+ const owner=id=>{
+  const m=owners.get(id);
+  return m?.length===1?working.get(m[0]):null;
+ };
+ const changed=new Set();
+ const add=(m,id,result)=>{
+  const outcome=applyDocumentEnrichment(m,id,result,now);
+  if(!outcome.changed)return false;
+  working.set(m.month,outcome.data);changed.add(m.month);
+  tasks.push({month:m.month,id,result});return true;
+ };
+ for(const h of confirmed.histories){
+  const m=owner(h.id),doc=m?.documents.find(d=>d.id===h.id);
+  const items=m?.itemsByDocument?.[h.id]||[],item=items.find(i=>i.seq===h.seq);
+  if(!m||!valid(h.id,NE)||doc?.phase!==1||doc.itemsDetailVersion!==2||!item){
+   skip('history_owner_or_catalog_missing');continue;
+  }
+  if(item.historyChecked===true){skip('history_already_checked');continue;}
+  if(!Array.isArray(h.movements)||!h.movements.some(isRapInscription)){
+   skip('history_without_qualified_evidence');continue;
+  }
+  try{
+   if(add(m,h.id,{kind:'itemHistory',seq:h.seq,movements:h.movements,
+    checkedAt:now.toISOString().slice(0,10)}))summary.historiesAdded++;
+  }catch{skip('history_validation_failed');}
+ }
+ for(const r of confirmed.impacts){
+  const m=owner(r.id),doc=m?.documents.find(d=>d.id===r.id);
+  if(!m||!valid(r.id,SOURCE)||!valid(r.ne,NE)||year(r.id)<=year(r.ne)||
+    doc?.phase!==r.phase||![2,3].includes(r.phase)||
+    !(r.phase===2?doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true)){
+   skip('impact_owner_or_checkpoint_missing');continue;
+  }
+  const old=m.relations.filter(l=>l.from===r.id),target=old.find(l=>l.to===r.ne);
+  if(!target){skip('impact_pair_missing');continue;}
+  if(target.impactComponents){skip('impact_already_present');continue;}
+  // Conferir o conjunto completo, inclusive vínculos fora da amostra CSV.
+  // Não acrescentar, remover ou retificar qualquer par ou valor legado.
+  const incoming=r.apiLinks;
+  if(!Array.isArray(incoming)||incoming.length!==old.length||
+    new Set(incoming.map(l=>l.to)).size!==incoming.length||
+    !old.every(l=>incoming.some(x=>x.from===l.from&&x.to===l.to&&x.cents===l.cents))){
+   skip('legacy_links_differ');continue;
+  }
+  const fresh=incoming.find(l=>l.from===r.id&&l.to===r.ne);
+  const c=fresh?.impactComponents;
+  if(!fresh||fresh!==r.link||c?.repeatedRows!==0||!keys.every(k=>Number.isSafeInteger(c[k]))){
+   skip('impact_components_incomplete');continue;
+  }
+  try{
+   validateImpactComponents(c,target,r.phase);
+   const links=old.map(l=>l.to===r.ne?{...l,impactComponents:structuredClone(c)}:l);
+   if(add(m,r.id,{kind:r.phase===2?'liquidation':'payment',links}))summary.impactsAdded++;
+  }catch{skip('impact_validation_failed');}
+ }
+ summary.monthsChanged=changed.size;
+ return {tasks,summary};
+}
+async function recoverConfirmed(root,confirmed){
+ const manifest=validateManifest(JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8')));
+ const months=[];
+ for(const month of manifest.months.filter(m=>m>='2024-01'))
+  months.push(validateMonth(JSON.parse(await readFile(join(root,'data/months',month+'.json'),'utf8'))));
+ const now=new Date(),plan=planConfirmedCsvRecovery(months,confirmed,now);
+ let persisted=0;
+ for(const t of plan.tasks){
+  if(!await persistEnrichment(root,t.month,t.id,t.result,now))throw Error('Checkpoint mudou durante recuperação');
+  persisted++;
+ }
+ await validatePublishedData(root);
+ return {...plan.summary,persisted};
 }
 async function main(){
  const path=process.env.CGU_RAP_TARGETS_PATH;
@@ -120,10 +219,20 @@ async function main(){
  const token=process.env.CGU_API_KEY;
  if(!token)throw Error('CGU_API_KEY ausente');
  const budget=createCguBudget({requests:48,durationMs:4*60*1000,spacingMs:1500});
- const report=await auditCsvTargets(plan,{token,budget});
+ const apply=process.argv.includes('--apply-confirmed');
+ const confirmed=apply?{histories:[],impacts:[]}:null;
+ const report=await auditCsvTargets(plan,{token,budget,confirmed});
  console.log('Confronto autenticado dirigido por CSV (somente contagens): '+JSON.stringify(report));
  console.log('Orçamento HTTP CSV/API: '+JSON.stringify(budget.snapshot()));
  if(!report.history.completed&&!report.impacts.completedDocuments)throw Error('Nenhuma consulta concluída');
+ // Restrição ou instabilidade da fonte impede gravação desta rodada.
+ if(apply){
+  const stop=budget.snapshot().stopReason;
+  if(stop&&stop!=='request_budget'&&stop!=='time_budget'){
+   console.log('Recuperação CSV/API interrompida por restrição ou instabilidade; nenhum dado gravado.');
+  }else console.log('Recuperação CSV/API canônica (somente contagens): '+
+   JSON.stringify(await recoverConfirmed(process.cwd(),confirmed)));
+ }
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1]))
  main().catch(()=>{console.error('Confronto dirigido CSV/API não concluído; dados preservados.');process.exitCode=1;});
