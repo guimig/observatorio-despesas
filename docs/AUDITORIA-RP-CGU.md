@@ -235,3 +235,30 @@ no acervo enriquecido com ausência de operações na fonte.
 Testes sintéticos de equivalência de multiplicidade, junção interna,
 ambiguidade, campos ausentes e divergência. Sondagem real e confirmação
 do layout CSV ainda pendentes; rollback por revert sem migração.
+
+
+## Confronto real e nova seleção de arquivos — 27/11/2026
+
+Run 46096315794: ambos ZIPs HTTP 200, inspecionados. Em 11/01/2025,
+arquivo de 8.403 bytes, nenhum dos 75 itens-alvo encontrado com inscrição.
+Em 16/11/2026, nove pares interanuais conhecidos com campo RAP pago
+positivo, dos quais dois com componentes API; seis comparações de
+campos (pago, RAP inscrito, RAP pago) coincidentes. Sete pares conhecidos
+ainda sem componentes API. Nenhuma linha ambígua nos nove pares.
+Campo de cancelamento não reconhecido nos dois CSVs; isto não comprova
+zero ou inexistência de cancelamentos. Dicionário oficial de empenho
+confirma que o documento permanece na planilha da última alteração.
+A modalidade e o saldo contábil permanecem não homologados.
+
+A seleção deixa de insistir na data da operação: usa datas da listagem
+e observações da NE como pistas, alternando coorte com inscrição
+conhecida e NEs de 2025 ligadas a execução posterior, por número da
+execução. Segunda vaga: datas com pares pendentes, privilegiando em
+rodízio os que também possuem pagamentos RP conhecidos. Mantém teto
+de dois ZIPs, mesma política temporária e nenhum cron adicional.
+Contadores novos distinguem presença da NE/item no histórico do
+arquivo, inscrição qualificada, e rótulos de cancelamento/estorno
+como pistas não classificadas. Contagem de cabeçalhos candidatos a
+cancelamento não mapeia campos por aproximação. Sem importação de
+valores ou alteração canônica. Testes cobrem rodízio e diferenciação
+de presença/inscrição. Reversão por revert.

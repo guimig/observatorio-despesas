@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       day:
-        description: 'Data especifica desde 2024 (vazio = duas datas dirigidas pelo acervo)'
+        description: 'Data especifica desde 2024 (vazio = rodizio de datas dirigidas pelo acervo)'
         type: string
         required: false
   push:
