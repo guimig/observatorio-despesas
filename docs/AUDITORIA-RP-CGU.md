@@ -138,3 +138,28 @@ não consulta API. Testes reproduzem repetição literal, linhas com identidade
 adicional, alterações de multiplicidade, página repetida e campos ausentes.
 Confronto com arquivos oficiais e validação contábil continuam pendentes.
 Rollback por revert, sem migração ou alteração de dados.
+
+
+## Recuperação priorizada e rodízio — 27/11/2026
+
+O diagnóstico pós-merge da PR #198 (run 46094349948) encontrou 54 NEs
+de 2024, 55 itens com 72 ocorrências de inscrição, 17 repetições em 17
+itens e 349 pares documentais interanuais, ainda sem componentes novos.
+A primeira sondagem dirigida e a coleta estavam enfileiradas, portanto
+não há conclusão sobre a origem da duplicidade.
+
+Reserva global de até 20% (mínimo uma vaga quando a fase possui vagas)
+dos lugares não protegidos de liquidação/pagamento, sem aumentar o total.
+Preserva prioridades de vínculos relacionados/contratos e alternância com
+catálogos e históricos. Prioriza primeira coleta dos componentes, com
+reserva de origem 2025 quando houver pelo menos duas vagas; componentes
+parciais seguem revisão normal e cooldown. Reconsulta dirigida que omita
+ou altere valor de vínculo anterior é isolada para investigação, não
+publicada como correção do saldo. Telemetria distingue pares sem campos
+de pares parciais por exercício da NE.
+
+A auditoria usa janela determinística por número de execução, mantendo
+o limite de dez itens e seis documentos, com até dois itens de NEs de
+2025 ainda sem inscrição identificada e preferência por vínculo posterior
+explícito. Preserva controle e rodízio das duplicidades. Não há novo cron,
+orçamento HTTP, banco ou publicação de saldo. Rollback por revert.

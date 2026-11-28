@@ -35,15 +35,17 @@ const safeReason=value=>reasons.has(value)?value:'other_failure';
 
 /** Escolhe primeiro duplicidades conhecidas, depois inscrições não repetidas.
  * Só usa proprietários únicos, não procura exercício anterior a 2024. */
-export function planTargetedRap(months,{historyLimit=10,impactLimit=6}={}){
+export function planTargetedRap(months,{historyLimit=10,impactLimit=6,window=0}={}){
  if(!Number.isSafeInteger(historyLimit)||historyLimit<1||historyLimit>12||
-    !Number.isSafeInteger(impactLimit)||impactLimit<1||impactLimit>8)throw Error('Limites inválidos');
+    !Number.isSafeInteger(impactLimit)||impactLimit<1||impactLimit>8||
+    !Number.isSafeInteger(window)||window<0)throw Error('Limites inválidos');
  const owners=new Map();
  for(const m of months)for(const d of m.documents||[]){
   if(!owners.has(d.id))owners.set(d.id,[]);
   owners.get(d.id).push({doc:d,month:m});
  }
- const histories=[],knownNotes=new Set(),duplicateNotes=new Set();
+ const histories=[],search2025=[],knownNotes=new Set(),duplicateNotes=new Set();
+ const linked2025=new Set(months.flatMap(m=>(m.relations||[]).filter(l=>scope(l.to)&&year(l.to)===2025&&year(l.from)>2025).map(l=>l.to)));
  for(const [id,entries] of owners){
   if(!scope(id)||entries.length!==1||entries[0].doc.phase!==1)continue;
   const items=entries[0].month.itemsByDocument?.[id]||[];
@@ -51,7 +53,11 @@ export function planTargetedRap(months,{historyLimit=10,impactLimit=6}={}){
   for(const item of items){
    if(item.historyChecked!==true||!Number.isSafeInteger(item.seq)||item.seq<1||item.seq>100000)continue;
    const review=reviewRapItem(item);
-   if(!review.observations)continue;
+   if(!review.observations){
+    if(year(id)===2025&&Array.isArray(item.movements))search2025.push({id,seq:item.seq,stored:item.movements,
+      cohort:'search_2025',linked:linked2025.has(id)});
+    continue;
+   }
    knownNotes.add(id);
    if(review.repeated)duplicateNotes.add(id);
    histories.push({id,seq:item.seq,stored:item.movements,cohort:review.repeated?'duplicate':'control'});
@@ -62,8 +68,21 @@ export function planTargetedRap(months,{historyLimit=10,impactLimit=6}={}){
  // Uma vaga de controle se houver, inclusive se a fila de repetidos for grande.
  const duplicates=histories.filter(x=>x.cohort==='duplicate');
  const controls=histories.filter(x=>x.cohort==='control');
- const chosen=duplicates.slice(0,historyLimit-(controls.length&&historyLimit>1?1:0));
- chosen.push(...controls.slice(0,historyLimit-chosen.length));
+ const rotate=(pool,count)=>{
+  if(!pool.length||!count)return [];
+  const offset=((window%pool.length)*Math.min(count,pool.length))%pool.length;
+  return pool.slice(offset).concat(pool.slice(0,offset)).slice(0,count);
+ };
+ // Uma pequena reserva de busca de inscrições ainda não identificadas em
+ // NEs de 2025; preferir vínculos explícitos com execução de 2026.
+ const searchQuota=historyLimit>=4?Math.min(2,search2025.length):0;
+ const controlQuota=controls.length&&historyLimit>1?1:0;
+ const search=search2025.sort((a,b)=>Number(b.linked)-Number(a.linked)||a.id.localeCompare(b.id)||a.seq-b.seq);
+ const linkedSearch=search.filter(x=>x.linked),otherSearch=search.filter(x=>!x.linked);
+ const searchChosen=[...rotate(linkedSearch,searchQuota),...rotate(otherSearch,searchQuota)].slice(0,searchQuota)
+  .map(({linked,...x})=>x);
+ const chosen=rotate(duplicates,historyLimit-controlQuota-searchChosen.length);
+ chosen.push(...searchChosen,...rotate(controls,historyLimit-chosen.length-searchChosen.length));
  const candidates=[];
  for(const [id,entries] of owners){
   if(entries.length!==1||!DOC.test(id))continue;
@@ -77,12 +96,16 @@ export function planTargetedRap(months,{historyLimit=10,impactLimit=6}={}){
    cohort:rank===0?'linked_duplicate':rank===1?'linked_inscription':'other_interannual'});
  }
  candidates.sort((a,b)=>a.rank-b.rank||b.id.slice(11,15).localeCompare(a.id.slice(11,15))||a.id.localeCompare(b.id));
- const groups=[candidates.filter(x=>x.phase===2),candidates.filter(x=>x.phase===3)],impacts=[];
+ const groups=[2,3].map(phase=>[0,1,2].flatMap(rank=>{
+  const group=candidates.filter(x=>x.phase===phase&&x.rank===rank);
+  return rotate(group,group.length?1:0).concat(group.length?group.slice((window%group.length)+1).concat(group.slice(0,window%group.length)):[]);
+ })),impacts=[];
  while(impacts.length<impactLimit&&groups.some(x=>x.length)){
   for(const group of groups){if(group.length&&impacts.length<impactLimit)impacts.push(group.shift());}
  }
  return {histories:chosen,impacts,counts:{knownNotes:knownNotes.size,duplicateNotes:duplicateNotes.size,
-  candidateHistories:histories.length,duplicateHistories:duplicates.length,
+  candidateHistories:histories.length,duplicateHistories:duplicates.length,search2025Candidates:search2025.length,
+  selectedSearch2025:searchChosen.length,
   selectedHistories:chosen.length,selectedDuplicateHistories:chosen.filter(x=>x.cohort==='duplicate').length,
   candidateImpactDocuments:candidates.length,selectedImpactDocuments:impacts.length}};
 }
@@ -161,13 +184,14 @@ export function summarizeTargetAudits(histories,impacts){
   legacyMatches:0,legacyDifferences:0,repeatedPairs:0,fields:emptyFieldCounts(),byPhase:{},reasons:{}}};
  for(const r of histories){
   const h=out.histories,c=h.byCohort[r.cohort]||={attempted:0,completed:0,unavailable:0,empty:0,
-   repeatedInscriptionObservations:0};
+   repeatedInscriptionObservations:0,inscriptionObservations:0};
   c.attempted++;
   if(r.status==='unavailable'){h.unavailable++;c.unavailable++;h.reasons[r.reason]=(h.reasons[r.reason]||0)+1;continue;}
   h.completed++;c.completed++;if(r.status==='empty'){h.empty++;c.empty++;}
   h[r.historyComparison==='same_multiset'?'sameMultiset':r.historyComparison==='changed_multiplicity'?'changedMultiplicity':'changedContent']++;
   for(const k of ['duplicateGroups','rawIdenticalGroups','rawDifferentGroups','extraIdentityFieldGroups','missingStoredSignatures','additionalSignatures'])h[k]+=r[k];
   c.repeatedInscriptionObservations+=r.freshInscription.repeated;
+  c.inscriptionObservations+=r.freshInscription.observations;
  }
  for(const r of impacts){
   const h=out.impacts,p=h.byPhase[r.phase]||={attempted:0,completed:0,unavailable:0,empty:0,fields:emptyFieldCounts()};
@@ -187,7 +211,9 @@ async function main(){
  const months=[];
  for(const month of manifest.months.filter(m=>m>='2024-01'))
   months.push(validateMonth(JSON.parse(await readFile(join(root,'data/months',month+'.json'),'utf8'))));
- const plan=planTargetedRap(months);
+ const runNumber=Number(process.env.GITHUB_RUN_NUMBER||0);
+ const window=Number.isSafeInteger(runNumber)&&runNumber>=0?runNumber:0;
+ const plan=planTargetedRap(months,{window});
  console.log('Cobertura RAP canônica (somente contagens): '+JSON.stringify(summarizeRapEvidence(months)));
  console.log('Plano dirigido RAP (somente contagens): '+JSON.stringify(plan.counts));
  if(process.argv.includes('--dry-run'))return;
