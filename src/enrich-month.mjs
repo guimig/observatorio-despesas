@@ -12,6 +12,7 @@ import { validateManifest, validateMonth, persistEnrichment,
   validatePublishedData } from './store.mjs';
 import { resolveLiquidationLinks, resolvePaymentLinks, resolveItems } from './enrich-cgu.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
+import {summarizeRapEvidence,needsRapComponentReview} from './rap-evidence.mjs';
 import {buildCommitmentChronology,indexCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
 import {currentDateInBrazil} from './backfill.mjs';
 import {summarizeStoredValueMeanings} from './cgu-value-semantics.mjs';
@@ -145,6 +146,7 @@ function roundRobin(groups,limit){
 export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2}={}){
  const today=now.toISOString().slice(0,10),cutoff=new Date(now.getTime()-30*86400000).toISOString().slice(0,10);
  const lists={liquidation:[],payment:[],items:[]};
+ const rapPriority=new Set(month.relations.filter(needsRapComponentReview).map(r=>r.from));
  for(const doc of month.documents){
   const kind=doc.phase===1&&inScopeNe(doc.id)&&doc.itemsDetailVersion===2&&Object.hasOwn(month.itemsByDocument||{},doc.id)?'items':
    doc.phase===2&&doc.liquidationLinksChecked===true?'liquidation':
@@ -159,7 +161,11 @@ export function planDetailRechecks(month,{state={},now=new Date(),slot=0,limit=2
   const candidates=lists[kind].sort((a,b)=>a.last.localeCompare(b.last)||a.id.localeCompare(b.id));
   const first=candidates[0]?.last||'';
   const same=candidates.filter(x=>x.last===first),others=candidates.filter(x=>x.last!==first);
-  lists[kind]=[...rotatePending(same,Math.min(limit,same.length),slot),...others].slice(0,limit);
+  const normal=[...rotatePending(same,Math.min(limit,same.length),slot),...others];
+  // Reserva uma vaga de revisão já existente, sem aumentar a cota.
+  const candidatesRap=kind==='items'?[]:candidates.filter(t=>rapPriority.has(t.id));
+  const preferred=rotatePending(candidatesRap,1,slot);
+  lists[kind]=[...preferred,...normal.filter(t=>!preferred.some(p=>p.id===t.id))].slice(0,limit);
  }
  return lists;
 }
@@ -304,6 +310,8 @@ async function main(){
   const today=currentDateInBrazil(now);
   const beforeChronology=buildCommitmentChronology(months,{today});
   const beforeCatalogs=summarizeCatalogBacklog(months);
+  const beforeRap=summarizeRapEvidence(months);
+  console.log('Evidencia RAP antes da rodada (somente contagens): '+JSON.stringify(beforeRap));
   const beforeHistories=summarizeHistoryBacklog(months),beforeValues=summarizeCommitmentValues(months,{today});
   console.log('Cobertura de historicos de itens antes da rodada (somente contagens): '+JSON.stringify(beforeHistories));
   console.log('Cobertura de catalogos NE antes da rodada (somente contagens): '+JSON.stringify(beforeCatalogs));
@@ -368,8 +376,8 @@ async function main(){
     if(historyYear){historyRecovery.attempted++;historyYear.attempted++;if(pageLimit>8)historyRecovery.paginationExtended++;}
     attempted++;
     const phase=phaseResults[kind]||=( {attempted:0,successes:0,errors:0} );phase.attempted++;
-    const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget}):
-      kind==='payment'?await resolvePaymentLinks(id,{token,budget}):
+    const outcome=kind==='liquidation'?await resolveLiquidationLinks(id,{token,budget,includeRapComponents:true}):
+      kind==='payment'?await resolvePaymentLinks(id,{token,budget,includeRapComponents:true}):
       kind==='items'?await resolveItems(id,{token,budget,limit:pageLimit}):await resolveItemMovements(id,seq,{token,budget,limit:pageLimit});
     if(attemptKey&&(outcome.ok||!budget.stopped()))historyState[attemptKey]=new Date().toISOString().slice(0,10);
     if(!outcome.ok){
@@ -448,6 +456,7 @@ async function main(){
   const comparedMonths=selected?validated.months.filter(m=>m.month===selected):validated.months;
   const afterChronology=buildCommitmentChronology(comparedMonths,{today});
   const afterCatalogs=summarizeCatalogBacklog(comparedMonths);
+  console.log('Evidencia RAP depois da rodada (somente contagens): '+JSON.stringify(summarizeRapEvidence(comparedMonths)));
   const afterHistories=summarizeHistoryBacklog(comparedMonths),afterValues=summarizeCommitmentValues(comparedMonths,{today});
   console.log('Resultado da recuperacao de historicos de itens (somente contagens): '+JSON.stringify({before:beforeHistories,after:afterHistories,reconstruction:{before:beforeValues.internal,after:afterValues.internal,documentDifferentBefore:beforeValues.documentDifferent,documentDifferentAfter:afterValues.documentDifferent},...historyRecovery}));
   console.log('Resultado da recuperacao de catalogos NE (somente contagens): '+JSON.stringify({before:beforeCatalogs,after:afterCatalogs,deltaMissing:afterCatalogs.missing-beforeCatalogs.missing,...catalogRecovery}));

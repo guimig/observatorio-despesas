@@ -72,3 +72,37 @@ Apos merge conferir o run autenticado e registrar se houve valores positivos
 de `valorRestoInscrito` ou `valorRestoCancelado` **por tipo de documento e
 coorte**, sempre sem divulgar montantes individuais. O resultado e exploratorio:
 aumentar o numero de amostras nao transforma a evidencia em reconciliacao.
+
+
+## 27/11/2026 — Evidência de inscrição e componentes de impacto
+
+No JSON de 2024-12, a análise encontrou 42 ocorrências do rótulo oficial
+`INSCRICAO EM RP` em 35 itens de 34 NEs de 2024, todas com data documental
+2025-01-11. Sete itens apresentam duas linhas indistinguíveis de inscrição
+e também inclusões originais repetidas. A data da fonte não comprova o
+exercício contábil de inscrição; não somar essas ocorrências, nem eliminar
+linhas canônicas sem identidade oficial. O classificador derivado reconhece
+o rótulo qualificado, preservando `type:other` dos JSONs históricos e o
+bloqueio de reconstruções aritméticas ambíguas.
+
+O enriquecimento de liquidações/pagamentos passa a preservar os cinco
+campos de impacto em `relations[].impactComponents` por par documento/NE:
+`liquidatedCents`, `paidCents`, `rpInscribedCents`, `rpCancelledCents`,
+`rpPaidCents`, mais contagens `rowCount` e `repeatedRows`. Somente após
+paginação completa; campo omitido/inválido/overflow ou linhas
+indistinguíveis tornam o componente indisponível (null), nunca zero.
+Mantém `cents` e todos os indicadores legados intactos; as novas evidências
+não autorizam calcular saldo, inscrição contábil ou modalidade RPP/RPNP.
+A telemetria agrega somente contagens, inclusive duplicidades.
+Uma vaga da revisão documental existente por fase/competência prioriza
+vínculos interanuais sem componentes completos, respeitando cooldown,
+rodízio, cotas e agenda atuais. Não altera dados manualmente, não adiciona
+fonte, base, credencial ou rotina de publicação. O código de coleta de
+valor documental original continua legado; a fila de enriquecimento
+recupera os componentes progressivamente. Saldos seguem indisponíveis.
+
+Validação: testes de componentes, campos ausentes, zero explícito, sinais,
+páginas incompletas, duplicidade e compatibilidade mensal. Homologação
+contábil e confronto com arquivos oficiais continuam pendentes. Rollback:
+reverter o PR após remover apenas o campo opcional impactComponents dos
+JSONs que tiverem sido enriquecidos (preservando cents e relações).
