@@ -157,3 +157,27 @@ class RapCsvTests(unittest.TestCase):
         self.assertEqual(result["Pagamento_EmpenhosImpactados"]["cancellationHeaderCandidates"], 1)
         self.assertFalse(result["Pagamento_EmpenhosImpactados"]["recognizedFields"]["rpCancelledCents"])
         self.assertNotIn(self.ne, str(result))
+
+
+    def test_target_handoff_bounded_and_no_personal_fields(self):
+        from src.probe_rap_csv import bounded_targets
+        idx = self.fixture()
+        idx["pairs"][(self.ob, self.ne)] = None
+        idx["histories"] = {}
+        a = self.archive({
+            "ItemEmpenhoHistorico": "Código Empenho;Sequencial;Data Operação;Operação;Quantidade;Valor Unitário;Valor Total;Observação\n"
+                + f"{self.ne};1;11/01/2025;INSCRIÇÃO EM RP;1;100,00;100,00;PESSOA\n",
+            "Pagamento_EmpenhosImpactados": "Código Pagamento;Código Empenho;Valor Resto Pago;Valor de Restos a Pagar Cancelados\n"
+                + f"{self.ob};{self.ne};100,00;0,00\n",
+        })
+        targets = {"histories": [], "impacts": []}
+        summary = inspect_rap_archive(a, self.day, idx, targets)
+        plan = bounded_targets(targets)
+        self.assertEqual(len(plan["histories"]), 1)
+        self.assertEqual(len(plan["impacts"]), 1)
+        self.assertEqual(plan["impacts"][0]["components"]["rpCancelledCents"], 0)
+        self.assertNotIn("PESSOA", str(plan))
+        self.assertNotIn(self.ne, str(summary))
+        # Snapshots conflitantes não podem ser mesclados.
+        targets["histories"].append({**plan["histories"][0], "events": []})
+        self.assertEqual(bounded_targets(targets)["histories"], [])

@@ -36,7 +36,8 @@ FIELDS = {
                          "valor restos inscritos"),
     "rpCancelledCents": ("valor resto cancelado", "valor restos a pagar cancelados",
                           "valor cancelado de restos a pagar", "valor rp cancelado",
-                          "valor restos cancelados"),
+                          "valor restos cancelados", "valor de restos a pagar cancelados",
+                          "valor restos a pagar cancelado", "valor de restos a pagar cancelado"),
     "rpPaidCents": ("valor resto pago", "valor restos a pagar pagos",
                     "valor pago de restos a pagar", "valor rp pago", "valor restos pagos"),
 }
@@ -335,7 +336,7 @@ def identity_columns(names, kind):
     return tuple(column(names, group) for group in DOC_HEADERS[kind])
 
 
-def inspect_history(archive, member, parent, index, day):
+def inspect_history(archive, member, parent, index, day, targets=None):
     known = index["histories"]
     expected = {key for key, sigs in known.items() if any(sig[0] == day for sig in sigs)}
     date_targets = set(index.get("historyTargets", {}).get(day, ()))
@@ -414,6 +415,14 @@ def inspect_history(archive, member, parent, index, day):
     counts["targetItemsLocated"] = len(expected & observed.keys())
     for key, sigs in observed.items():
         counts["archiveRepeatedOccurrences"] += sum(n - 1 for n in sigs.values())
+        if targets is not None and (key not in known or sigs != known[key]):
+            # Somente eventos qualificados e campos estritamente estruturados.
+            # Não transportar histórico bruto, descrição ou outros favorecidos.
+            if sum(sigs.values()) <= 100:
+                events = [{"date": sig[0], "operation": sig[1], "quantity": format(sig[2], "f"),
+                           "unitPrice": format(sig[3], "f"), "cents": sig[4], "count": n}
+                          for sig, n in sorted(sigs.items())]
+                targets["histories"].append({"id": key[0], "seq": key[1], "events": events})
         if key not in known:
             continue
         old = known[key]
@@ -428,7 +437,7 @@ def inspect_history(archive, member, parent, index, day):
     return counts
 
 
-def inspect_impacts(archive, member, parents, kind, index):
+def inspect_impacts(archive, member, parents, kind, index, targets=None):
     fields = {k: {"positive": 0, "zero": 0, "negative": 0, "unavailable": 0,
                   "compared": 0, "equal": 0, "different": 0} for k in FIELDS}
     out = {"status": "inspected", "interannualRows": 0, "invalidRows": 0,
@@ -477,21 +486,30 @@ def inspect_impacts(archive, member, parents, kind, index):
         ambiguous = len(set(values)) != len(values) or (
             len(values) > 1 and (subitem is None or any(not r[0] for r in values)))
         out["ambiguousPairs"] += int(ambiguous)
+        observed_fields = {}
         for i, field in enumerate(FIELDS):
             amounts = [v[1][i] for v in values]
             total = sum(amounts) if not ambiguous and None not in amounts else None
             if total is not None and abs(total) > SAFE_CENTS:
                 total = None
+            observed_fields[field] = total
             counts = fields[field]
             counts["unavailable" if total is None else "positive" if total > 0 else
                    "negative" if total < 0 else "zero"] += 1
             if total is not None and old is not None and old[field] is not None:
                 counts["compared"] += 1
                 counts["equal" if old[field] == total else "different"] += 1
+        if targets is not None and not ambiguous and known and any(
+            v is not None and (old is None or old[k] is None or old[k] != v)
+            for k, v in observed_fields.items()
+        ):
+            targets["impacts"].append({"id": key[0], "ne": key[1],
+                                       "phase": 2 if kind == "Liquidacao" else 3,
+                                       "components": observed_fields})
     return out
 
 
-def inspect_rap_archive(stream, day, index):
+def inspect_rap_archive(stream, day, index, targets=None):
     archive_url(day)
     prefix = day.replace("-", "") + "_Despesas_"
     with zipfile.ZipFile(stream) as archive:
@@ -509,14 +527,44 @@ def inspect_rap_archive(stream, day, index):
         for kind in PARENTS:
             parents[kind], statuses[kind] = parent_index(archive, members.get(kind), kind)
         out = {"parentStatus": statuses}
-        out[HISTORY] = inspect_history(archive, members[HISTORY], parents["Empenho"], index, day) if HISTORY in members else {"status": "missing_member"}
+        out[HISTORY] = inspect_history(archive, members[HISTORY], parents["Empenho"], index, day, targets) if HISTORY in members else {"status": "missing_member"}
         for suffix, kind in IMPACTS.items():
-            out[suffix] = inspect_impacts(archive, members[suffix], parents, kind, index) if suffix in members else {"status": "missing_member"}
+            out[suffix] = inspect_impacts(archive, members[suffix], parents, kind, index, targets) if suffix in members else {"status": "missing_member"}
         return out
+
+
+def bounded_targets(targets):
+    # Uma identidade por amostra, nunca fundir snapshots divergentes.
+    def unique(rows, key):
+        by_key, conflicts = {}, set()
+        for row in rows:
+            k = key(row)
+            if k in by_key and row != by_key[k]:
+                conflicts.add(k)
+            by_key[k] = row
+        return [row for k, row in sorted(by_key.items()) if k not in conflicts]
+    histories = unique(targets["histories"], lambda r: (r["id"], r["seq"]))
+    histories.sort(key=lambda r: (r["id"][11:15] != "2025", r["id"], r["seq"]))
+    impacts = unique(targets["impacts"], lambda r: (r["id"], r["ne"]))
+    impacts.sort(key=lambda r: (not any(r["components"][k] not in (0, None)
+                                        for k in ("rpPaidCents", "rpCancelledCents", "rpInscribedCents")),
+                                 r["id"], r["ne"]))
+    # Até 4 históricos e 6 documentos financeiros, até 16 pares.
+    selected, ids = [], set()
+    for row in impacts:
+        if len(selected) >= 16:
+            break
+        if row["id"] not in ids and len(ids) >= 6:
+            continue
+        ids.add(row["id"])
+        selected.append(row)
+    return {"version": 1, "histories": histories[:4], "impacts": selected}
 
 
 def main():
     index = load_canonical()
+    targets = {"histories": [], "impacts": []}
+    target_file = os.environ.get("CGU_RAP_TARGETS_PATH")
     raw_window = os.environ.get("GITHUB_RUN_NUMBER", "0")
     window = int(raw_window) if raw_window.isdecimal() and len(raw_window) <= 12 else 0
     days = choose_dates(index, os.environ.get("CGU_RAP_ARCHIVE_DATE") or None, window)
@@ -531,17 +579,32 @@ def main():
     }))
     if not days:
         print("Sem datas candidatas no acervo; nenhuma consulta.")
-        return
     for day in days:
         meta = inspect_headers(day)
         print("Metadados ZIP RAP: " + json.dumps(meta))
         if meta["status"] in (401, 403, 405, 429):
             print("Sondagem interrompida por restricao da fonte.")
+            targets = {"histories": [], "impacts": []}
             break
-        result = download_sample(day, meta, inspector=lambda stream, d: inspect_rap_archive(stream, d, index))
+        archive_targets = {"histories": [], "impacts": []}
+        result = download_sample(day, meta, inspector=lambda stream, d: inspect_rap_archive(
+            stream, d, index, archive_targets if target_file else None))
+        if result["status"] == "inspected":
+            for k in targets:
+                targets[k].extend(archive_targets[k])
         print("Confronto CSV RAP (somente contagens): " + json.dumps(result))
         if result["status"] in (401, 403, 405, 429):
+            targets = {"histories": [], "impacts": []}
             break
+    if target_file:
+        plan = bounded_targets(targets)
+        # Workflow usa diretório temporário exclusivo, sem upload de artefatos.
+        with open(target_file, "x", encoding="utf-8") as stream:
+            json.dump(plan, stream, ensure_ascii=True)
+        print("Alvos CSV para API (somente contagens): " + json.dumps({
+            "histories": len(plan["histories"]),
+            "impactDocuments": len({r["id"] for r in plan["impacts"]}),
+            "impactPairs": len(plan["impacts"])}))
 
 
 if __name__ == "__main__":

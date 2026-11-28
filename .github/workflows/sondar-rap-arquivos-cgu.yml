@@ -11,8 +11,12 @@ on:
     paths:
       - '.github/workflows/sondar-rap-arquivos-cgu.yml'
       - 'src/probe_rap_csv.py'
+      - 'src/audit-rap-csv-targets.mjs'
 permissions:
   contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
 jobs:
   confrontar:
     runs-on: ubuntu-22.04
@@ -22,11 +26,22 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
       - name: Testar filtro, limites, comparação e privacidade
-        run: python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
-      - name: Confrontar amostra efêmera de arquivos públicos
+        run: |
+          python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
+          node --test test/audit-rap-csv-targets.test.mjs
+      - name: Confrontar amostra efêmera de arquivos públicos e verificar alvos na API
         env:
           CGU_RAP_ARCHIVE_DATE: ${{ inputs.day || '' }}
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
         run: |
-          set -o pipefail
+          set -euo pipefail
+          umask 077
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          export CGU_RAP_TARGETS_PATH="$work/targets.json"
           python3 -m src.probe_rap_csv | tee -a "$GITHUB_STEP_SUMMARY"
+          node src/audit-rap-csv-targets.mjs | tee -a "$GITHUB_STEP_SUMMARY"
