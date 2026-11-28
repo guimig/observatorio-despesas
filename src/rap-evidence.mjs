@@ -80,7 +80,8 @@ export function summarizeRapEvidence(months){
  const report={notesWithInscription:0,itemsWithInscription:0,inscriptionObservations:0,
   repeatedInscriptionObservations:0,itemsWithRepeatedInscription:0,
   priorYearPairs:0,pairsWithComponents:0,priorYearPairsWithComponents:0,
-  priorYearPairsPendingReview:0,pairsWithRepeatedRows:0,positiveFields:Object.fromEntries(moneyKeys.map(k=>[k,0])),
+  priorYearPairsPendingReview:0,priorYearPairsWithoutComponents:0,priorYearPairsPartialComponents:0,
+  priorYearByOrigin:{},pairsWithRepeatedRows:0,positiveFields:Object.fromEntries(moneyKeys.map(k=>[k,0])),
   knownFields:Object.fromEntries(moneyKeys.map(k=>[k,0])),byYear:{}};
  const notes=new Set(),seenItems=new Set(),seenPairs=new Set();
  for(const m of months){
@@ -105,7 +106,14 @@ export function summarizeRapEvidence(months){
    if(!inScope(link.to))continue;
    const key=link.from+'/'+link.to;if(seenPairs.has(key))continue;seenPairs.add(key);
    const prior=link.to.slice(11,15)<link.from.slice(11,15),c=link.impactComponents;
-   if(prior)report.priorYearPairs++;
+   if(prior){
+    report.priorYearPairs++;
+    const y=report.priorYearByOrigin[link.to.slice(11,15)]||={pairs:0,withoutComponents:0,partialComponents:0,completeComponents:0};
+    y.pairs++;
+    if(!c){report.priorYearPairsWithoutComponents++;y.withoutComponents++;}
+    else if(needsRapComponentReview(link)){report.priorYearPairsPartialComponents++;y.partialComponents++;}
+    else y.completeComponents++;
+   }
    if(needsRapComponentReview(link))report.priorYearPairsPendingReview++;
    if(!c)continue;
    report.pairsWithComponents++;if(prior)report.priorYearPairsWithComponents++;

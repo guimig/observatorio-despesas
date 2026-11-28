@@ -248,7 +248,73 @@ export function prioritizeRelatedImpacts(base,months,{slot=0,state={},now=new Da
   }
  }
  // Mantem tipos intercalados; no maximo uma vaga ociosa por fase.
- return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected.map(({missing,contract,...t})=>t),...queue].filter(t=>t.kind===k)),queue.length+selected.length),selected:selected.length,contractPriority:selected.filter(t=>t.contract).length,paymentPriority:selected.filter(t=>t.kind==='payment').length,contractPendingDocuments:[...wanted.values()].filter(t=>t.contract).length,contractPendingPaymentPairs:[...wanted.values()].filter(t=>t.kind==='payment').reduce((n,t)=>n+[...t.missing].filter(ne=>contractNe.has(ne)).length,0)};
+ return {tasks:roundRobin(['items','itemHistory','payment','liquidation'].map(k=>[...selected.map(({missing,contract,...t})=>t),...queue].filter(t=>t.kind===k)),queue.length+selected.length),selected:selected.length,contractPriority:selected.filter(t=>t.contract).length,paymentPriority:selected.filter(t=>t.kind==='payment').length,contractPendingDocuments:[...wanted.values()].filter(t=>t.contract).length,contractPendingPaymentPairs:[...wanted.values()].filter(t=>t.kind==='payment').reduce((n,t)=>n+[...t.missing].filter(ne=>contractNe.has(ne)).length,0),
+ protectedIds:selected.map(t=>t.id)};
+}
+/** Reserva global para recuperar componentes de RAP, sem ampliar filas ou
+ * substituir vínculos documentais explicitamente priorizados. Primeiro os
+ * pares legados sem qualquer componente; os parciais seguem revisão normal. */
+export function prioritizeRapComponentRecovery(base,months,{state={},now=new Date(),slot=0,protectedIds=[]}={}){
+ const owners=new Map(),candidates=[];
+ const today=now.toISOString().slice(0,10);
+ const protectedSet=new Set(protectedIds);
+ const recent=(stamp,days)=>validDay(stamp)&&stamp<=today&&Date.parse(today)-Date.parse(stamp)<days*86400000;
+ for(const month of months)for(const doc of month.documents){
+  if(!owners.has(doc.id))owners.set(doc.id,[]);
+  owners.get(doc.id).push({doc,month});
+ }
+ for(const [id,entries] of owners){
+  if(entries.length!==1)continue;
+  const {doc,month}=entries[0];
+  if(![2,3].includes(doc.phase))continue;
+  const kind=doc.phase===2?'liquidation':'payment';
+  if(recentImpactAttempt(month,id,kind,state,now))continue;
+  const pending=month.relations.filter(r=>r.from===id&&needsRapComponentReview(r));
+  if(!pending.length)continue;
+  const missing=pending.filter(r=>!r.impactComponents);
+  // O checkpoint legado não confirma a coleta de novos campos. Para
+  // evidência parcial já consultada, respeitar o prazo normal de revisão.
+  if(!missing.length&&recent(state[detailKey(month,id,kind)],30))continue;
+  candidates.push({id,month:month.month,kind,recheck:doc.phase===2?
+   doc.liquidationLinksChecked===true:doc.paymentLinksChecked===true,
+   rapRecovery:true,missing:missing.length,pending:pending.length,
+   origin2025:pending.some(r=>r.to.slice(11,15)==='2025')});
+ }
+ const queue=[...base],selected=[];
+ const clean=({missing,pending,origin2025,...task})=>task;
+ // Rodízio estratificado: priorizar o primeiro preenchimento, com uma
+ // vaga para origem 2025 sempre que houver espaço. Nunca ampliar o lote.
+ for(const kind of ['liquidation','payment']){
+  const slots=queue.filter(t=>t.kind===kind&&!protectedSet.has(t.id)).length;
+  const quota=Math.min(slots,Math.max(1,Math.floor(slots*.20)));
+  if(!quota)continue;
+  const pool=candidates.filter(t=>t.kind===kind&&!protectedSet.has(t.id));
+  const ordered=pool.sort((a,b)=>Number(b.missing>0)-Number(a.missing>0)||
+   b.missing-a.missing||b.pending-a.pending||a.id.localeCompare(b.id));
+  const first=ordered.filter(x=>x.missing>0),partial=ordered.filter(x=>!x.missing);
+  const rotating=xs=>{if(!xs.length)return [];const offset=slot%xs.length;return xs.slice(offset).concat(xs.slice(0,offset));};
+  const preferred=[...rotating(first),...rotating(partial)];
+  const reserve=quota>=2?preferred.find(x=>x.origin2025&&x.missing):null;
+  const chosen=[...(reserve?[reserve]:[]),...preferred.filter(x=>x.id!==reserve?.id)].slice(0,quota);
+  for(const t of chosen){
+   let index=queue.findIndex(x=>x.kind===kind&&x.id===t.id);
+   if(index<0)index=queue.findLastIndex(x=>x.kind===kind&&!protectedSet.has(x.id)&&!chosen.some(y=>y.id===x.id));
+   if(index<0)continue;
+   queue.splice(index,1);selected.push(t);
+  }
+ }
+ const tasks=roundRobin(['items','itemHistory','payment','liquidation'].map(k=>
+  [...selected.map(clean),...queue].filter(t=>t.kind===k)),base.length);
+ return {tasks,summary:{eligibleDocuments:candidates.length,eligiblePairs:candidates.reduce((n,t)=>n+t.pending,0),
+  selectedDocuments:selected.length,selectedPairs:selected.reduce((n,t)=>n+t.pending,0),
+  selectedWithoutComponents:selected.reduce((n,t)=>n+t.missing,0),
+  selectedOrigin2025:selected.filter(t=>t.origin2025).length,
+  byKind:Object.fromEntries(['liquidation','payment'].map(k=>[k,selected.filter(t=>t.kind===k).length]))}};
+}
+/** Uma reconsulta especificamente voltada a componentes não deve retificar
+ * os valores legados ou suprimir relações já confirmadas automaticamente. */
+export function consistentRapRecovery(previous,incoming){
+ return previous.every(old=>incoming.some(next=>next.to===old.to&&next.from===old.from&&next.cents===old.cents));
 }
 export function planEnrichmentAcrossMonths(months,args={}, {review=false}={}){
  const plans=months.filter(m=>inScopeMonth(m.month)).map(m=>({month:m,plan:planEnrichment(m,args),
@@ -271,7 +337,7 @@ export function summarizeFailures(failures){
     const key=['consulta_indisponivel','resposta_invalida','pagina_repetida',
       'limite_paginacao','impacto_nao_identificado','valor_fora_limite',
       'item_invalido','movimentacao_invalida','sequencial_duplicado_divergente','persistencia_invalida',
-      'acesso_negado','recurso_nao_encontrado','erro_http'].includes(reason)
+      'acesso_negado','recurso_nao_encontrado','erro_http','impacto_rap_divergente'].includes(reason)
       ?reason:'outro';
     counts[key]=(counts[key]||0)+1;
   }
@@ -322,7 +388,11 @@ async function main(){
   console.log('Divergencias de catalogo antes da rodada (somente contagens): '+JSON.stringify(beforeDivergences));
   console.log('Cobertura contratual antes da rodada: '+JSON.stringify(beforeContracts));
   const impactPlan=prioritizeRelatedImpacts(planEnrichmentAcrossMonths(months,args,{review:Boolean(statePath)}),months,{slot,state:historyState,now,cguContracts});
-  const base=impactPlan.tasks;
+  const rapPlan=statePath?prioritizeRapComponentRecovery(impactPlan.tasks,months,{
+    state:historyState,now,slot,protectedIds:impactPlan.protectedIds
+  }):{tasks:impactPlan.tasks,summary:null};
+  const base=rapPlan.tasks;
+  console.log('Plano de recuperação de componentes RAP (somente contagens): '+JSON.stringify(rapPlan.summary));
   console.log('Impactos priorizados por relação CGU: '+JSON.stringify({selected:impactPlan.selected,contractPriority:impactPlan.contractPriority,paymentPriority:impactPlan.paymentPriority,contractPendingDocuments:impactPlan.contractPendingDocuments,contractPendingPaymentPairs:impactPlan.contractPendingPaymentPairs}));
   const {tasks,summary:chronologyPlan}=planChronologyEnrichment(base,months,{
     slot,state:historyState,now,review:Boolean(statePath),maxItems:args.maxItems,
@@ -359,7 +429,7 @@ async function main(){
   for(let taskIndex=0;taskIndex<tasks.length;taskIndex++){
     const task=tasks[taskIndex];
     if(budget.stopped())break;
-    const {kind,id,month,seq,recheck}=task;
+    const {kind,id,month,seq,recheck,rapRecovery}=task;
     const before=await readMonth(root,month);
     const doc=before.documents.find(d=>d.id===id);
     const old=kind==='itemHistory'?before.itemsByDocument?.[id]?.find(x=>x.seq===seq):null;
@@ -393,6 +463,10 @@ async function main(){
       }
       if(statePath&&!budget.stopped()&&['payment','liquidation'].includes(kind))historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
       failures.push(outcome.reason||'outro');errors++;phase.errors++;continue;
+    }
+    if(rapRecovery&&!consistentRapRecovery(before.relations.filter(r=>r.from===id),outcome.links)){
+      if(statePath)historyState[impactAttemptKey(before,id,kind)]=new Date().toISOString().slice(0,10);
+      failures.push('impacto_rap_divergente');errors++;phase.errors++;continue;
     }
     const result=kind==='items'?{kind,items:outcome.items,recheck}:
       kind==='itemHistory'?{kind,seq,movements:outcome.movements,checkedAt:new Date().toISOString().slice(0,10)}:

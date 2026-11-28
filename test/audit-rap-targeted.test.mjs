@@ -50,3 +50,17 @@ test('sondagem RAP não converte falha de fonte em campos zerados',async()=>{
  assert.equal(a.status,'unavailable');assert.equal(a.fields,undefined);
  const r=summarizeTargetAudits([], [a]);assert.equal(r.impacts.unavailable,1);assert.equal(r.impacts.completed,0);
 });
+
+test('rodízio de inscrições repetidas abrange itens fora da primeira amostra e reserva origem 2025',()=>{
+ const ids=Array.from({length:18},(_,i)=>'158459264222024NE'+String(i+1).padStart(6,'0'));
+ const old='158459264222025NE000010';
+ const m={documents:[...ids.map(id=>({id,phase:1})),{id:old,phase:1}],relations:[],
+ itemsByDocument:Object.fromEntries([...ids.map(id=>[id,[{seq:1,historyChecked:true,movements:[event,event]}]]),
+ [old,[{seq:1,historyChecked:true,movements:[]}]]])};
+ const first=planTargetedRap([m],{historyLimit:10,window:0});
+ const second=planTargetedRap([m],{historyLimit:10,window:1});
+ assert.equal(first.counts.selectedSearch2025,1);
+ assert.equal(second.counts.selectedSearch2025,1);
+ assert.equal(first.histories.length,10);
+ assert.equal(new Set([...first.histories,...second.histories].filter(x=>x.cohort==='duplicate').map(x=>x.id)).size,18);
+});
