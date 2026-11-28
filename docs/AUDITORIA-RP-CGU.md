@@ -369,3 +369,30 @@ divergências ficam em contagens, nunca IDs ou valores. Sem importação
 CSV, novos saldos, dedução de RPP/RPNP ou retificação de valores.
 Reversão por revert; dados já recuperados permanecem sujeitos às
 validações canônicas. Testes sintéticos e conferência real após merge.
+
+
+## Resultado da recuperação de pagamentos ausentes e conjunto integral
+
+Run 46099363924: no arquivo 2025-02-11, 13 pares interanuais com RP
+pago positivo, 4 reconhecidos e 9 ausentes; todos os 9 documentos
+de pagamento já estavam no acervo. Seis documentos selecionados,
+24 campos CSV/API coincidentes, 12 HTTP 200. Cinco pares recuperados,
+um documento bloqueado pela exigência de conjunto integral e três
+não consultados na rodada. Cinco operações persistidas em uma
+competência; publicação verificada, 26 arquivos, 698 testes.
+Não está comprovada a causa específica do bloqueio anterior.
+
+Diagnóstico discriminado de conjunto inválido, pares legados ausentes,
+valores/componentes divergentes, novos pares fora do recorte, ausência
+de alvo RAP positivo, complementos não confrontados ou incompletos.
+Para um pagamento com par RAP positivo ausente, incluem-se na amostra
+os complementos ausentes do próprio documento, inclusive do mesmo
+exercício, exclusivamente se no escopo UG 158459 desde 2024, quatro
+campos CSV pertinentes disponíveis, sem ambiguidade. Cada novo par
+deve ter os cinco componentes autenticados e confirmação cruzada;
+todo o conjunto API e os legados devem ser preservados. Um complemento
+não vira RAP por associação, nem é consultado/gravado isoladamente.
+Mantêm-se limites (16 pares, 6 documentos, 48 HTTP, 2 ZIPs), contadores
+interanuais separados, data de regressão 2025-02-11 e sem cron adicional.
+Os novos diagnósticos são contagens sem IDs ou valores. Sem retificação,
+importação CSV, dedução de modalidade ou saldo. Reversão por revert.

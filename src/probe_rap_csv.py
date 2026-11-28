@@ -181,14 +181,17 @@ def canonical_index(months):
                     for d in note_dates[ne]:
                         history_targets[d].add((ne, seq))
     candidates = defaultdict(list)
+    stored_pairs = set()
     for month in months:
         if month.get("unit") != "158459":
             continue
         for link in month.get("relations", []):
             src, ne = link.get("from"), link.get("to")
-            if not in_scope(src) or not in_scope(ne, "Empenho") or src[11:15] <= ne[11:15]:
+            if not in_scope(src) or not in_scope(ne, "Empenho") or src[11:15] < ne[11:15]:
                 continue
-            candidates[src, ne].append((link, month))
+            stored_pairs.add((src, ne))
+            if src[11:15] > ne[11:15]:
+                candidates[src, ne].append((link, month))
     for key, rows in candidates.items():
         if len(rows) != 1 or len(owners.get(key[0], [])) != 1:
             continue
@@ -217,7 +220,7 @@ def canonical_index(months):
             "eventDays": event_days, "paymentDays": payment_days,
             "historyTargets": history_targets, "origin2025Targets": origin2025_targets,
             "pendingImpactDays": pending_impact_days,
-            "storedPairs": set(candidates),
+            "storedPairs": stored_pairs,
             "sourceOwners": {key: len(rows) for key, rows in owners.items()}}
 
 
@@ -451,8 +454,11 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
            "ambiguousPairs": 0, "unmatchedPairs": 0, "fields": fields,
            "missingPairSourcePresent": 0, "missingPairSourceAbsent": 0,
            "missingPairSourceAmbiguous": 0, "unmatchedButStored": 0,
-           "missingPaymentCandidates": 0}
+           "missingPaymentCandidates": 0, "companionPairs": 0}
     groups = defaultdict(list)
+    companion_groups = defaultdict(list)
+    missing_documents = set()
+    scoped_rows = 0
     with csv_rows(archive, member) as (names, rows):
         fromcols = identity_columns(names, kind)
         tocols = identity_columns(names, "Empenho")
@@ -472,20 +478,27 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
         for row in rows:
             src = identity(row, fromcols, parents[kind], kind)
             ne = identity(row, tocols, parents["Empenho"], "Empenho")
-            if not src or not ne or src[11:15] <= ne[11:15]:
+            if not src or not ne or src[11:15] < ne[11:15]:
                 continue
-            out["interannualRows"] += 1
-            if out["interannualRows"] > LIMIT:
+            interannual = src[11:15] > ne[11:15]
+            if not interannual and (kind != "Pagamento" or targets is None):
+                continue
+            scoped_rows += 1
+            if scoped_rows > LIMIT:
                 raise ValueError("impact_limit")
+            if interannual:
+                out["interannualRows"] += 1
             if len(row) != len(names):
                 out["invalidRows"] += 1
                 continue
-            groups[src, ne].append((get(row, subitem),
-                                     tuple(cents_value(get(row, col)) for col in cols.values())))
+            group = groups if interannual else companion_groups
+            group[src, ne].append((get(row, subitem),
+                                    tuple(cents_value(get(row, col)) for col in cols.values())))
     if out["invalidRows"]:
         out["status"] = "partial_invalid_rows"
         return out
     out["pairs"] = len(groups)
+    possible_companions = []
     for key, values in groups.items():
         known = key in index["pairs"]
         old = index["pairs"].get(key)
@@ -526,6 +539,13 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
                            and all(observed_fields[k] is not None for k in
                                    ("paidCents", "rpInscribedCents", "rpCancelledCents", "rpPaidCents")))
         out["missingPaymentCandidates"] += int(missing_payment)
+        if missing_payment:
+            missing_documents.add(key[0])
+        if targets is not None and kind == "Pagamento" and not stored and owners <= 1 and not ambiguous and key[0][15:17] in ("OB", "DF") and all(
+            observed_fields[k] is not None for k in ("paidCents", "rpInscribedCents", "rpCancelledCents", "rpPaidCents")
+        ) and not missing_payment:
+            possible_companions.append({"id": key[0], "ne": key[1], "phase": 3,
+                                        "components": observed_fields})
         if targets is not None and not ambiguous and key[0][15:17] in ("NS", "OB", "DF") and (
             missing_payment or (known and any(
                 v is not None and (old is None or old[k] is None or old[k] != v)
@@ -535,6 +555,29 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
             targets["impacts"].append({"id": key[0], "ne": key[1],
                                        "phase": 2 if kind == "Liquidacao" else 3,
                                        "components": observed_fields})
+    # Complementos só de pagamentos com ao menos um par RAP positivo ausente.
+    # Preserva os contadores interanuais e não recupera outro exercício por si só.
+    if targets is not None and kind == "Pagamento":
+        for key, values in companion_groups.items():
+            if key[0] not in missing_documents or key in index.get("storedPairs", index["pairs"]):
+                continue
+            if len(set(values)) != len(values) or (
+                len(values) > 1 and (subitem is None or any(not r[0] for r in values))
+            ):
+                continue
+            components = {}
+            for i, field in enumerate(FIELDS):
+                amounts = [v[1][i] for v in values]
+                total = sum(amounts) if None not in amounts else None
+                components[field] = total if total is not None and abs(total) <= SAFE_CENTS else None
+            if all(components[k] is not None for k in
+                   ("paidCents", "rpInscribedCents", "rpCancelledCents", "rpPaidCents")):
+                possible_companions.append({"id": key[0], "ne": key[1], "phase": 3,
+                                            "components": components})
+        for row in possible_companions:
+            if row["id"] in missing_documents:
+                targets["impacts"].append(row)
+                out["companionPairs"] += 1
     return out
 
 
