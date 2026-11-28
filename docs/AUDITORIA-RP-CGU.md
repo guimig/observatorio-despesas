@@ -396,3 +396,39 @@ Mantêm-se limites (16 pares, 6 documentos, 48 HTTP, 2 ZIPs), contadores
 interanuais separados, data de regressão 2025-02-11 e sem cron adicional.
 Os novos diagnósticos são contagens sem IDs ou valores. Sem retificação,
 importação CSV, dedução de modalidade ou saldo. Reversão por revert.
+
+
+## Encerramento da amostra de pagamentos e prioridade documental — 28/11/2026
+
+Run 46100860166 confirmou os quatro pares RAP restantes da amostra
+2025-02-11 e dois complementos do mesmo conjunto de pagamentos:
+seis pares persistidos em quatro documentos, 24 campos coincidentes,
+16/16 HTTP 200, sem bloqueio do conjunto integral. Um histórico
+adicional recuperado, três confirmados sem catálogo elegível.
+Total dos nove pares inicialmente ausentes: nove recuperados.
+Não extrapolar a completude da amostra para todo o universo.
+
+Run 46136869920: 84 NEs com inscrições, 86 itens, 117 ocorrências,
+31 repetições, 428 pares interanuais conhecidos, 97 com componentes
+completos (45 de origem 2024, 52 de 2025), 331 pendentes. 110/111
+consultas processadas, 240 HTTP 200; limite de requisições atingido.
+Contagens são fotografias do acervo; mudanças de listagem podem
+alterar denominadores e disponibilidade, não uma série de saldos.
+Nenhum componente positivo de inscrição/cancelamento nos 264 pares
+com campos recuperados nessa rodada. Isso não comprova inexistência.
+
+Dentro da reserva RAP já existente (20% das vagas não protegidas por
+fase), até metade das vagas é dirigida às NEs identificadas com
+evidência explícita. Em reserva unitária alterna com o rodízio.
+Prioridade aos documentos que podem sanar a última lacuna de impacto
+conhecida de uma NE, descontados os bloqueios globais de cobertura;
+isso não equivale a prontidão ou homologação. Mantém vaga de 2025,
+rodízio geral, cooldowns, prioridade contratual protegida e cotas.
+A telemetria agrega prontidão e potencial de recuperação sem IDs.
+Reconsulta RAP dirigida não pode apagar nem alterar componentes
+já conhecidos mesmo com valor legado idêntico; preencher campos
+antes indisponíveis continua permitido. Divergência segue revisão.
+Não se presume a causa de oscilações em componentes já recuperados;
+a proteção incide nas reconsultas dirigidas, não substitui auditoria
+de atualização de listagens. Sem novo cron, base ou saldo.
+Reversão por revert, três regressões adicionais.
