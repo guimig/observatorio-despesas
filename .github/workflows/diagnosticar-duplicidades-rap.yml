@@ -1,0 +1,36 @@
+name: Auditar duplicidades e componentes RAP dirigidos
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnosticar-duplicidades-rap.yml'
+      - 'src/audit-rap-targeted.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: observatorio-coleta-cgu
+  queue: max
+jobs:
+  auditar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Validar código e acervo
+        run: |
+          node --check src/audit-rap-targeted.mjs
+          node --test test/audit-rap-targeted.test.mjs
+          npm run check:data
+      - name: Sondagem autenticada efêmera
+        env:
+          CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
+        run: |
+          set -o pipefail
+          node src/audit-rap-targeted.mjs | tee -a "$GITHUB_STEP_SUMMARY"
