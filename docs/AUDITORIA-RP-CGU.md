@@ -331,3 +331,41 @@ até dois ZIPs, sem novo cron e sem arquivo bruto. O workflow recebe
 permissão de escrita somente no job de coleta confirmado.
 Teste e merge exigidos; reverter código não apaga dados válidos já
 recuperados. Saldo contábil e RPP/RPNP continuam bloqueados.
+
+
+## Recuperação de pares ausentes de pagamento — 27/11/2026
+
+A execução 46098062917 publicou três históricos e seis componentes,
+18/18 HTTP 200, nove operações em dois JSONs (433514c). No CSV de
+2025-02-11, 13 pares com valorRestoPago positivo, quatro reconhecidos
+e nove não correspondentes aos pares elegíveis canônicos. A ausência
+pode ser do documento, da relação ou da elegibilidade; não representa
+pagamento não contabilizado pelo SIAFI.
+
+O seletor anterior ignorava pares sem correspondência. Agora separa
+documento presente, ausente, ambíguo e par armazenado porém inelegível.
+Somente OB/DF da UG 158459, NE integral desde 2024, origem anterior ao
+pagamento, valorRestoPago positivo e quatro campos pertinentes
+disponíveis no CSV sem ambiguidade entram na descoberta adicional.
+Prioriza e roda grupos completos de alvos por documento, dentro de
+6 documentos/16 pares, 4 históricos e 48 HTTP totais. A data
+2025-02-11 ocupa uma das duas vagas no disparo por alteração de código
+deste fluxo como coorte de regressão; execução manual sem data mantém
+rodízio normal (retirar o foco após investigar a coorte). Sem novo cron.
+
+Cada novo par exige cinco componentes API completos, quatro campos
+CSV coincidentes, resposta API completa, sem duplicidade, todos os
+pares novos individualmente confrontados e todos os legados mantidos
+com os mesmos centavos e componentes previamente conhecidos. Se a
+resposta tiver outro par não confrontado, não se grava o documento.
+NE referenciada pode ainda não estar coletada; isso não altera a
+cobertura da NE. Para pagamento ausente exige consulta de detalhe
+autenticada no mesmo orçamento, normalizador existente de identidade,
+UG, fase, data e valor, competência já publicada e ausência de conflito
+com cobertura diária completa. Gravação conjunta documento+vínculos
+em um JSON, sem modificar manifesto, preservando cobertura parcial.
+A consulta de arquivo não define data de emissão. Bloqueios e
+divergências ficam em contagens, nunca IDs ou valores. Sem importação
+CSV, novos saldos, dedução de RPP/RPNP ou retificação de valores.
+Reversão por revert; dados já recuperados permanecem sujeitos às
+validações canônicas. Testes sintéticos e conferência real após merge.

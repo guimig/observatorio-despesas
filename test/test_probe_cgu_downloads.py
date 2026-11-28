@@ -181,3 +181,33 @@ class RapCsvTests(unittest.TestCase):
         # Snapshots conflitantes não podem ser mesclados.
         targets["histories"].append({**plan["histories"][0], "events": []})
         self.assertEqual(bounded_targets(targets)["histories"], [])
+
+
+    def test_missing_positive_payment_candidates_and_focus(self):
+        from src.probe_rap_csv import bounded_targets
+        idx = self.fixture()
+        missing_ob = "158459264222025OB000002"
+        unknown_ne = "158459264222024NE000002"
+        a = self.archive({
+            "Pagamento_EmpenhosImpactados": "Código Pagamento;Código Empenho;Valor Pago;Valor Resto Inscrito;Valor Resto Cancelado;Valor Resto Pago\n"
+                + f"{self.ob};{unknown_ne};0,00;0,00;0,00;100,00\n"
+                + f"{missing_ob};{self.ne};0,00;0,00;0,00;200,00\n",
+        })
+        targets = {"histories": [], "impacts": []}
+        report = inspect_rap_archive(a, self.day, idx, targets)["Pagamento_EmpenhosImpactados"]
+        self.assertEqual(report["missingPairSourcePresent"], 1)
+        self.assertEqual(report["missingPairSourceAbsent"], 1)
+        self.assertEqual(report["missingPaymentCandidates"], 2)
+        self.assertEqual(len(bounded_targets(targets, idx)["impacts"]), 2)
+        self.assertNotIn(missing_ob, str(report))
+        idx["storedPairs"].add((self.ob, unknown_ne))
+        targets = {"histories": [], "impacts": []}
+        report = inspect_rap_archive(self.archive({
+            "Pagamento_EmpenhosImpactados": "Código Pagamento;Código Empenho;Valor Pago;Valor Resto Inscrito;Valor Resto Cancelado;Valor Resto Pago\n"
+                + f"{self.ob};{unknown_ne};0,00;0,00;0,00;100,00\n",
+        }), self.day, idx, targets)["Pagamento_EmpenhosImpactados"]
+        self.assertEqual(report["unmatchedButStored"], 1)
+        self.assertEqual(targets["impacts"], [])
+        self.assertEqual(choose_dates(idx, window=0, focus="2025-02-11"),
+                         [self.day, "2025-02-11"])
+        self.assertEqual(choose_dates(idx, self.day, focus="2025-02-11"), [self.day])

@@ -41,6 +41,9 @@ jobs:
       - name: Confrontar amostra efêmera de arquivos públicos e verificar alvos na API
         env:
           CGU_RAP_ARCHIVE_DATE: ${{ inputs.day || '' }}
+          # Coorte de regressão com nove pares ausentes observados; uma das
+          # duas vagas, somente no disparo por alteração deste fluxo.
+          CGU_RAP_FOCUS_DATE: ${{ github.event_name == 'push' && '2025-02-11' || '' }}
           CGU_API_KEY: ${{ secrets.CGU_API_KEY }}
         run: |
           set -euo pipefail

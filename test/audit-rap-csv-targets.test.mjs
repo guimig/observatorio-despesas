@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {validateCsvPlan,auditCsvTargets,planConfirmedCsvRecovery} from '../src/audit-rap-csv-targets.mjs';
-import {emptyMonth,applyDocumentEnrichment,validateMonth} from '../src/store.mjs';
+import {validateCsvPlan,auditCsvTargets,planConfirmedCsvRecovery,fetchMissingPaymentDetails} from '../src/audit-rap-csv-targets.mjs';
+import {emptyMonth,applyDocumentEnrichment,validateMonth,applyTargetedDocument} from '../src/store.mjs';
 const ne='158459264222025NE000001',ob='158459264222026OB000001';
 const event={date:'2026-01-10',operation:'inscricao em rp',quantity:'1.00',unitPrice:'100.000',cents:10000,count:2};
 const components={paidCents:0,liquidatedCents:null,rpInscribedCents:0,rpCancelledCents:null,rpPaidCents:10000};
@@ -99,4 +99,73 @@ test('só encaminha impacto com quatro campos CSV pertinentes e cinco campos API
  p.impacts[0].components.rpPaidCents=9999;
  await auditCsvTargets(p,resolvers);
  assert.equal(confirmed.impacts.length,1);
+});
+
+
+function missingPairFixture(){
+ const {months,confirmed}=recoveryFixture();
+ const fresh={...second,impactComponents:{...actualComponents,rpPaidCents:20000}};
+ const first={...original,impactComponents:actualComponents};
+ months[0].relations=[original];
+ const apiLinks=[first,fresh];
+ confirmed.histories=[];
+ confirmed.impacts=[{id:ob,ne:secondNe,phase:3,link:fresh,apiLinks}];
+ return {months,confirmed};
+}
+test('recupera par de pagamento ausente somente com conjunto integral e valores legados preservados',()=>{
+ const {months,confirmed}=missingPairFixture(),before=JSON.stringify(months);
+ const plan=planConfirmedCsvRecovery(months,confirmed,dateNow);
+ assert.equal(plan.summary.paymentPairsAdded,1);
+ assert.equal(plan.summary.paymentDocumentsAdded,0);
+ assert.equal(plan.tasks.length,1);
+ const saved=applyDocumentEnrichment(months[0],ob,plan.tasks[0].result,dateNow).data;
+ assert.deepEqual(saved.documents,months[0].documents);
+ assert.deepEqual(saved.coverage,months[0].coverage);
+ assert.deepEqual(saved.relations.find(l=>l.to===ne),original);
+ assert.equal(saved.relations.find(l=>l.to===secondNe).impactComponents.rpPaidCents,20000);
+ assert.equal(JSON.stringify(months),before);
+ assert.equal(planConfirmedCsvRecovery([saved,months[1]],confirmed,dateNow).tasks.length,0);
+});
+test('par adicional não confrontado, valor legado alterado ou componentes legados divergentes bloqueiam o documento',()=>{
+ for(const mutate of [
+  ({confirmed})=>confirmed.impacts[0].apiLinks.push({from:ob,to:'158459264222024NE000003',cents:100}),
+  ({confirmed})=>confirmed.impacts[0].apiLinks[0]={...original,cents:10001},
+  ({months})=>months[0].relations[0]={...original,impactComponents:{...actualComponents,rpCancelledCents:1}},
+ ]){
+  const f=missingPairFixture();mutate(f);
+  const p=planConfirmedCsvRecovery(f.months,f.confirmed,dateNow);
+  assert.equal(p.tasks.length,0);
+  assert.equal(p.summary.skipped.payment_gap_unconfirmed_complete_set,1);
+ }
+});
+function missingDocumentFixture(){
+ const m=emptyMonth('2026-01'),link={...original,impactComponents:actualComponents};
+ const confirmed={histories:[],impacts:[{id:ob,ne,phase:3,link,apiLinks:[link]}]};
+ const detail={id:ob,date:'2026-01-10',phase:3,cents:10000};
+ return {months:[m],confirmed,details:new Map([[ob,detail]])};
+}
+test('novo pagamento exige detalhe verificado e competência publicada; gravação conjunta mantém dia parcial',()=>{
+ const {months,confirmed,details}=missingDocumentFixture();
+ const p=planConfirmedCsvRecovery(months,confirmed,dateNow,details);
+ assert.equal(p.summary.paymentDocumentsAdded,1);
+ assert.equal(p.summary.paymentPairsAdded,1);
+ const task=p.tasks[0],added=applyTargetedDocument(months[0],task.newDocument,dateNow).data;
+ const result=applyDocumentEnrichment(added,ob,task.result,dateNow).data;
+ assert.equal(result.coverage[0].complete,false);
+ assert.equal(result.coverage[0].reason,'consulta_individual');
+ assert.equal(result.documents[0].paymentLinksChecked,true);
+ validateMonth(result);
+ assert.equal(planConfirmedCsvRecovery(months,confirmed,dateNow).tasks.length,0);
+ assert.equal(planConfirmedCsvRecovery([emptyMonth('2026-02')],confirmed,dateNow,details).tasks.length,0);
+ const conflict={...emptyMonth('2026-01'),coverage:[{date:'2026-01-10',phase:3,complete:true,count:0,invalid:0}]};
+ assert.equal(planConfirmedCsvRecovery([conflict],confirmed,dateNow,details).summary.skipped.payment_gap_coverage_or_validation_conflict,1);
+});
+test('detalhe ausente ou inválido não é transformado em pagamento; consulta respeita orçamento',async()=>{
+ const {months,confirmed}=missingDocumentFixture();
+ const fail=await fetchMissingPaymentDetails(months,confirmed,{now:dateNow,fetchDetail:async()=>({documento:'outro'})});
+ assert.equal(fail.report.attempted,1);assert.equal(fail.report.unavailable,1);
+ assert.equal(fail.details.size,0);
+ const stopped=await fetchMissingPaymentDetails(months,confirmed,{now:dateNow,budget:{stopped:()=>true},
+  fetchDetail:async()=>{throw Error('não consultar');}});
+ assert.equal(stopped.report.attempted,0);
 });

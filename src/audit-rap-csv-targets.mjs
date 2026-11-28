@@ -9,7 +9,8 @@ import {createCguBudget} from './cgu-budget.mjs';
 import {resolveItemMovements} from './item-movements.mjs';
 import {resolvePaymentLinks,resolveLiquidationLinks} from './enrich-cgu.mjs';
 import {isRapInscription,IMPACT_FIELDS,validateImpactComponents} from './rap-evidence.mjs';
-import {validateManifest,validateMonth,applyDocumentEnrichment,persistEnrichment,validatePublishedData} from './store.mjs';
+import {validateManifest,validateMonth,applyDocumentEnrichment,persistEnrichment,validatePublishedData,applyTargetedDocument,persistTargetedPaymentWithLinks} from './store.mjs';
+import {fetchCguDocumentDetail,normalizeRelatedFinancialDetail} from './recover-cgu-originals.mjs';
 
 const NE=/^158459\d{5}20\d{2}NE\d{6}$/;
 const SOURCE=/^158459\d{5}20\d{2}(NS|OB|DF)\d{6}$/;
@@ -122,13 +123,62 @@ export async function auditCsvTargets(plan,{token,budget,historyResolver=resolve
  }
  return out;
 }
+/** Pagamento novo: exigir o conjunto integral da resposta autenticada,
+ * preservar todos os pares/centavos legados e confirmar por CSV cada par
+ * que será acrescentado. Nunca promover identidade temporal isolada. */
+function verifiedPaymentAdditions(rows,old){
+ const incoming=rows[0]?.apiLinks,id=rows[0]?.id;
+ if(!Array.isArray(incoming)||!incoming.length||
+    new Set(incoming.map(l=>l.to)).size!==incoming.length||
+    incoming.some(l=>l.from!==id||!Number.isSafeInteger(l.cents))||
+    !old.every(l=>incoming.some(x=>x.from===l.from&&x.to===l.to&&x.cents===l.cents&&
+      (!l.impactComponents||keys.every(k=>l.impactComponents[k]===null||
+        l.impactComponents[k]===x.impactComponents?.[k])))))
+  return null;
+ const additions=incoming.filter(x=>!old.some(l=>l.to===x.to));
+ if(!additions.length)return null;
+ for(const x of additions){
+  const evidence=rows.find(r=>r.id===id&&r.ne===x.to&&r.phase===3&&r.apiLinks===incoming&&r.link===x);
+  const c=x.impactComponents;
+  if(!evidence||!valid(x.to,NE)||year(id)<=year(x.to)||c?.repeatedRows!==0||
+     !keys.every(k=>Number.isSafeInteger(c[k]))||c.rpPaidCents<=0)return null;
+  try{validateImpactComponents(c,x,3);}catch{return null;}
+ }
+ return additions;
+}
+function paymentGroups(confirmed){
+ const groups=new Map();
+ for(const r of confirmed.impacts){
+  if(r.phase!==3||!valid(r.id,SOURCE)||!['OB','DF'].includes(r.id.slice(15,17)))continue;
+  if(!groups.has(r.id))groups.set(r.id,[]);
+  groups.get(r.id).push(r);
+ }
+ return groups;
+}
+export async function fetchMissingPaymentDetails(months,confirmed,{token,budget,now=new Date(),fetchDetail=fetchCguDocumentDetail}={}){
+ const present=new Set(months.flatMap(m=>m.documents.map(d=>d.id))),details=new Map();
+ const report={attempted:0,verified:0,unavailable:0};
+ for(const [id,rows] of paymentGroups(confirmed)){
+  if(present.has(id)||!verifiedPaymentAdditions(rows,[])||budget?.stopped())continue;
+  if(report.attempted>=6)break;
+  report.attempted++;
+  try{
+   const doc=normalizeRelatedFinancialDetail(id,await fetchDetail(id,{token,budget}),{now});
+   if(!Number.isSafeInteger(doc.cents))throw Error('Valor documental indisponível');
+   details.set(id,doc);report.verified++;
+  }catch{report.unavailable++;}
+ }
+ return {details,report};
+}
+
 /** Plano de enriquecimento estritamente aditivo; nenhuma retificação.
  * Reutiliza o validador e o gravador canônico. Todos os documentos e pares
  * legados devem continuar idênticos em identidade/centavos. */
-export function planConfirmedCsvRecovery(months,confirmed,now=new Date()){
+export function planConfirmedCsvRecovery(months,confirmed,now=new Date(),details=new Map()){
  const working=new Map(),owners=new Map(),tasks=[];
  const summary={historiesEligible:confirmed.histories.length,impactsEligible:confirmed.impacts.length,
-  historiesAdded:0,impactsAdded:0,skipped:{},monthsChanged:0};
+  historiesAdded:0,impactsAdded:0,paymentPairsAdded:0,paymentDocumentsAdded:0,
+  paymentGapDocuments:0,skipped:{},monthsChanged:0};
  const skip=reason=>summary.skipped[reason]=(summary.skipped[reason]||0)+1;
  for(const m of months){
   validateMonth(m);
@@ -165,6 +215,38 @@ export function planConfirmedCsvRecovery(months,confirmed,now=new Date()){
     checkedAt:now.toISOString().slice(0,10)}))summary.historiesAdded++;
   }catch{skip('history_validation_failed');}
  }
+ // Antes da recuperação de componentes, tratar pares ausentes. Os
+ // documentos existentes nunca têm seu valor ou data substituídos.
+ for(const [id,rows] of paymentGroups(confirmed)){
+  const m=owner(id),old=m?.relations.filter(l=>l.from===id)||[];
+  if(!rows.some(r=>!old.some(l=>l.to===r.ne)))continue;
+  summary.paymentGapDocuments++;
+  if((owners.get(id)||[]).length>1){skip('payment_gap_ambiguous_owner');continue;}
+  const additions=verifiedPaymentAdditions(rows,old);
+  if(!additions){skip('payment_gap_unconfirmed_complete_set');continue;}
+  if(m){
+   const doc=m.documents.find(d=>d.id===id);
+   if(doc?.phase!==3){skip('payment_gap_phase_mismatch');continue;}
+   try{
+    if(add(m,id,{kind:'payment',links:[...old,...additions]}))summary.paymentPairsAdded+=additions.length;
+   }catch{skip('payment_gap_validation_failed');}
+  }else{
+   const doc=details.get(id),month=doc?.date?.slice(0,7),existing=working.get(month);
+   if(!doc||doc.id!==id||doc.phase!==3||!Number.isSafeInteger(doc.cents)||!existing){
+    skip('payment_gap_detail_or_month_missing');continue;
+   }
+   try{
+    const added=applyTargetedDocument(existing,doc,now);
+    if(!added.changed)throw Error('Documento já existente');
+    const result={kind:'payment',links:additions};
+    const enriched=applyDocumentEnrichment(added.data,id,result,now);
+    if(!enriched.changed)throw Error('Vínculos ausentes');
+    working.set(month,enriched.data);owners.set(id,[month]);changed.add(month);
+    tasks.push({month,id,result,newDocument:doc});
+    summary.paymentPairsAdded+=additions.length;summary.paymentDocumentsAdded++;
+   }catch{skip('payment_gap_coverage_or_validation_conflict');}
+  }
+ }
  for(const r of confirmed.impacts){
   const m=owner(r.id),doc=m?.documents.find(d=>d.id===r.id);
   if(!m||!valid(r.id,SOURCE)||!valid(r.ne,NE)||year(r.id)<=year(r.ne)||
@@ -197,19 +279,26 @@ export function planConfirmedCsvRecovery(months,confirmed,now=new Date()){
  summary.monthsChanged=changed.size;
  return {tasks,summary};
 }
-async function recoverConfirmed(root,confirmed){
+async function recoverConfirmed(root,confirmed,{token,budget}={}){
  const manifest=validateManifest(JSON.parse(await readFile(join(root,'data/manifest.json'),'utf8')));
  const months=[];
  for(const month of manifest.months.filter(m=>m>='2024-01'))
   months.push(validateMonth(JSON.parse(await readFile(join(root,'data/months',month+'.json'),'utf8'))));
- const now=new Date(),plan=planConfirmedCsvRecovery(months,confirmed,now);
+ const now=new Date(),{details,report}=await fetchMissingPaymentDetails(months,confirmed,{token,budget,now});
+ const stop=budget?.snapshot().stopReason;
+ if(stop&&stop!=='request_budget'&&stop!=='time_budget')
+  return {persisted:0,stopped:true,detailReport:report};
+ const plan=planConfirmedCsvRecovery(months,confirmed,now,details);
  let persisted=0;
  for(const t of plan.tasks){
-  if(!await persistEnrichment(root,t.month,t.id,t.result,now))throw Error('Checkpoint mudou durante recuperação');
+  const changed=t.newDocument?
+   await persistTargetedPaymentWithLinks(root,t.newDocument,t.result.links,now):
+   await persistEnrichment(root,t.month,t.id,t.result,now);
+  if(!changed)throw Error('Checkpoint mudou durante recuperação');
   persisted++;
  }
  await validatePublishedData(root);
- return {...plan.summary,persisted};
+ return {...plan.summary,persisted,detailReport:report};
 }
 async function main(){
  const path=process.env.CGU_RAP_TARGETS_PATH;
@@ -231,7 +320,7 @@ async function main(){
   if(stop&&stop!=='request_budget'&&stop!=='time_budget'){
    console.log('Recuperação CSV/API interrompida por restrição ou instabilidade; nenhum dado gravado.');
   }else console.log('Recuperação CSV/API canônica (somente contagens): '+
-   JSON.stringify(await recoverConfirmed(process.cwd(),confirmed)));
+   JSON.stringify(await recoverConfirmed(process.cwd(),confirmed,{token,budget})));
  }
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1]))
