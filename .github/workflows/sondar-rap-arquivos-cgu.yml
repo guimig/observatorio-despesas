@@ -20,12 +20,16 @@ concurrency:
 jobs:
   confrontar:
     runs-on: ubuntu-22.04
-    timeout-minutes: 12
+    timeout-minutes: 16
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: main
-          persist-credentials: false
+          persist-credentials: true
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -33,6 +37,7 @@ jobs:
         run: |
           python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
           node --test test/audit-rap-csv-targets.test.mjs
+          npm run check:data
       - name: Confrontar amostra efêmera de arquivos públicos e verificar alvos na API
         env:
           CGU_RAP_ARCHIVE_DATE: ${{ inputs.day || '' }}
@@ -44,4 +49,29 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           export CGU_RAP_TARGETS_PATH="$work/targets.json"
           python3 -m src.probe_rap_csv | tee -a "$GITHUB_STEP_SUMMARY"
-          node src/audit-rap-csv-targets.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+          node src/audit-rap-csv-targets.mjs --apply-confirmed | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Validar dados canonicos recuperados
+        run: npm run check:data
+      - name: Versionar exclusivamente lacunas confirmadas
+        id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -- data/months/
+          if git diff --cached --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Nenhuma lacuna nova confirmada para versionar.'
+            exit 0
+          fi
+          git commit -m 'data: recuperar lacunas RAP confirmadas na API e CSV'
+          bash scripts/push-validated-data.sh
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+  publicar:
+    needs: confrontar
+    if: needs.confrontar.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/publicar-pages.yml
