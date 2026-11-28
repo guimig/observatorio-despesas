@@ -216,7 +216,9 @@ def canonical_index(months):
     return {"histories": histories, "pairs": pairs,
             "eventDays": event_days, "paymentDays": payment_days,
             "historyTargets": history_targets, "origin2025Targets": origin2025_targets,
-            "pendingImpactDays": pending_impact_days}
+            "pendingImpactDays": pending_impact_days,
+            "storedPairs": set(candidates),
+            "sourceOwners": {key: len(rows) for key, rows in owners.items()}}
 
 
 def load_canonical(root="."):
@@ -229,7 +231,7 @@ def load_canonical(root="."):
     return canonical_index(months)
 
 
-def choose_dates(index, explicit=None, window=0):
+def choose_dates(index, explicit=None, window=0, focus=None):
     if explicit:
         archive_url(explicit)
         return [explicit]
@@ -267,6 +269,10 @@ def choose_dates(index, explicit=None, window=0):
     if impacts:
         rotated = impacts[(window // 2) % len(impacts):] + impacts[:(window // 2) % len(impacts)]
         dates.append(next((d for d in rotated if d not in dates), rotated[0]))
+    if focus:
+        archive_url(focus)
+        # Uma das duas vagas existentes; nunca aumentar o número de ZIPs.
+        dates = dates[:1] + [focus] if not dates or dates[0] != focus else dates
     return list(dict.fromkeys(dates))[:2]
 
 
@@ -442,7 +448,10 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
                   "compared": 0, "equal": 0, "different": 0} for k in FIELDS}
     out = {"status": "inspected", "interannualRows": 0, "invalidRows": 0,
            "pairs": 0, "knownPairs": 0, "pairsWithStoredComponents": 0,
-           "ambiguousPairs": 0, "unmatchedPairs": 0, "fields": fields}
+           "ambiguousPairs": 0, "unmatchedPairs": 0, "fields": fields,
+           "missingPairSourcePresent": 0, "missingPairSourceAbsent": 0,
+           "missingPairSourceAmbiguous": 0, "unmatchedButStored": 0,
+           "missingPaymentCandidates": 0}
     groups = defaultdict(list)
     with csv_rows(archive, member) as (names, rows):
         fromcols = identity_columns(names, kind)
@@ -482,6 +491,15 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
         old = index["pairs"].get(key)
         out["knownPairs"] += int(known)
         out["unmatchedPairs"] += int(not known)
+        stored = key in index.get("storedPairs", index["pairs"])
+        owners = index.get("sourceOwners", {}).get(key[0], 0)
+        if not known:
+            if stored:
+                out["unmatchedButStored"] += 1
+            else:
+                field = ("missingPairSourcePresent" if owners == 1 else
+                         "missingPairSourceAbsent" if owners == 0 else "missingPairSourceAmbiguous")
+                out[field] += 1
         out["pairsWithStoredComponents"] += int(old is not None)
         ambiguous = len(set(values)) != len(values) or (
             len(values) > 1 and (subitem is None or any(not r[0] for r in values)))
@@ -499,9 +517,20 @@ def inspect_impacts(archive, member, parents, kind, index, targets=None):
             if total is not None and old is not None and old[field] is not None:
                 counts["compared"] += 1
                 counts["equal" if old[field] == total else "different"] += 1
-        if targets is not None and not ambiguous and known and any(
-            v is not None and (old is None or old[k] is None or old[k] != v)
-            for k, v in observed_fields.items()
+        # Só ampliar a descoberta para pagamentos RP positivos com quatro
+        # campos pertinentes presentes, UG/NE integrais e espécie suportada.
+        # Um par armazenado porém não elegível não é um par ausente.
+        missing_payment = (not stored and owners <= 1 and kind == "Pagamento"
+                           and key[0][15:17] in ("OB", "DF") and not ambiguous
+                           and (observed_fields["rpPaidCents"] or 0) > 0
+                           and all(observed_fields[k] is not None for k in
+                                   ("paidCents", "rpInscribedCents", "rpCancelledCents", "rpPaidCents")))
+        out["missingPaymentCandidates"] += int(missing_payment)
+        if targets is not None and not ambiguous and key[0][15:17] in ("NS", "OB", "DF") and (
+            missing_payment or (known and any(
+                v is not None and (old is None or old[k] is None or old[k] != v)
+                for k, v in observed_fields.items()
+            ))
         ):
             targets["impacts"].append({"id": key[0], "ne": key[1],
                                        "phase": 2 if kind == "Liquidacao" else 3,
@@ -533,7 +562,7 @@ def inspect_rap_archive(stream, day, index, targets=None):
         return out
 
 
-def bounded_targets(targets):
+def bounded_targets(targets, index=None, window=0):
     # Uma identidade por amostra, nunca fundir snapshots divergentes.
     def unique(rows, key):
         by_key, conflicts = {}, set()
@@ -549,15 +578,27 @@ def bounded_targets(targets):
     impacts.sort(key=lambda r: (not any(r["components"][k] not in (0, None)
                                         for k in ("rpPaidCents", "rpCancelledCents", "rpInscribedCents")),
                                  r["id"], r["ne"]))
-    # Até 4 históricos e 6 documentos financeiros, até 16 pares.
-    selected, ids = [], set()
+    # Agrupar por documento: não cortar o conjunto de alvos de um
+    # pagamento no meio. Priorizar documentos com pares ausentes e rodiziar.
+    groups = defaultdict(list)
     for row in impacts:
-        if len(selected) >= 16:
+        groups[row["id"]].append(row)
+    stored = (index or {}).get("storedPairs", (index or {}).get("pairs", {}))
+    missing = [key for key, rows in groups.items() if index is not None and any(
+        (r["id"], r["ne"]) not in stored for r in rows)]
+    if missing:
+        offset = window % len(missing)
+        missing = missing[offset:] + missing[:offset]
+    order = missing + [key for key in groups if key not in missing]
+    selected, documents = [], 0
+    for key in order:
+        rows = groups[key]
+        if documents >= 6:
             break
-        if row["id"] not in ids and len(ids) >= 6:
+        if len(selected) + len(rows) > 16:
             continue
-        ids.add(row["id"])
-        selected.append(row)
+        documents += 1
+        selected.extend(rows)
     return {"version": 1, "histories": histories[:4], "impacts": selected}
 
 
@@ -567,7 +608,8 @@ def main():
     target_file = os.environ.get("CGU_RAP_TARGETS_PATH")
     raw_window = os.environ.get("GITHUB_RUN_NUMBER", "0")
     window = int(raw_window) if raw_window.isdecimal() and len(raw_window) <= 12 else 0
-    days = choose_dates(index, os.environ.get("CGU_RAP_ARCHIVE_DATE") or None, window)
+    days = choose_dates(index, os.environ.get("CGU_RAP_ARCHIVE_DATE") or None, window,
+                        os.environ.get("CGU_RAP_FOCUS_DATE") or None)
     print("Plano CSV RAP (somente contagens): " + json.dumps({
         "window": window, "datesWithKnownInscriptionTargets": len(index["historyTargets"]),
         "datesWith2025Targets": len(index["origin2025Targets"]),
@@ -597,14 +639,16 @@ def main():
             targets = {"histories": [], "impacts": []}
             break
     if target_file:
-        plan = bounded_targets(targets)
+        plan = bounded_targets(targets, index, window)
         # Workflow usa diretório temporário exclusivo, sem upload de artefatos.
         with open(target_file, "x", encoding="utf-8") as stream:
             json.dump(plan, stream, ensure_ascii=True)
         print("Alvos CSV para API (somente contagens): " + json.dumps({
             "histories": len(plan["histories"]),
             "impactDocuments": len({r["id"] for r in plan["impacts"]}),
-            "impactPairs": len(plan["impacts"])}))
+            "impactPairs": len(plan["impacts"]),
+            "missingPairs": sum((r["id"], r["ne"]) not in index["storedPairs"]
+                                for r in plan["impacts"])}))
 
 
 if __name__ == "__main__":

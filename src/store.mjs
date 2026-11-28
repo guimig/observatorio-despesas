@@ -615,6 +615,27 @@ export async function persistEnrichment(root,month,id,result,now=new Date()){
   return outcome.changed;
 }
 
+/** Recuperação de pagamento individual e vínculos numa única gravação.
+ * Exige competência já publicada e valida ambos antes de alterar o JSON.
+ * Não modifica manifesto nem afirma cobertura diária integral. */
+export async function persistTargetedPaymentWithLinks(root,document,links,now=new Date()){
+  if(document?.phase!==3||!Number.isSafeInteger(document.cents)||!Array.isArray(links)||!links.length)
+    throw Error('Pagamento individual incompleto');
+  const month=document.date?.slice(0,7);
+  if(!MONTH_RE.test(month||''))throw Error('Competência inválida');
+  const manifest=validateManifest(await readJson(join(root,'data','manifest.json'),null));
+  if(!manifest.months.includes(month))throw Error('Competência ainda não publicada');
+  const path=join(root,'data','months',month+'.json');
+  const current=await readJson(path,null);
+  if(!current)throw Error('Arquivo da competência inexistente');
+  const added=applyTargetedDocument(current,document,now);
+  if(!added.changed)throw Error('Pagamento individual já existente');
+  const enriched=applyDocumentEnrichment(added.data,document.id,{kind:'payment',links},now);
+  if(!enriched.changed)throw Error('Pagamento individual sem novos vínculos');
+  await atomicWrite(path,JSON.stringify(enriched.data)+'\n');
+  return true;
+}
+
 async function readJson(path, defaultValue) {
   try { return JSON.parse(await readFile(path, 'utf8')); }
   catch (error) {
