@@ -5,6 +5,7 @@
 import { getCguArray, parseMoneyCents } from './cgu.mjs';
 import { sanitizeText, assertPublicSafe } from './privacy.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
+import {IMPACT_FIELDS,aggregateImpactComponents} from './rap-evidence.mjs';
 
 const BASE='https://api.portaldatransparencia.gov.br/api-de-dados/despesas';
 const DOC=/^158459\d{5}20\d{2}[A-Z]{2}\d{6}$/;
@@ -76,6 +77,15 @@ async function collectPages(document,{token,limit=8,request,keys,budget}){
   }
   return {ok:false,reason:'limite_paginacao'};
 }
+function attachImpactComponents(links,rows){
+  const groups=new Map();
+  for(const row of rows){
+    const id=typeof row?.empenho==='string'?row.empenho:row?.empenho?.documento;
+    if(!groups.has(id))groups.set(id,[]);
+    groups.get(id).push(row);
+  }
+  return links.map(link=>({...link,impactComponents:aggregateImpactComponents(groups.get(link.to)||[])}));
+}
 function paymentComponents(row){
   const regular=parseMoneyCents(row?.valorPago);
   const rap=parseMoneyCents(row?.valorRestoPago);
@@ -83,10 +93,10 @@ function paymentComponents(row){
   const cents=(regular??0)+(rap??0);
   return Number.isSafeInteger(cents)?cents:null;
 }
-export async function resolvePaymentLinks(document,{token,limit=8,request=requestPaymentPage,budget}={}){
+export async function resolvePaymentLinks(document,{token,limit=8,request=requestPaymentPage,budget,includeRapComponents=false}={}){
   if(!DOC.test(document))throw Error('Documento de pagamento inválido');
   const response=await collectPages(document,{token,limit,request,budget,
-    keys:['empenho','subitem','valorPago','valorRestoPago']});
+    keys:['empenho','subitem',...Object.values(IMPACT_FIELDS)]});
   if(!response.ok)return {ok:false,reason:response.reason};
   const sums=new Map();
   for(const row of response.rows){
@@ -99,7 +109,7 @@ export async function resolvePaymentLinks(document,{token,limit=8,request=reques
   }
   const links=[...sums.entries()].sort(([a],[b])=>a.localeCompare(b))
     .map(([to,cents])=>({from:document,to,cents}));
-  return {ok:true,links,impacts:response.rows.length};
+  return {ok:true,links:includeRapComponents?attachImpactComponents(links,response.rows):links,impacts:response.rows.length};
 }
 
 /**
@@ -108,11 +118,11 @@ export async function resolvePaymentLinks(document,{token,limit=8,request=reques
  * O valor do documento de liquidação nunca é sobrescrito pela soma de impactos.
  */
 export async function resolveLiquidationLinks(document,{
-  token,limit=8,request=requestLiquidationPage,budget
+  token,limit=8,request=requestLiquidationPage,budget,includeRapComponents=false
 }={}){
   if(!DOC.test(document))throw Error('Documento de liquidação inválido');
   const response=await collectPages(document,{token,limit,request,budget,
-    keys:['empenho','subitem','valorLiquidado']});
+    keys:['empenho','subitem',...Object.values(IMPACT_FIELDS)]});
   if(!response.ok)return {ok:false,reason:response.reason};
   const sums=new Map();
   for(const row of response.rows){
@@ -126,7 +136,7 @@ export async function resolveLiquidationLinks(document,{
   }
   const links=[...sums.entries()].sort(([a],[b])=>a.localeCompare(b))
     .map(([to,cents])=>({from:document,to,cents}));
-  return {ok:true,links,impacts:response.rows.length};
+  return {ok:true,links:includeRapComponents?attachImpactComponents(links,response.rows):links,impacts:response.rows.length};
 }
 
 /**

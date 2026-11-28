@@ -6,6 +6,7 @@ import { UG, CGU_NATURE_FIELDS } from './cgu.mjs';
 import { publicItemDescription } from './enrich-cgu.mjs';
 import {publicNarrativeText} from './public-narrative.mjs';
 import {officialDecimal,movementClass} from './item-movements.mjs';
+import {validateImpactComponents} from './rap-evidence.mjs';
 import {inScopeRelatedDocument,validRelatedPair} from '../assets/trajectory.js';
 
 export const VERSION = 1;
@@ -199,7 +200,7 @@ export function validateMonth(data) {
   }
   const relationPairs=new Set();
   for (const link of data.relations) {
-    assertAllowedKeys(link, ['from', 'to', 'cents']);
+    assertAllowedKeys(link, ['from', 'to', 'cents', 'impactComponents']);
     const source=data.documents.find(doc=>doc.id===link.from);
     if (!validId(link.from) || !NE_RE.test(link.to) || !ids.has(link.from) ||
         ![2,3].includes(source?.phase)) throw Error('Vínculo documental inválido');
@@ -208,6 +209,7 @@ export function validateMonth(data) {
     relationPairs.add(pair);
     assertCents(link.cents);
     if (link.cents === null) throw Error('Vínculo sem valor comprovado');
+    if(link.impactComponents!==undefined)validateImpactComponents(link.impactComponents,link,source.phase);
   }
   const keys = new Set();
   for (const c of data.coverage) {
