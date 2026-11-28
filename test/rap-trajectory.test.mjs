@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildRapTrajectories,matchesRapTrajectory,qualifiedRapInscription} from '../assets/rap-trajectory.js';
+import {buildRapTrajectories,matchesRapTrajectory,qualifiedRapInscription,summarizeRapReadiness} from '../assets/rap-trajectory.js';
 const ne='158459264222024NE000001',ne2='158459264222025NE000001',ob='158459264222026OB000001',ns='158459264222026NS000001';
 const e={date:'2025-01-11',operation:'INSCRICAO EM RP',quantity:'1',unitPrice:'50',cents:5000,type:'other'};
 const c={rowCount:1,repeatedRows:0,liquidatedCents:0,paidCents:0,rpInscribedCents:0,rpCancelledCents:0,rpPaidCents:5000};
@@ -61,4 +61,50 @@ test('escopo 2024, fase e consulta comprovada; componente de RP explícito no me
  assert.equal(index.get(same).paymentEvidence,true);assert.equal(index.get(same).counts.interannual,0);
  const unchecked=buildRapTrajectories([m('2026-01',[{...payment,paymentLinksChecked:false}],[link])]).get(ne);
  assert.equal(unchecked.paymentEvidence,false);assert.equal(unchecked.impacts[0].status,'unavailable');
+});
+
+
+const ne26='158459264222026NE000010';
+const today='2026-01-04';
+function ready(){
+ const data=m('2026-01',[{id:ne26,phase:1,date:'2026-01-01',itemsDetailVersion:2},
+  {...payment,date:'2026-01-03'}],[{...link,to:ne26}],
+  {[ne26]:[{seq:1,historyChecked:true,movements:[{...e,date:'2026-01-02'}]}]});
+ data.coverage=['2026-01-01','2026-01-02','2026-01-03','2026-01-04'].flatMap(date=>
+  [1,2,3].map(phase=>({date,phase,complete:true,invalid:0})));
+ return data;
+}
+test('prontidão exclui dia aberto e não libera saldo ou homologação',()=>{
+ const data=ready(),before=JSON.stringify(data),index=buildRapTrajectories([data],{today}),entry=index.get(ne26);
+ assert.equal(entry.readiness.status,'reviewable');assert.deepEqual(entry.readiness.reasons,[]);
+ assert.equal(entry.readiness.listing.expected,9);assert.equal(entry.readiness.listing.complete,9);
+ assert.equal(entry.readiness.accountingReady,false);assert.equal(entry.balanceCents,null);
+ assert.equal(matchesRapTrajectory(entry,{mode:'reviewable'}),true);
+ assert.equal(matchesRapTrajectory(entry,{mode:'pending'}),false);
+ const sum=summarizeRapReadiness(index);assert.equal(sum.reviewable,1);assert.equal(sum.accountingReady,0);
+ assert.ok(!JSON.stringify(sum).includes(ne26));assert.equal(JSON.stringify(data),before);
+});
+test('lacunas, consulta inválida e duplicidade não contam como cobertura completa',()=>{
+ for(const change of [d=>d.coverage.pop()&&d.coverage.shift(),d=>d.coverage[0].invalid=1,
+  d=>d.coverage.push({...d.coverage[0]}),d=>d.coverage[0].complete=false]){
+  const data=ready();change(data);const row=buildRapTrajectories([data],{today}).get(ne26);
+  assert.equal(row.readiness.status,'gaps');assert.equal(row.readiness.listing.complete,8);
+  assert.ok(row.readiness.reasons.includes('listing_partial'));
+ }
+ assert.ok(buildRapTrajectories([ready()],{today,totalMonths:2}).get(ne26).readiness.reasons.includes('months_missing'));
+});
+test('referência sem inscrição e sem componente não vira evidência',()=>{
+ const index=buildRapTrajectories([m('2026-01',[payment],[{from:ob,to:ne2,cents:100}])],{today});
+ const row=index.get(ne2);assert.equal(row.readiness.status,'reference_only');
+ assert.ok(row.readiness.reasons.includes('origin_missing'));assert.ok(row.readiness.reasons.includes('inscription_missing'));
+ assert.ok(row.readiness.reasons.includes('impacts_incomplete'));
+ assert.equal(summarizeRapReadiness(index).reference_only,1);
+});
+test('repetições, operações não esclarecidas e outros vínculos bloqueiam prontidão',()=>{
+ const data=ready(),item=data.itemsByDocument[ne26][0];
+ item.movements.push({...item.movements[0]},{...item.movements[0],operation:'ESTORNO'});
+ data.documents.push({id:ns,phase:2,date:'2026-01-01',relatedIds:[ne26]});
+ const row=buildRapTrajectories([data],{today}).get(ne26);
+ for(const k of ['inscription_repeated','other_operations','impacts_incomplete'])assert.ok(row.readiness.reasons.includes(k));
+ assert.equal(row.readiness.otherIncomplete,1);
 });

@@ -42,7 +42,7 @@ export async function verifyPublication({
     return {path,contents,updated_at:meta.updated_at||''};
   }));
   monthFiles.sort((a,b)=>b.updated_at.localeCompare(a.updated_at));
-  const paths=['data/relationship-index.json','data/coverage-index.json','data/manifest.json','index.html','assets/app.js','assets/budget-classification.js','assets/integrated-trajectory.js','assets/style.css','assets/quality.js','assets/coverage-panel.js'];
+  const paths=['data/relationship-index.json','data/coverage-index.json','data/manifest.json','index.html','assets/app.js','assets/budget-classification.js','assets/integrated-trajectory.js','assets/style.css','assets/quality.js','assets/coverage-panel.js','assets/rap-trajectory.js'];
   const expected={};
   for(const path of paths)expected[path]=await readFile(join(dist,path),'utf8');
   for(const path of ['contracts','notices','atas','ata-participants','tender-items','cgu-contract-links'].map(s=>'data/procurement/'+s+'.json')){

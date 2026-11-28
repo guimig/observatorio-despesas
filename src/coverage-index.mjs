@@ -6,6 +6,7 @@ import {currentDateInBrazil} from './backfill.mjs';
 import {auditMonth,closedDaysInMonth} from '../assets/quality.js';
 import {buildCommitmentChronology,summarizeCommitmentValues} from '../assets/siafi-movement-reconciliation.js';
 import {MODALITIES} from '../assets/pncp-modalities.js';
+import {buildRapTrajectories,summarizeRapReadiness} from '../assets/rap-trajectory.js';
 const ratio=(n,d)=>d?Number((100*n/d).toFixed(2)):null;
 const latest=values=>values.filter(Boolean).sort().at(-1)||null;
 const checked=(items,field)=>items.filter(x=>Boolean(x[field])).length;
@@ -101,5 +102,6 @@ export function buildCoverageIndex({months,manifest,procurement,notices,atas,ten
   integrated:summarizeIntegratedCoverage(buildIntegratedIndex({months,contracts,notices:publications,atas:atas?.atas||[],arpDetails:participants?.details||[],tender,cguContracts,totalMonths:manifest?.months?.length??months.length,today:currentDateInBrazil(now)})),
   commitmentChronology:buildCommitmentChronology(months,{today:currentDateInBrazil(now)}),
   commitmentValues:summarizeCommitmentValues(months,{today:currentDateInBrazil(now)}),
+  rapReadiness:summarizeRapReadiness(buildRapTrajectories(months,{totalMonths:manifest?.months?.length??months.length,today:currentDateInBrazil(now)})),
   years:byYear,months:rows};
 }

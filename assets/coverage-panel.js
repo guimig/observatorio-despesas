@@ -1,4 +1,5 @@
 /** Painel carregado sob demanda, apenas um JSON agregado. */
+import {RAP_REASON_LABELS} from './rap-trajectory.js';
 const fmt=n=>new Intl.NumberFormat('pt-BR').format(n);
 const dt=v=>v?String(v).slice(0,10).split('-').reverse().join('/'):'Não registrado';
 const status={complete:'Encerrado conferido',open:'Consulta no mês aberto',unsealed:'Fechamento pendente',partial:'Parcial',unavailable:'Indisponível',missing:'Não consultado'};
@@ -40,6 +41,17 @@ function render(root,x){
   metricGrid(root,[['NEs com reconstrução interna disponível',fraction(v.internal,v.identities)],['Reconstrução coincide com referência documental',fmt(v.documentMatching)],['Reconstrução difere da referência documental',fmt(v.documentDifferent)],['Reconstrução sem valor documental comparável',fmt(v.documentUnavailable)],['Reconstrução independente indisponível',fmt(v.notReady)]]);
   if(v.byYear?.length)table(root,['Exercício','Reconstruções internas','Coincidentes','Divergentes','Sem valor documental'],v.byYear.map(y=>[y.year,fraction(y.internal,y.identities),fmt(y.documentMatching),fmt(y.documentDifferent),fmt(y.documentUnavailable)]));
   root.append(elem('p','helper','Reconstrução independente exige catálogo válido e histórico de todos os itens aritmeticamente conciliado. Não altera os valores CGU, os subtotais cronológicos ou a classificação de conciliação documental. Divergência não comprova erro ou irregularidade.'));
+ }
+ if(x.rapReadiness){
+  const r=x.rapReadiness;
+  root.append(elem('h3','','Restos a pagar · prontidão documental'));
+  metricGrid(root,[['NEs candidatas',fmt(r.candidates)],['Referências a investigar',fmt(r.reference_only)],
+   ['Evidências com pendências',fmt(r.gaps)],['Documentação apta à revisão',fmt(r.reviewable)]]);
+  if(r.byYear.length)table(root,['Exercício','Candidatas','Referências','Com pendências','Aptas à revisão'],
+   r.byYear.map(y=>[y.year,fmt(y.candidates),fmt(y.reference_only),fmt(y.gaps),fmt(y.reviewable)]));
+  const reasons=Object.entries(r.reasons).sort((a,b)=>b[1]-a[1]);
+  if(reasons.length)table(root,['Impedimentos (podem coexistir)','NEs'],reasons.map(([k,n])=>[RAP_REASON_LABELS[k],fmt(n)]));
+  root.append(elem('p','helper','Contagens por NE, sem saldo. A prontidão exige histórico e vínculos conhecidos completos e consultas diárias das três fases desde o início do exercício da NE até o último dia encerrado. Não comprova universo SIAFI completo nem homologação contábil. Consulte Trajetória para as pendências individuais.'));
  }
  root.append(elem('h3','','Contratações e instrumentos'));
  metricGrid(root,[['Meses encerrados conferidos PNCP',fraction(p.pncpMonths,p.closedMonths)],['Meses encerrados conferidos Compras.gov',fraction(p.comprasMonths,p.closedMonths)],['Modalidades / meses encerrados PNCP',fraction(p.modalitiesComplete,p.modalitiesTotal)],['Contratos e instrumentos com consulta de NE pendente',fmt(p.commitmentLinksPending)],['Instrumentos sem contratação vinculada',fmt(p.purchaseLinksPending)],['Publicações SRP com atas consultadas',fraction(p.srpAtasChecked,p.srp)],['Publicações SRP com itens consultados',fraction(p.srpItemsChecked,p.srp)],['Atas com participação consultada',fraction(p.ataParticipationChecked,p.atas)],['Itens com resultados consultados',fraction(p.itemResultsChecked||0,p.tenderItems||0)],['Resultados PNCP recuperados',fmt(p.itemResults||0)],['Atas com itens Compras.gov identificados',fraction(p.arpItemsMatched||0,p.atas)],['Atas com instrumentos consultados',fraction(p.arpInstrumentChecks||0,p.atas)],['Vínculos ata–instrumento identificados',fmt(p.arpInstrumentLinks||0)],['Instrumentos decorrentes de adesões do IFC',fmt(p.ifcAdhesionInstruments||0)],['Instrumentos PNCP sem informação de adesão',fmt(p.adhesionUnknown||0)],['Itens com registros de unidade identificados',fmt(p.arpUnitItems||0)],['Itens com registro da UASG Araquari',fmt(p.arpCampusUnitItems||0)]]);

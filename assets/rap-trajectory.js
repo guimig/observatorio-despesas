@@ -18,18 +18,21 @@ export function qualifiedRapInscription(operation){
 }
 const append=(map,key,value)=>{if(!map.has(key))map.set(key,[]);map.get(key).push(value);};
 function catalogEvidence(owner){
- const unavailable={status:'unavailable',totalItems:null,checkedItems:0,groups:[],observations:0,repeated:0};
+ const unavailable={status:'unavailable',totalItems:null,checkedItems:0,groups:[],observations:0,repeated:0,unresolvedOperations:0};
  if(!owner||owner.doc.itemsDetailVersion!==2)return unavailable;
  const items=owner.month.itemsByDocument?.[owner.doc.id];
  if(!Array.isArray(items))return unavailable;
  if(new Set(items.map(i=>i.seq)).size!==items.length||items.some(i=>!Number.isSafeInteger(i.seq)||i.seq<1))
   return {...unavailable,status:'ambiguous'};
- const groups=new Map();let checkedItems=0,observations=0,repeated=0;
+ const groups=new Map();let checkedItems=0,observations=0,repeated=0,unresolvedOperations=0;
  for(const item of items){
   if(item.historyChecked!==true||!Array.isArray(item.movements))continue;
   checkedItems++;
   for(const e of item.movements){
-   if(!qualifiedRapInscription(e?.operation))continue;
+   if(!qualifiedRapInscription(e?.operation)){
+    if(!['original','reinforcement','annulment'].includes(e?.type))unresolvedOperations++;
+    continue;
+   }
    // Identidade observacional, não chave de lançamento SIAFI. Não une itens
    // distintos nem converte multiplicidade em valor contabilizado.
    const sig=JSON.stringify([item.seq,e.date,e.operation,e.quantity,e.unitPrice,e.cents]);
@@ -41,7 +44,7 @@ function catalogEvidence(owner){
  }
  const sorted=[...groups.values()].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||a.seq-b.seq);
  return {status:!items.length?'empty_catalog':checkedItems===items.length?'checked_catalog':'partial_catalog',
-  totalItems:items.length,checkedItems,groups:sorted,observations,repeated};
+  totalItems:items.length,checkedItems,groups:sorted,observations,repeated,unresolvedOperations};
 }
 function impactEvidence(pair,owners){
  const sources=owners.get(pair.from)||[],owner=sources.length===1?sources[0]:null;
@@ -79,13 +82,14 @@ function impactEvidence(pair,owners){
  * candidatos por inscrição, impacto RP explícito ou vínculo interanual.
  * A referência temporal isolada jamais é promovida a inscrição.
  * A ausência de evidência não prova inexistência nem completude contábil. */
-export function buildRapTrajectories(months,{totalMonths=months.length}={}){
+export function buildRapTrajectories(months,{totalMonths=months.length,today=null}={}){
  const owners=new Map(),pairs=new Map(),candidates=new Set(),pairsByNe=new Map();
  for(const month of months){
   if(!month||month.unit!=='158459'||!Array.isArray(month.documents)||!Array.isArray(month.relations))
    throw Error('Competência incompatível com trajetória RAP');
   for(const doc of month.documents)if(validDocument(doc.id))append(owners,doc.id,{doc,month});
  }
+ const coverage=listingCoverage(months,today);
  const pairFor=(from,to)=>{
   const key=from+'>'+to;
   if(!pairs.has(key)){const pair={from,to,edges:[]};pairs.set(key,pair);append(pairsByNe,to,pair);}
@@ -100,8 +104,7 @@ export function buildRapTrajectories(months,{totalMonths=months.length}={}){
   for(const doc of month.documents)for(const other of doc.relatedIds||[]){
    if(!validRelatedPair(doc.id,other))continue;
    const to=NE.test(doc.id)?doc.id:other,from=NE.test(doc.id)?other:doc.id;
-   if(year(from)<=year(to))continue;
-   pairFor(from,to);candidates.add(to);
+   pairFor(from,to);if(year(from)>year(to))candidates.add(to);
   }
   for(const [id,items] of Object.entries(month.itemsByDocument||{})){
    if(validNe(id)&&Array.isArray(items)&&items.some(i=>Array.isArray(i.movements)&&
@@ -113,18 +116,22 @@ export function buildRapTrajectories(months,{totalMonths=months.length}={}){
   const sources=owners.get(id)||[],owner=sources.length===1&&sources[0].doc.phase===1?sources[0]:null;
   const history=catalogEvidence(owner);
   if(sources.length>1)history.status='ambiguous';
-  const relevant=(pairsByNe.get(id)||[]).filter(p=>year(p.from)>year(id)||p.edges.some(x=>hasRap(x.edge.impactComponents)));
-  const impacts=relevant.map(p=>impactEvidence(p,owners)).sort((a,b)=>a.year-b.year||
+  const all=pairsByNe.get(id)||[];
+  const relevant=p=>year(p.from)>year(id)||p.edges.some(x=>hasRap(x.edge.impactComponents));
+  const other=all.filter(p=>!relevant(p)).map(p=>impactEvidence(p,owners));
+  const impacts=all.filter(relevant).map(p=>impactEvidence(p,owners)).sort((a,b)=>a.year-b.year||
    (a.date||'').localeCompare(b.date||'')||a.id.localeCompare(b.id));
   const counts={interannual:impacts.filter(x=>x.interannual).length,complete:impacts.filter(x=>x.status==='complete_fields').length,
    partial:impacts.filter(x=>x.status==='partial_fields').length,ambiguous:impacts.filter(x=>x.status.startsWith('ambiguous')).length,
    unavailable:impacts.filter(x=>x.status==='unavailable').length};
-  entries.set(id,{id,originYear:year(id),originStatus:owner?'collected':sources.length?'ambiguous':'unavailable',
+  const entry={id,originYear:year(id),originStatus:owner?'collected':sources.length?'ambiguous':'unavailable',
    history,impacts,counts,paymentEvidence:impacts.some(x=>x.phase===3&&Number.isSafeInteger(x.components.rpPaidCents)&&x.components.rpPaidCents!==0),
    explicitRapEvidence:history.observations>0||impacts.some(x=>hasRap(x.components)),
-   pending:history.status!=='checked_catalog'||history.repeated>0||counts.partial+counts.ambiguous+counts.unavailable>0,
    loadedMonths,totalMonths,allMonthsLoaded:totalMonths>0&&loadedMonths===totalMonths,
-   balanceCents:null,balanceStatus:'not_homologated'});
+   balanceCents:null,balanceStatus:'not_homologated'};
+  entry.readiness=assessReadiness(entry,other,coverage(year(id)),today);
+  entry.pending=entry.readiness.status!=='reviewable';
+  entries.set(id,entry);
  }
  return entries;
 }
@@ -133,5 +140,72 @@ export function matchesRapTrajectory(entry,{mode='all',originYear='all'}={}){
  if(!entry||originYear!=='all'&&String(entry.originYear)!==String(originYear))return false;
  return mode==='all'||mode==='candidate'||mode==='explicit'&&entry.explicitRapEvidence||
   mode==='inscription'&&entry.history.observations>0||mode==='repeated'&&entry.history.repeated>0||
-  mode==='payment'&&entry.paymentEvidence||mode==='pending'&&entry.pending;
+  mode==='payment'&&entry.paymentEvidence||mode==='pending'&&entry.pending||
+  mode==='reference_only'&&entry.readiness.status==='reference_only'||mode==='reviewable'&&entry.readiness.status==='reviewable';
+}
+
+
+export const RAP_STATUS_LABELS=Object.freeze({reference_only:'Referência a investigar',gaps:'Evidência com pendências',reviewable:'Documentação apta à revisão'});
+export const RAP_REASON_LABELS=Object.freeze({
+ origin_missing:'NE de origem não localizada',origin_ambiguous:'Identidade da NE ambígua',
+ history_incomplete:'Catálogo ou históricos incompletos',inscription_missing:'Inscrição não observada',
+ inscription_repeated:'Inscrições repetidas sem identidade contábil',inscription_review:'Data ou valor de inscrição a revisar',
+ other_operations:'Outras operações a revisar',impacts_missing:'Impactos RAP não observados',
+ impacts_ambiguous:'Impactos ambíguos',impacts_incomplete:'Impactos incompletos',
+ impact_date:'Data de impacto a revisar',months_missing:'Competências publicadas não carregadas',
+ listing_unknown:'Cobertura diária indisponível',listing_partial:'Lacunas de consulta diária das três fases'
+});
+/** Conta pares dia/fase completos, sem confundir arquivos com cobertura. */
+function listingCoverage(months,today){
+ const unknown={from:null,before:null,expected:null,complete:null};
+ if(!validDate(today)||today<'2024-01-01')return ()=>unknown;
+ const byKey=new Map(),byYear=new Map(),memo=new Map();
+ for(const m of months)for(const c of m.coverage||[]){
+  if(!validDate(c.date)||c.date<'2024-01-01'||c.date>=today||
+   !c.date.startsWith(m.month+'-')||![1,2,3].includes(c.phase))continue;
+  const k=c.date+'/'+c.phase;
+  byKey.set(k,!byKey.has(k)&&c.complete===true&&c.invalid===0);
+ }
+ for(const [k,ok] of byKey)if(ok){
+  const y=Number(k.slice(0,4));byYear.set(y,(byYear.get(y)||0)+1);
+ }
+ return y=>{
+  if(memo.has(y))return memo.get(y);
+  const from=y+'-01-01';
+  const expected=3*(Date.parse(today+'T00:00:00Z')-Date.parse(from+'T00:00:00Z'))/86400000;
+  if(!Number.isSafeInteger(expected)||expected<=0)return unknown;
+  const complete=[...byYear].reduce((n,[year,count])=>n+(year>=y?count:0),0);
+  const row={from,before:today,expected,complete};memo.set(y,row);return row;
+ };
+}
+function assessReadiness(e,other,listing,today){
+ const reasons=[],h=e.history,all=[...e.impacts,...other];
+ if(e.originStatus!=='collected')reasons.push(e.originStatus==='ambiguous'?'origin_ambiguous':'origin_missing');
+ if(h.status!=='checked_catalog')reasons.push('history_incomplete');
+ if(!h.observations)reasons.push('inscription_missing');
+ if(h.repeated)reasons.push('inscription_repeated');
+ if(h.groups.some(g=>!g.date||g.date.slice(0,4)<String(e.originYear)||
+  (today&&g.date>=today)||!Number.isSafeInteger(g.observedCents)||g.observedCents<=0))reasons.push('inscription_review');
+ if(h.unresolvedOperations)reasons.push('other_operations');
+ if(!e.impacts.length)reasons.push('impacts_missing');
+ if(all.some(i=>i.status.startsWith('ambiguous')))reasons.push('impacts_ambiguous');
+ if(all.some(i=>i.status==='unavailable'||i.status==='partial_fields'))reasons.push('impacts_incomplete');
+ if(all.some(i=>!i.date||i.year<e.originYear||i.date.slice(0,4)!==String(i.year)||(today&&i.date>=today)))reasons.push('impact_date');
+ if(!e.allMonthsLoaded)reasons.push('months_missing');
+ if(listing.expected===null)reasons.push('listing_unknown');
+ else if(listing.complete!==listing.expected)reasons.push('listing_partial');
+ return {status:!e.explicitRapEvidence?'reference_only':reasons.length?'gaps':'reviewable',
+  reasons,listing:{...listing},otherIncomplete:other.filter(i=>i.status!=='complete_fields').length,
+  accountingReady:false};
+}
+export function summarizeRapReadiness(entries){
+ const empty=()=>({candidates:0,reference_only:0,gaps:0,reviewable:0,accountingReady:0});
+ const result={...empty(),byYear:[],reasons:{}},years=new Map();
+ for(const e of entries.values()){
+  if(!years.has(e.originYear))years.set(e.originYear,{year:e.originYear,...empty()});
+  for(const row of [result,years.get(e.originYear)]){row.candidates++;row[e.readiness.status]++;}
+  for(const k of e.readiness.reasons)result.reasons[k]=(result.reasons[k]||0)+1;
+ }
+ result.byYear=[...years.values()].sort((a,b)=>a.year-b.year);
+ return result;
 }
