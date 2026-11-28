@@ -175,6 +175,13 @@
           <option value="all">Todas</option><option value="confirmed">NE integral conferida</option>
           <option value="cgu">Contrato–NE declarado pela CGU</option><option value="high">Candidatos de alta confiança</option><option value="indication">Somente indícios</option><option value="none">Sem vínculo identificado</option>
         </select></label>
+        <label class="filter"><span>Restos a pagar · evidência documental</span><select id="trajectory-rap">
+          <option value="all">Todas as trajetórias</option><option value="candidate">Referências de RAP (inclusive interanuais)</option>
+          <option value="explicit">Evidência explícita de RAP</option><option value="inscription">Inscrição observada</option>
+          <option value="repeated">Inscrições repetidas</option><option value="payment">Pagamento de RAP identificado</option>
+          <option value="pending">Referências de RAP com pendências</option>
+        </select></label>
+        <label class="filter"><span>Exercício de origem · RAP</span><select id="trajectory-rap-year"><option value="all">Todos os exercícios</option></select></label>
         <button id="trajectory-load" class="button button-primary" type="button">Consultar</button>
         <button id="trajectory-full" class="button button-ghost" type="button">Consultar histórico completo</button>
       </div>
@@ -442,6 +449,10 @@
         <div id="dialog-payments" class="relations"></div>
         <p id="dialog-trajectory-summary" class="helper"></p>
         <p id="dialog-trajectory-note" class="helper"></p>
+      </section>
+      <section id="dialog-rap-section" hidden aria-labelledby="dialog-rap-title">
+        <h3 id="dialog-rap-title">Restos a pagar · trajetória documental</h3>
+        <div id="dialog-rap" class="relations"></div>
       </section>
       <section id="dialog-items-section" hidden aria-label="Itens do empenho">
         <h3>Itens do empenho</h3>

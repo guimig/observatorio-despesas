@@ -538,3 +538,6 @@ html[data-theme=dark] {
 /* Grandezas da NE: destaque discreto e responsivo, sem codificar divergencia so por cor. */
 .document-fields .commitment-value-field{border:1px solid var(--border);border-left:3px solid var(--brand);background:var(--surface)}
 .document-fields .commitment-value-field dd{font-size:.96rem;font-variant-numeric:tabular-nums}
+
+/* RAP: grupos documentais, sem totais contábeis inferidos. */
+#dialog-rap-section{margin-block:1rem}#dialog-rap .rap-evidence-group{border-left:3px solid var(--brand);gap:.6rem}#dialog-rap .helper{margin:.3rem 0}.rap-inscriptions{display:grid;gap:.45rem}.rap-inscription-row,.rap-impact-row{display:grid;gap:.35rem;border:1px solid var(--border);border-radius:8px;padding:.65rem;overflow-wrap:anywhere}.rap-inscription-row .pill{justify-self:start;white-space:normal}.rap-impact-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:.45rem;margin:.3rem 0}.rap-impact-fields>div{background:var(--surface2);border-radius:7px;padding:.55rem;min-width:0}.rap-impact-fields dt{font-size:.76rem;color:var(--muted)}.rap-impact-fields dd{margin:.25rem 0 0;font-weight:650;font-variant-numeric:tabular-nums}

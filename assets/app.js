@@ -11,6 +11,7 @@ import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } f
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import {showDialogFromTop} from './dialog-scroll.js';
 import {auditSiafiItemMovements} from './siafi-movement-audit.js';
+import {buildRapTrajectories,matchesRapTrajectory} from './rap-trajectory.js';
 import {reconcileSiafiCommitment,commitmentChronologyEvidence,commitmentValueEvidence} from './siafi-movement-reconciliation.js';
 import { auditMonth, summarizeDocumentPhases } from './quality.js?v=3';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
@@ -771,6 +772,7 @@ function integratedIndex(){
  const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
   notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
   tender:tenderItemsState.data,cguContracts:cguContractEvidence,totalMonths:state.manifest?.months?.length||0,today:todayBrazil()});
+ index.rapTrajectories=buildRapTrajectories([...cache.values()],{totalMonths:state.manifest?.months?.length||0});
  integratedMemo={signature,index};return index;
 }
 const evidenceLabels={confirmed:'NE integral conferida',declared_ne:'NE integral declarada; CGU não localizada',
@@ -1340,6 +1342,7 @@ function renderSiafiItems(target,items){
 function showDocument(doc, monthData = state.data) {
   if($('record-dialog').open)$('record-dialog').close();
   $('dialog-trajectory-section').hidden=true;
+  $('dialog-rap-section').hidden=true;
   $('dialog-relations-title').hidden=false;
   $('dialog-title').textContent = doc.id;
   $('document-trajectory').hidden = doc.phase !== 1;
@@ -1586,7 +1589,14 @@ function renderCommitmentTrajectories(){
   const query=$('trajectory-search').value;
   const index=integratedIndex(),level=$('trajectory-evidence').value;
   renderRelationshipCatalog(query,index);
-  const all=index.entries.filter(entry=>trajectoryMatches(index,entry,query)&&
+  const rapMode=$('trajectory-rap').value,yearSelect=$('trajectory-rap-year'),previousYear=yearSelect.value;
+  const years=[...new Set([...index.rapTrajectories.values()].map(e=>String(e.originYear)))].sort().reverse();
+  if(years.join(',')!==Array.from(yearSelect.options).slice(1).map(o=>o.value).join(',')){
+    yearSelect.replaceChildren(new Option('Todos os exercícios','all'),...years.map(y=>new Option(y,y)));
+    yearSelect.value=years.includes(previousYear)?previousYear:'all';
+  }
+  const rapYear=yearSelect.value;
+  const all=index.entries.filter(entry=>matchesRapTrajectory(index.rapTrajectories.get(entry.id),{mode:rapMode,originYear:rapYear})&&trajectoryMatches(index,entry,query)&&
     (level==='all'||(level==='cgu'?index.cguEvidence.byNe.has(entry.id):level==='high'?(index.neEdges.get(entry.id)||[]).some(e=>['high_confidence','contextual_candidate'].includes(e.level)):neEvidenceLevel(index,entry.id)===level)));
   const pages=Math.max(1,Math.ceil(all.length/25));trajectoryPage=Math.max(0,Math.min(pages-1,trajectoryPage));
   $('trajectory-prev').disabled=trajectoryPage===0;$('trajectory-next').disabled=trajectoryPage===pages-1;
@@ -1605,6 +1615,9 @@ function renderCommitmentTrajectories(){
     const object=element('td','beneficiary-cell',entry.document?.nature?.element||'Não informado');
     const e=neEvidenceLevel(index,entry.id);
     object.append(element('span','small-muted integrated-table-note',index.cguEvidence.byNe.has(entry.id)?'Contrato–NE declarado pela CGU':e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
+    const rap=index.rapTrajectories.get(entry.id);
+    if(rap)object.append(element('span','small-muted integrated-table-note',
+      rap.explicitRapEvidence?'RAP · evidência documental':'RAP · referência interanual a investigar'));
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
     const pg=element('td','align-right',fmtMoney(entry.paymentCents));
     if(!entry.liquidations.length)lq.textContent='Não identificado';
@@ -1645,6 +1658,70 @@ function renderTrajectoryLinks(target,links,emptyText){
     }
     target.append(item);
   }
+}
+function renderRapTrajectory(id){
+  const host=$('dialog-rap');host.replaceChildren();
+  const rap=integratedIndex().rapTrajectories.get(id);
+  $('dialog-rap-section').hidden=!rap;
+  if(!rap)return;
+  const labels={collected:'NE coletada',ambiguous:'Identidade ambígua',unavailable:'NE não localizada',
+   checked_catalog:'Históricos consultados para todos os itens do catálogo disponível',
+   partial_catalog:'Históricos de itens parcialmente consultados',empty_catalog:'Catálogo consultado sem itens',
+   complete_fields:'Cinco campos disponíveis',partial_fields:'Campos parcialmente disponíveis',
+   ambiguous_identity:'Identidade ou vínculo ambíguo',ambiguous_impact:'Impactos indistinguíveis ou divergentes'};
+  host.append(element('p','helper',
+    'Exercício da NE: '+rap.originYear+' · '+(labels[rap.originStatus]||rap.originStatus)+
+    ' · '+fmtCount(rap.loadedMonths)+' de '+fmtCount(rap.totalMonths)+' competências carregadas. '+
+    'A cobertura do acervo não comprova completude contábil.'));
+  const history=element('div','relation-item rap-evidence-group');
+  history.append(element('strong','','Inscrições observadas no histórico dos itens'));
+  history.append(element('span','small-muted', (labels[rap.history.status]||
+    'Histórico não disponível ou com identidade ambígua')+' · '+fmtCount(rap.history.checkedItems)+' de '+
+    (rap.history.totalItems===null?'?':fmtCount(rap.history.totalItems))+' itens consultados.'));
+  if(!rap.history.groups.length)history.append(element('p','small-muted','Nenhuma inscrição identificada no histórico disponível; não significa inexistência de RAP.'));
+  else {
+    history.append(element('p','small-muted',fmtCount(rap.history.observations)+' ocorrência(s) em '+
+      fmtCount(rap.history.groups.length)+' grupo(s) observacionais · '+fmtCount(rap.history.repeated)+' repetição(ões).'));
+    const table=element('div','rap-inscriptions');
+    for(const g of rap.history.groups){
+      const row=element('div','rap-inscription-row');
+      row.append(element('strong','','Item '+g.seq+' · '+(g.date?localDate(g.date):'Data indisponível')));
+      row.append(element('span','small-muted',g.operation+' · '+fmtMoney(g.observedCents)+' por ocorrência'));
+      if(g.occurrences>1)row.append(element('span','pill pill-outline',fmtCount(g.occurrences)+' ocorrências iguais · não somadas'));
+      table.append(row);
+    }
+    history.append(table);
+  }
+  host.append(history);
+  const impacts=element('div','relation-item rap-evidence-group');
+  impacts.append(element('strong','','Impactos documentais relacionados'));
+  impacts.append(element('span','small-muted',fmtCount(rap.counts.interannual)+' vínculo(s) interanuais · '+
+    fmtCount(rap.counts.complete)+' com cinco campos · '+fmtCount(rap.counts.partial)+' parciais · '+
+    fmtCount(rap.counts.unavailable+rap.counts.ambiguous)+' indisponíveis ou ambíguos.'));
+  if(!rap.impacts.length)impacts.append(element('p','small-muted','Nenhum impacto de RAP localizado no acervo carregado.'));
+  const fieldLabels=[['liquidatedCents','Liquidado (CGU)'],['paidCents','Pago (CGU)'],
+    ['rpInscribedCents','RAP inscrito (CGU)'],['rpCancelledCents','RAP cancelado (CGU)'],['rpPaidCents','RAP pago (CGU)']];
+  for(const impact of rap.impacts){
+    const card=element('div','rap-impact-row');
+    card.append(element('strong','doc-code',impact.id+' · '+(impact.date?localDate(impact.date):'Data indisponível')));
+    card.append(element('span','small-muted',(phaseNames[impact.phase]||'Documento relacionado')+' · '+
+      (labels[impact.status]||'Componentes indisponíveis')+(impact.interannual?' · exercício posterior':'')+
+      (impact.relatedOnly?' · identidade relacionada, sem impacto recuperado':'')));
+    if(impact.status==='complete_fields'||impact.status==='partial_fields'){
+      const dl=element('dl','rap-impact-fields');
+      for(const [key,label] of fieldLabels)appendDetailField(dl,label,fmtMoney(impact.components[key]));
+      card.append(dl);
+    }
+    const open=relationButton('Abrir documento',async()=>{
+      open.disabled=true;
+      try{const found=await locateLinkedDocument(impact.id);if(found&&open.isConnected)showDocument(found.doc,found.data);
+       else open.textContent='Documento ainda não localizado';}
+      catch{open.textContent='Consulta do acervo indisponível';}
+      finally{open.disabled=false;}
+    });card.append(open);impacts.append(card);
+  }
+  host.append(impacts);
+  host.append(element('p','helper','Saldo de RAP: não homologado. A data de uma inscrição é a data da ocorrência informada pela CGU, não necessariamente a data contábil. Registros repetidos são exibidos em grupos sem soma. Não se deduz RPP/RPNP nem vínculo direto entre liquidação e pagamento.'));
 }
 function showCommitmentTrajectory(entry){
   if($('record-dialog').open)$('record-dialog').close();
@@ -1697,6 +1774,7 @@ function showCommitmentTrajectory(entry){
     '. Vínculos de pagamento: '+fmtCount(entry.payments.length)+' documento(s), '+(entry.payments.length?fmtMoney(entry.paymentCents):'não identificado')+
     (entry.paymentUnknown?' · '+fmtCount(entry.paymentUnknown)+' sem valor por NE':'')+
     '. Pendências de consulta: '+(entry.pendingLiquidations||entry.pendingPayments?'sim':'não identificado nos documentos vinculados carregados')+'.';
+  renderRapTrajectory(entry.id);
   showContractAssociations(doc,{entry});
   showDialogFromTop($('document-dialog'));
 }
@@ -1706,6 +1784,7 @@ async function initTrajectories(){
   });
   $('trajectory-catalog-kind').addEventListener('change',()=>renderRelationshipCatalog($('trajectory-search').value,integratedIndex()));
   $('trajectory-evidence').addEventListener('change',()=>{trajectoryPage=0;renderCommitmentTrajectories();});
+  for(const id of ['trajectory-rap','trajectory-rap-year'])$(id).addEventListener('change',()=>{trajectoryPage=0;renderCommitmentTrajectories();});
   $('trajectory-prev').addEventListener('click',()=>{trajectoryPage--;renderCommitmentTrajectories();});
   $('trajectory-next').addEventListener('click',()=>{trajectoryPage++;renderCommitmentTrajectories();});
   $('trajectory-search').addEventListener('keydown', event => {
@@ -1718,7 +1797,7 @@ async function initTrajectories(){
   });
   $('document-trajectory').addEventListener('click',()=>{
     $('trajectory-search').value = $('dialog-title').textContent;
-    $('trajectory-evidence').value='all';trajectoryPage=0;
+    $('trajectory-evidence').value='all';$('trajectory-rap').value='all';$('trajectory-rap-year').value='all';trajectoryPage=0;
     $('document-dialog').close();
     navigateTo('trajectory-section');
     $('trajectory-search').focus();
