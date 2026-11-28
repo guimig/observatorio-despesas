@@ -73,3 +73,22 @@ Esse preflight não calcula inscrição, pagamento, cancelamento ou saldo deriva
 A [base de dados do Relatório de Avaliação dos Restos a Pagar](https://www.tesourotransparente.gov.br/ckan/dataset/relatorio-de-avaliacao-dos-restos-a-pagar-base-de-dados), da STN, foi localizada como fonte para **comparações agregadas**. A descrição de campos não demonstra a chave SIAFI integral nem a UG executora: `NE_CCOR` corresponde ao exercício da NE, não ao seu identificador. Por isso a base **não alimenta** automaticamente o preflight da UG 158459 e nenhum saldo por empenho será imputado a partir dela. O download da planilha e a inspeção integral das abas não puderam ser concluídos nesta etapa; revisar versão do arquivo e granularidade antes de utilizar.
 
 **Aceite técnico:** testes Node e CI para normalidade, zero real, duplicata, estrutura ausente, sinais inválidos, controles inconsistentes, mistura de modalidades, tipos e privacidade. **Aceite contábil:** pendente de exportação oficial de TG/SIAFI com as chaves e controles citados, seguida de validação pela CEOF. Reversão: revert da PR, sem migração de dados.
+
+
+## Prontidão documental por NE — 27/11/2026
+
+O diagnóstico derivado distingue referências sem evidência explícita,
+evidências com pendências e documentação apta à revisão. Exige NE única,
+catálogo v2 e históricos consultados, inscrição qualificada verificável
+sem repetições, demais operações sem ambiguidade identificada, impactos
+RAP observados e componentes dos vínculos conhecidos completos (inclusive
+outros vínculos da NE). Cobertura das três fases por dia desde 1º de
+janeiro do exercício da NE até o último dia encerrado de Brasília:
+ausências, parciais, inválidos e duplicatas não contam. Carregar arquivo
+não equivale a cobertura. Motivos podem coexistir. A classificação é
+conservadora e não prova completude contábil. accountingReady falso,
+saldo nulo: evento/conta, exercício oficial da inscrição, modalidade,
+ajustes e homologação permanecem pendentes. Ficha e filtros de Trajetória,
+contagens por exercício e impedimentos no painel existente. Verificação
+Pages inclui módulo RAP. Nenhuma nova coleta, base, cron ou migração;
+reversão por revert. Testes sintéticos não homologam saldo.

@@ -11,7 +11,7 @@ import { isFormalContract,groupPublishedInstruments,summarizeInstrumentTypes } f
 import { documentSpecies,financialPhaseDescription } from './document-species.js';
 import {showDialogFromTop} from './dialog-scroll.js';
 import {auditSiafiItemMovements} from './siafi-movement-audit.js';
-import {buildRapTrajectories,matchesRapTrajectory} from './rap-trajectory.js';
+import {buildRapTrajectories,matchesRapTrajectory,RAP_STATUS_LABELS,RAP_REASON_LABELS} from './rap-trajectory.js';
 import {reconcileSiafiCommitment,commitmentChronologyEvidence,commitmentValueEvidence} from './siafi-movement-reconciliation.js';
 import { auditMonth, summarizeDocumentPhases } from './quality.js?v=3';
 import { buildCommitmentTrajectories, filterCommitmentTrajectories, auditCommitmentTrajectories } from './trajectory.js';
@@ -772,7 +772,7 @@ function integratedIndex(){
  const index=buildIntegratedIndex({months:[...cache.values()],contracts:procurementData?.contracts||[],
   notices:noticesData?.notices||[],atas:atasData?.atas||[],arpDetails:[...(arpDetailsById?.values()||[])],
   tender:tenderItemsState.data,cguContracts:cguContractEvidence,totalMonths:state.manifest?.months?.length||0,today:todayBrazil()});
- index.rapTrajectories=buildRapTrajectories([...cache.values()],{totalMonths:state.manifest?.months?.length||0});
+ index.rapTrajectories=buildRapTrajectories([...cache.values()],{totalMonths:state.manifest?.months?.length||0,today:todayBrazil()});
  integratedMemo={signature,index};return index;
 }
 const evidenceLabels={confirmed:'NE integral conferida',declared_ne:'NE integral declarada; CGU não localizada',
@@ -1617,7 +1617,7 @@ function renderCommitmentTrajectories(){
     object.append(element('span','small-muted integrated-table-note',index.cguEvidence.byNe.has(entry.id)?'Contrato–NE declarado pela CGU':e==='confirmed'?'NE integral conferida':e==='indication'?'Indício administrativo':'Sem vínculo administrativo identificado'));
     const rap=index.rapTrajectories.get(entry.id);
     if(rap)object.append(element('span','small-muted integrated-table-note',
-      rap.explicitRapEvidence?'RAP · evidência documental':'RAP · referência interanual a investigar'));
+      'RAP · '+RAP_STATUS_LABELS[rap.readiness.status]));
     const lq=element('td','align-right',fmtMoney(entry.liquidationCents));
     const pg=element('td','align-right',fmtMoney(entry.paymentCents));
     if(!entry.liquidations.length)lq.textContent='Não identificado';
@@ -1673,6 +1673,18 @@ function renderRapTrajectory(id){
     'Exercício da NE: '+rap.originYear+' · '+(labels[rap.originStatus]||rap.originStatus)+
     ' · '+fmtCount(rap.loadedMonths)+' de '+fmtCount(rap.totalMonths)+' competências carregadas. '+
     'A cobertura do acervo não comprova completude contábil.'));
+  const readiness=element('div','relation-item rap-evidence-group'),d=rap.readiness;
+  readiness.append(element('strong','',RAP_STATUS_LABELS[d.status]));
+  if(d.listing.expected!==null)readiness.append(element('span','small-muted',
+   fmtCount(d.listing.complete)+' de '+fmtCount(d.listing.expected)+' pares dia/fase completos desde '+localDate(d.listing.from)+' até o dia anterior a '+localDate(d.listing.before)+'.'));
+  if(d.otherIncomplete)readiness.append(element('span','small-muted',fmtCount(d.otherIncomplete)+' outro(s) vínculo(s) conhecido(s) sem componentes completos.'));
+  if(d.reasons.length){
+   const list=element('ul','small-muted');
+   for(const k of d.reasons)list.append(element('li','',RAP_REASON_LABELS[k]));
+   readiness.append(list);
+  }
+  readiness.append(element('p','helper','Prontidão documental não homologa saldo, modalidade, exercício oficial da inscrição, eventos/contas ou ajustes.'));
+  host.append(readiness);
   const history=element('div','relation-item rap-evidence-group');
   history.append(element('strong','','Inscrições observadas no histórico dos itens'));
   history.append(element('span','small-muted', (labels[rap.history.status]||
