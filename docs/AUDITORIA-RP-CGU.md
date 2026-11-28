@@ -193,3 +193,45 @@ com componentes por documento e cobertura das competências carregadas.
 Não cria cron, chamadas autenticadas, importação nem dados paralelos.
 Rollback por revert. Confronto com CSV oficial diário permanece pendente;
 a fonte é atualizável, não um razão contábil ou sequência imutável.
+
+
+## Confronto efêmero com arquivos diários oficiais — 27/11/2026
+
+Fonte oficial: https://portaldatransparencia.gov.br/download-de-dados/despesas/
+e dicionário https://portaldatransparencia.gov.br/dicionario-de-dados/empenhos .
+O Portal identifica ItemEmpenhoHistorico, Liquidacao_EmpenhosImpactados e
+Pagamento_EmpenhosImpactados. O dicionário informa que a planilha de
+empenho corresponde à última alteração, não a uma sequência imutável de
+eventos; ausência em determinada data não demonstra inexistência de RAP.
+
+A rotina `python3 -m src.probe_rap_csv` reutiliza o download limitado
+existente (128 MiB comprimido, 512 MiB dos membros selecionados por
+arquivo; processamento sequencial temporário, sem extração persistente).
+No máximo duas datas por execução: data mais frequente de inscrição
+observada no acervo e data mais recente de pagamento de RAP com
+componente conhecido; entrada manual opcional para uma única data.
+Sem cron ou credencial. Respeita bloqueios HTTP e não cria artefato.
+
+Cabeçalhos candidatos são uma lista fechada a confirmar na fonte real,
+não equivalências homologadas: ambiguidade ou falta de campos resulta
+em status explícito. Não imprime cabeçalhos desconhecidos. Identidade
+integral da UG 158459 desde 2024 ou junção pelo ID interno oficial
+inequívoco do mesmo pacote com documento pai. Nunca usa NE abreviada.
+Histórico compara multiconjuntos do rótulo qualificado, sequência,
+data, quantidade, valor unitário e centavos, sem somar inscrições.
+Impactos comparam cada campo disponível por par interanual; linhas
+indistinguíveis e campos inválidos bloqueiam agregação, zero explícito
+é distinto de ausência. Diferenças são somente pistas de investigação,
+não retificação do dado canônico. O resultado não confirma modalidade
+RPP/RPNP, cancelamento ou saldo contábil.
+
+Run 46095256027: 74 NEs, 75 itens, 97 ocorrências de inscrição, 22
+repetições; 365 pares interanuais, 32 com os cinco componentes e 333
+ainda sem componentes. 240 HTTP 200, 108/109 consultas processadas.
+Nenhum valor positivo de RP inscrito/cancelado no conjunto de 116
+pares com componentes. Não confundir ausência de valores positivos
+no acervo enriquecido com ausência de operações na fonte.
+
+Testes sintéticos de equivalência de multiplicidade, junção interna,
+ambiguidade, campos ausentes e divergência. Sondagem real e confirmação
+do layout CSV ainda pendentes; rollback por revert sem migração.

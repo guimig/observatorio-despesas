@@ -1,0 +1,32 @@
+name: Confrontar RAP com arquivos oficiais diarios CGU
+on:
+  workflow_dispatch:
+    inputs:
+      day:
+        description: 'Data especifica desde 2024 (vazio = duas datas dirigidas pelo acervo)'
+        type: string
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sondar-rap-arquivos-cgu.yml'
+      - 'src/probe_rap_csv.py'
+permissions:
+  contents: read
+jobs:
+  confrontar:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Testar filtro, limites, comparação e privacidade
+        run: python3 -m unittest discover -s test -p test_probe_cgu_downloads.py
+      - name: Confrontar amostra efêmera de arquivos públicos
+        env:
+          CGU_RAP_ARCHIVE_DATE: ${{ inputs.day || '' }}
+        run: |
+          set -o pipefail
+          python3 -m src.probe_rap_csv | tee -a "$GITHUB_STEP_SUMMARY"
