@@ -106,3 +106,35 @@ páginas incompletas, duplicidade e compatibilidade mensal. Homologação
 contábil e confronto com arquivos oficiais continuam pendentes. Rollback:
 reverter o PR após remover apenas o campo opcional impactComponents dos
 JSONs que tiverem sido enriquecidos (preservando cents e relações).
+
+
+## Sondagem dirigida de duplicidades e componentes — 27/11/2026
+
+A investigação da issue #29 passa a reconsultar diretamente os itens com
+rótulo de inscrição já identificado, dando prioridade às duplicidades
+conhecidas (até 10 itens, com pelo menos um controle se disponível).
+Somente NEs desde 2024, de proprietário único e sequenciais inequívocos.
+A mesma rodada seleciona até seis documentos NS/OB/DF com relações
+interanuais explícitas, priorizando os associados às inscrições repetidas,
+depois às demais inscrições, com alternância entre fases.
+
+A rotina compara multiconjuntos de movimentos armazenados e respostas
+novas normalizadas, distinguindo repetição idêntica no conteúdo bruto,
+diferença entre linhas normalizadas iguais e presença de campos adicionais
+de identidade. Os campos adicionais são pistas, não chaves homologadas.
+Somente paginação terminal completa permite a análise. Não deduz
+duplicidade contábil por igualdade de valores, nem apaga registros.
+Nos impactos compara pares conhecidos, valor legado, cobertura dos
+cinco campos, sinais e possíveis linhas repetidas, separados por fase.
+Consultas vazias, falhas e pares ausentes não são interpretados como saldo
+zero. Logs e sumários contêm exclusivamente contagens agregadas.
+
+Workflow sem cron, disparo manual ou alteração do código de diagnóstico
+integrada à main. Usa grupo de concorrência da coleta CGU, sem gravar
+JSON, com teto de 48 requisições inclusive tentativas, 4 minutos, intervalo
+mínimo de 1,5 segundo e quatro páginas por consulta. Não amplia cotas das
+coletas regulares. A simulação `node src/audit-rap-targeted.mjs --dry-run`
+não consulta API. Testes reproduzem repetição literal, linhas com identidade
+adicional, alterações de multiplicidade, página repetida e campos ausentes.
+Confronto com arquivos oficiais e validação contábil continuam pendentes.
+Rollback por revert, sem migração ou alteração de dados.
