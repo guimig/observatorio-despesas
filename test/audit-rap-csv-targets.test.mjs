@@ -46,9 +46,9 @@ const secondNe='158459264222024NE000002';
 const second={from:ob,to:secondNe,cents:20000};
 const dateNow=new Date('2026-11-27T20:00:00Z');
 function recoveryFixture(){
- const m={...emptyMonth('2026-01'),documents:[{id:ob,date:'2026-01-10',phase:3,cents:30000,paymentLinksChecked:true}],relations:[original,second]};
+ const m={...emptyMonth('2026-01'),documents:[{id:ob,date:'2026-01-10',phase:3,cents:30000,paymentLinksChecked:true}],relations:[original,second],coverage:[{date:'2026-01-10',phase:3,complete:true,count:1,invalid:0}]};
  const n={...emptyMonth('2025-12'),documents:[{id:ne,date:'2025-12-12',phase:1,cents:10000,itemsDetailVersion:2}],
-  itemsByDocument:{[ne]:[{seq:1,cents:10000}]}};
+  itemsByDocument:{[ne]:[{seq:1,cents:10000}]},coverage:[{date:'2025-12-12',phase:1,complete:true,count:1,invalid:0}]};
  const link={...original,impactComponents:actualComponents};
  return {months:[m,n],confirmed:{histories:[{id:ne,seq:1,movements:[actualMovement,actualMovement]}],
   impacts:[{id:ob,ne,phase:3,link,apiLinks:[link,second]}]}};
@@ -84,7 +84,7 @@ test('não retifica componente existente nem histórico consultado; identidade a
  const p=planConfirmedCsvRecovery(months,confirmed,dateNow);
  assert.equal(p.tasks.length,0);assert.equal(p.summary.skipped.history_already_checked,1);
  assert.equal(p.summary.skipped.impact_already_present,1);
- const duplicate={...emptyMonth('2025-11'),documents:[{id:ne,date:'2025-11-12',phase:1,cents:10000}]};
+ const duplicate={...emptyMonth('2025-11'),documents:[{id:ne,date:'2025-11-12',phase:1,cents:10000}],coverage:[{date:'2025-11-12',phase:1,complete:true,count:1,invalid:0}]};
  assert.equal(planConfirmedCsvRecovery([...months,duplicate],confirmed,dateNow).summary.historiesAdded,0);
 });
 test('só encaminha impacto com quatro campos CSV pertinentes e cinco campos API verificáveis',async()=>{
